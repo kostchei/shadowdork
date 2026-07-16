@@ -22,6 +22,8 @@ export type EffectHook =
   | { kind: "statBonus"; stat: StatName; bonus: number }
   | { kind: "acBonus"; bonus: number }
   | { kind: "damageBonus"; bonus: number }
+  /** Weapon Mastery scaling: +floor(level / 2) damage. */
+  | { kind: "damageBonusHalfLevel" }
   | { kind: "maxHpBonus"; bonus: number };
 
 export type DurationUnit = "rounds" | "crawlingRounds" | "realMs" | "untilRest" | "focus";
@@ -89,6 +91,10 @@ export function sumHook(
     }
   }
   return total;
+}
+
+export function hasHook(effects: readonly Effect[], kind: EffectHook["kind"]): boolean {
+  return effects.some((e) => e.hooks.some((h) => h.kind === kind));
 }
 
 export function sumStatBonus(effects: readonly Effect[], stat: StatName): number {

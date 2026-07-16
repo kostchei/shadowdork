@@ -18,18 +18,19 @@ export interface SpellDeps extends MeleeDeps {
   party: () => CharacterSprite[];
 }
 
-export function castSelectedSpell(deps: SpellDeps, caster: CharacterSprite): void {
-  if (!caster.canSwing()) return;
+/** Cast the caster's selected spell. Returns the engine result (null if nothing was cast). */
+export function castSelectedSpell(deps: SpellDeps, caster: CharacterSprite): CastResult | null {
+  if (!caster.canSwing()) return null;
   const known = caster.character.knownSpells;
   if (known.length === 0) {
     deps.ctx.say(`${caster.character.name} knows no spells.`);
-    return;
+    return null;
   }
   const slot = known[caster.spellIndex % known.length]!;
   const def = spell(slot.spellId);
   if (slot.status === "lost") {
     deps.ctx.say(`${def.name} is lost until ${caster.character.name} rests.`, "#d07070");
-    return;
+    return null;
   }
   caster.startSwingCooldown();
 
@@ -42,7 +43,7 @@ export function castSelectedSpell(deps: SpellDeps, caster: CharacterSprite): voi
   if (result.outcome === "fail") {
     floatText(deps.scene, caster.x, caster.y - 40, `${die} — spell lost!`, "#d07070");
     deps.ctx.say(`${def.name} fizzles — lost until rest. (rolled ${die}+${result.check.modifier} vs DC ${result.check.dc})`, "#d07070");
-    return;
+    return result;
   }
   if (result.outcome === "mishap") {
     deps.scene.cameras.main.shake(250, 0.01);
@@ -56,7 +57,7 @@ export function castSelectedSpell(deps: SpellDeps, caster: CharacterSprite): voi
         "#ff4060",
       );
     }
-    return;
+    return result;
   }
 
   const doubled = result.doubled;
@@ -68,6 +69,7 @@ export function castSelectedSpell(deps: SpellDeps, caster: CharacterSprite): voi
     doubled ? "#ffd040" : "#70a0f0",
   );
   resolveSpellEffect(deps, caster, result);
+  return result;
 }
 
 function resolveSpellEffect(deps: SpellDeps, caster: CharacterSprite, result: CastResult): void {

@@ -16,6 +16,8 @@ export interface MonsterDef {
   /** Monsters see fine in the dark. */
   darkvision: boolean;
   undead: boolean;
+  /** Leader-led groups skip morale while the leader lives; its death breaks them. */
+  leader?: boolean;
   xpTier: "minor" | "major" | "legendary";
 }
 

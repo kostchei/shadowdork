@@ -56,6 +56,8 @@ export function levelUp(
   const hpRolled = dice.roll(hitDie);
   const hpGained = Math.max(1, hpRolled + character.mod("CON"));
   character.increaseMaxHp(hpGained);
+  // Leveling restores the character to full (and pulls a dying one back up).
+  character.heal(character.maxHp);
 
   const talent = tables.roll(dice, talentTableId);
   if (talent.entry.effects) {

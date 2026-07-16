@@ -18,7 +18,8 @@ One mechanic: **d20 + stat modifier vs DC or AC, roll high.**
   the UI. Talent hooks can add more. Any advantage + any disadvantage cancel to
   a normal roll.
 - **Natural 1** auto-fails; **natural 20** auto-succeeds and crits. Attack crit
-  thresholds can drop below 20 via talent hooks (`critRange`).
+  thresholds can drop below 20 via talent hooks (`critRange`) — but only a
+  natural 20 auto-succeeds: a talent-crit on 19 still has to beat the AC.
 - Results carry the natural die, both dice under adv/dis, total, modifier, and
   the adv/dis reasons — the game renders the natural die as floating text so
   players learn the system.
@@ -27,7 +28,19 @@ One mechanic: **d20 + stat modifier vs DC or AC, roll high.**
 
 - Six stats, scores 1–20, modifier = `floor((score − 10) / 2)` (−4…+4, matching
   the RAW threshold table).
-- Class (fighter/thief/priest/wizard), alignment, level, XP, HP, AC.
+- **Character generation** (`rollStats`): 3d6 per stat on the seeded dice,
+  silently regenerated until the array holds ≥2 stats of 15+ and ≤1 stat
+  under 6 (house heroic gate; RAW's is "reroll if no stat 14+"). Level-1 HP =
+  class hit die + CON mod (min 1).
+- **Armor is worn, not baked in**: `AC = armor base + DEX (capped by the
+  armor) + readied shield (+2) + effect hooks`; unarmored = 10 + DEX. Armor
+  items carry class permissions (fighter/priest: all; thief: leather; wizard:
+  none) and `equipArmor` throws on a forbidden fit. A readied shield occupies
+  a hand — the game slings it (`shieldStowed`, −2 AC) while that hand carries
+  a torch.
+- **Luck token**: every character starts with one; the game layer spends it
+  to reroll a just-failed player-initiated check.
+- Class (fighter/thief/priest/wizard), alignment, level, XP, HP.
 - **Talents and conditions are one system**: data-driven `Effect` records
   carrying `EffectHook[]` — `checkBonus`, `advantageOn`, `disadvantageOn`,
   `critRange`, `statBonus`, `acBonus`, `damageBonus`, `maxHpBonus`. Talents are
@@ -68,13 +81,19 @@ No slots. Casting = spell check: d20 + INT (wizard) / WIS (priest) vs **DC 10 + 
 
 ## 6. Combat Support
 
-- `Engine.attack()` wraps `resolveCheck` (kind `attack`, STR vs AC) and rolls
-  damage; **crits double the damage dice**, damage-bonus hooks apply.
+- `Engine.attack()` wraps `resolveCheck` (kind `attack`) and rolls damage;
+  **the attack stat is STR, or the better of STR/DEX for finesse weapons**
+  (the weapon's `ItemDef` decides). `extraDamageDice` adds weapon dice on a
+  hit — the thief's backstab passes `1 + floor(level/2)`. **Crits double all
+  damage dice** (backstab dice included); damage-bonus hooks apply, including
+  `damageBonusHalfLevel` (fighter Weapon Mastery scaling).
 - Monsters (`monster.ts`) are flat stat blocks: AC, hit dice, attack bonus,
   damage, WIS mod, darkvision, undead flag, XP tier. `monsterAttackRoll`
   shares the nat-1/nat-20 rules.
 - **Morale**: `moraleCheck` = DC 15 WIS. The game fires it when half a monster
-  group has fallen; failures flee.
+  group has fallen; failures flee. Monsters flagged `leader` (the ogre) hold
+  their group exempt while alive — the leader's death makes the whole group
+  check at once.
 - **Death timers**: at 0 HP, `1d4 + CON mod` rounds (min 1). Each round a dying
   character rolls a d20 — **natural 20 self-revives at 1 HP**. Stabilize is a
   **DC 15 INT check** by a rescuer (`Engine.stabilize`), leaving the target at
@@ -93,9 +112,10 @@ No slots. Casting = spell check: d20 + INT (wizard) / WIS (priest) vs **DC 10 + 
 
 - **XP comes from treasure only.** Gems/idols/crowns carry `xpValue`; coins bank
   toward 100-coin thresholds (1 XP per full 100, tracked by the game context).
-- Threshold: `(current level × 10)` XP, resetting each level. Max level 10.
-- Level-up rolls HP (class hit die + CON, min 1) and **2d6 on the class talent
-  table**, whose structured effects mutate the character's hooks.
+- Threshold: `(current level × 10)` XP; excess carries over. Max level 10.
+- Level-up rolls HP (class hit die + CON, min 1), **heals to full** (pulling a
+  dying character back up), and rolls **2d6 on the class talent table**, whose
+  structured effects mutate the character's hooks.
 
 ## 9. Random Tables — `tables.ts`
 
@@ -126,9 +146,13 @@ is original paraphrase — the licensing boundary. Unknown table ids throw.
 
 | RAW (pseudocode doc) | As built | Why |
 |---|---|---|
-| Talent rolls at levels 3/5/7/9 | Talent roll **every** level | The slot-machine moment is the platformer's level-up payoff |
-| Morale uses group leader's WIS | Each monster's own WIS mod | No leader modelling yet |
-| Priest penance = GP sacrifice by tier | Spell lost until atonement (stubbed) | No economy yet |
-| Trained-task auto-success, luck tokens, ancestries, stealth/surprise, swimming, encounter/reaction tables | Not implemented | v2 candidates; crawling-round hook exists for encounter checks |
+| Talent rolls at levels 3/5/7/9 | Talent roll **every** level | Ratified house rule: the slot-machine moment is the platformer's level-up payoff |
+| Reroll stats if no 14+ | Reroll until ≥2 stats 15+ and ≤1 under 6 | Ratified heroic house rule |
+| XP resets to 0 on level | Excess XP carries over | Friendlier; treasure never wasted |
+| Morale check per monster's own WIS | Same, plus `leader` flag: group exempt while leader lives, mass check on its death | Leader modelling now exists |
+| Priest penance = GP sacrifice by tier | Atonement is free at any shrine (E to kneel) | Cost arrives with the rest-spot economy |
+| Encounter distance/activity/reaction tables | 1-in-6 on the crawling clock, every round in total darkness, themed hunting wave | Reaction tables need social play; v2 |
+| Trained-task auto-success, ancestries, stealth/surprise, swimming | Not implemented | v2 candidates (swimming lands with water volumes) |
+| Luck reroll on any roll | Reroll offered on the leader's just-failed swing/cast/stabilize (L, 2.5 s window) | Mishaps already detonated — no clean undo |
 | Initiative order | Replaced by real-time ~1 s cooldowns (a compressed round) | Real-time platformer combat |
-| Torch = 1 real hour | Config default 1 h; game ships 3 min for playtests | House-rule config flag per the original design brief |
+| Torch = 1 real hour; crawling round = 10 min | Config: 3 min torch, 45 s crawling round for playtests | House-rule config flags per the original design brief |

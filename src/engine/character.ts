@@ -1,7 +1,8 @@
 /** Character model: six stats, class, effects (talents + conditions), HP/AC/XP, spells. */
 
-import { critThreshold, sumHook, sumStatBonus, type Effect } from "./effects";
-import { Inventory } from "./inventory";
+import { critThreshold, hasHook, sumHook, sumStatBonus, type Effect } from "./effects";
+import type { Dice } from "./dice";
+import { Inventory, type ItemDef } from "./inventory";
 
 export type StatName = "STR" | "DEX" | "CON" | "INT" | "WIS" | "CHA";
 export const STAT_NAMES: readonly StatName[] = ["STR", "DEX", "CON", "INT", "WIS", "CHA"];
@@ -32,13 +33,31 @@ export function statModifier(score: number): number {
   return Math.floor((score - 10) / 2);
 }
 
+/**
+ * Roll a starting stat array: 3d6 per stat, silently regenerated until the
+ * set is heroic — at least two stats of 15+ and at most one stat under 6.
+ */
+export function rollStats(dice: Dice): Stats {
+  const MAX_ATTEMPTS = 10_000;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const scores = STAT_NAMES.map(() => dice.roll("3d6"));
+    const high = scores.filter((s) => s >= 15).length;
+    const low = scores.filter((s) => s < 6).length;
+    if (high >= 2 && low <= 1) {
+      const stats = {} as Stats;
+      STAT_NAMES.forEach((name, i) => (stats[name] = scores[i]!));
+      return stats;
+    }
+  }
+  throw new Error(`rollStats found no qualifying array in ${MAX_ATTEMPTS} attempts`);
+}
+
 export interface CharacterInit {
   id: string;
   name: string;
   className: ClassName;
   stats: Stats;
   maxHp: number;
-  baseAc: number;
   alignment?: Alignment;
 }
 
@@ -53,12 +72,21 @@ export class Character {
   xp = 0;
   hp: number;
   private baseMaxHp: number;
-  private baseAc: number;
 
   /** Permanent talents + temporary conditions, all as effect hooks. */
   effects: Effect[] = [];
   knownSpells: KnownSpell[] = [];
   inventory: Inventory;
+
+  /** Worn armor (class-gated via equipArmor). Null = unarmored: AC 10 + DEX. */
+  wornArmor: ItemDef | null = null;
+  /** A readied shield: +2 AC, occupies a hand. */
+  carriedShield: ItemDef | null = null;
+  /** Shield slung on the back (e.g. to carry a torch): hand free, no AC bonus. */
+  shieldStowed = false;
+
+  /** One reroll, Shadowdark luck. Spent through the game layer. */
+  luckToken = true;
 
   /** Set while at 0 HP; cleared by stabilization or healing. */
   dying: DyingState | null = null;
@@ -73,7 +101,6 @@ export class Character {
     for (const s of STAT_NAMES) statModifier(this.stats[s]); // validate
     this.baseMaxHp = init.maxHp;
     this.hp = this.maxHp;
-    this.baseAc = init.baseAc;
     // Gear slots = max(STR, 10); fighters haul + CON mod extra (Hauler).
     let capacity = Math.max(this.stats.STR, 10);
     if (init.className === "fighter") {
@@ -90,8 +117,34 @@ export class Character {
     return this.baseMaxHp + sumHook(this.effects, "maxHpBonus");
   }
 
+  /** AC = armor base + DEX (capped by the armor) + readied shield + effect hooks. */
   get ac(): number {
-    return this.baseAc + sumHook(this.effects, "acBonus");
+    const dex = this.mod("DEX");
+    const armored = this.wornArmor?.armor;
+    const base = armored ? armored.acBase + Math.min(dex, armored.dexCap) : 10 + dex;
+    const shield = this.carriedShield && !this.shieldStowed ? 2 : 0;
+    return base + shield + sumHook(this.effects, "acBonus");
+  }
+
+  /** Wear armor. Class permissions are the armor's, and they are law. */
+  equipArmor(def: ItemDef): void {
+    if (!def.armor) throw new Error(`${def.name} is not armor`);
+    if (!def.armor.classes.includes(this.className)) {
+      throw new Error(`A ${this.className} cannot wear ${def.name}`);
+    }
+    this.wornArmor = def;
+  }
+
+  /** Ready a shield (+2 AC, occupies a hand). */
+  equipShield(def: ItemDef): void {
+    if (!def.shield) throw new Error(`${def.name} is not a shield`);
+    this.carriedShield = def;
+    this.shieldStowed = false;
+  }
+
+  /** A hand is free unless a readied shield fills it. */
+  get handFreeOfShield(): boolean {
+    return this.carriedShield === null || this.shieldStowed;
   }
 
   get critThreshold(): number {
@@ -99,7 +152,10 @@ export class Character {
   }
 
   get damageBonus(): number {
-    return sumHook(this.effects, "damageBonus");
+    const halfLevel = hasHook(this.effects, "damageBonusHalfLevel")
+      ? Math.floor(this.level / 2)
+      : 0;
+    return sumHook(this.effects, "damageBonus") + halfLevel;
   }
 
   addEffect(effect: Effect): void {

@@ -1,4 +1,4 @@
-import { Character, type ClassName, type Engine } from "../engine";
+import { Character, rollStats, type ClassName, type Engine } from "../engine";
 import { classDef } from "./classes";
 import { item } from "./items";
 import { WIZARD_MISHAPS } from "./tables/mishaps";
@@ -23,20 +23,30 @@ export function registerTables(engine: Engine): void {
   engine.tables.register(WIZARD_MISHAPS);
 }
 
-/** Build a level-1 character of the given class with starting gear and spells. */
+/**
+ * Build a level-1 character of the given class: 3d6 stats (silently rerolled
+ * until heroic — see rollStats), HP = hit die + CON (min 1), class armor kit,
+ * starting gear and spells. AC is computed from armor + DEX, never stored.
+ */
 export function createCharacter(engine: Engine, id: string, name: string, cls: ClassName): Character {
   const def = classDef(cls);
-  const c = new Character({
-    id,
-    name,
-    className: cls,
-    stats: def.startingStats,
-    maxHp: def.startingMaxHp,
-    baseAc: def.baseAc,
-  });
+  const stats = rollStats(engine.dice);
+  const conMod = Math.floor((stats.CON - 10) / 2);
+  const maxHp = Math.max(1, engine.dice.roll(def.hitDie) + conMod);
+  const c = new Character({ id, name, className: cls, stats, maxHp });
   for (const f of def.features) c.addEffect(structuredClone(f) as typeof f);
   for (const spellId of def.startingSpellIds) c.learnSpell(spellId);
   c.inventory.add(item(def.weaponId));
+  if (def.armorId) {
+    const armor = item(def.armorId);
+    c.inventory.add(armor);
+    c.equipArmor(armor);
+  }
+  if (def.startsWithShield) {
+    const shield = item("shield");
+    c.inventory.add(shield);
+    c.equipShield(shield);
+  }
   c.inventory.add(item("torch"), 2);
   c.inventory.add(item("ration"), 1);
   engine.registerCharacter(c);

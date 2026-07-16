@@ -5,10 +5,12 @@
  */
 
 import Phaser from "phaser";
-import { monsterAttackRoll, moraleCheck } from "../../engine";
+import { monsterAttackRoll, moraleCheck, type CheckResult } from "../../engine";
+import { item } from "../../data";
 import type { GameContext } from "../context";
 import type { CharacterSprite } from "../entities/CharacterSprite";
 import type { MonsterSprite } from "../entities/MonsterSprite";
+import { hitBurst } from "../fx/vfx";
 import type { LightSystem } from "./light";
 import { CLOSE_PX } from "./position";
 
@@ -20,6 +22,8 @@ export function floatText(
   color: string,
   size = 14,
 ): void {
+  // Slight jitter keeps stacked combat numbers legible (visual only, not rules).
+  x += Phaser.Math.Between(-8, 8);
   const t = scene.add
     .text(x, y, text, {
       fontFamily: "monospace",
@@ -66,14 +70,23 @@ export function buildAttackContext(
   return { advantage, disadvantage };
 }
 
-/** Tracks monster groups for morale: half the group down (or leader down) = check. */
+/**
+ * Tracks monster groups for morale. Half the group down = check — unless a
+ * living leader stands in the group (leader-led groups are immune while the
+ * leader lives, and the whole group checks the moment the leader falls).
+ */
 export class MoraleTracker {
-  private groups = new Map<string, { total: number; checked: boolean }>();
+  private groups = new Map<string, { total: number; checked: boolean; leaders: number }>();
 
   register(monster: MonsterSprite): void {
     const g = this.groups.get(monster.groupId);
-    if (g) g.total++;
-    else this.groups.set(monster.groupId, { total: 1, checked: false });
+    const isLeader = monster.def.leader === true ? 1 : 0;
+    if (g) {
+      g.total++;
+      g.leaders += isLeader;
+    } else {
+      this.groups.set(monster.groupId, { total: 1, checked: false, leaders: isLeader });
+    }
   }
 
   /** Call when a monster dies. Rolls morale for survivors when the threshold hits. */
@@ -85,10 +98,27 @@ export class MoraleTracker {
   ): void {
     const g = this.groups.get(dead.groupId);
     if (!g) throw new Error(`Monster group "${dead.groupId}" was never registered`);
-    if (g.checked || g.total < 2) return;
     const alive = survivors.filter((m) => m.groupId === dead.groupId && m.aliveInFight);
+
+    if (dead.def.leader) {
+      // The leader falls: every survivor checks its nerve at once.
+      g.leaders--;
+      if (g.leaders === 0 && alive.length > 0) {
+        ctx.say("Their leader is down — the warband wavers!", "#9999ee");
+        g.checked = true;
+        this.rollGroup(ctx, scene, alive);
+      }
+      return;
+    }
+
+    if (g.checked || g.total < 2) return;
+    if (g.leaders > 0) return; // a standing leader holds the line
     if (alive.length === 0 || alive.length > g.total / 2) return;
     g.checked = true;
+    this.rollGroup(ctx, scene, alive);
+  }
+
+  private rollGroup(ctx: GameContext, scene: Phaser.Scene, alive: MonsterSprite[]): void {
     for (const m of alive) {
       const result = moraleCheck(ctx.engine.dice, m.def);
       if (!result.holds) {
@@ -110,9 +140,15 @@ export interface MeleeDeps {
   onMonsterKilled: (m: MonsterSprite) => void;
 }
 
-/** One melee swing from a character. Returns true if a swing happened. */
-export function meleeSwing(deps: MeleeDeps, attacker: CharacterSprite): boolean {
-  if (!attacker.canSwing()) return false;
+export interface SwingOutcome {
+  swung: boolean;
+  /** Check result when a target was actually attacked. */
+  check?: CheckResult;
+}
+
+/** One melee swing from a character. */
+export function meleeSwing(deps: MeleeDeps, attacker: CharacterSprite): SwingOutcome {
+  if (!attacker.canSwing()) return { swung: false };
   attacker.startSwingCooldown();
 
   const { scene, ctx, light } = deps;
@@ -135,13 +171,17 @@ export function meleeSwing(deps: MeleeDeps, attacker: CharacterSprite): boolean 
         Phaser.Math.Distance.Between(attacker.x, attacker.y, a.x, a.y) -
         Phaser.Math.Distance.Between(attacker.x, attacker.y, b.x, b.y),
     )[0];
-  if (!target) return true;
+  if (!target) return { swung: true };
 
   const posCtx = buildAttackContext(attacker, target, light);
+  // Backstab: advantage AND extra weapon dice (1 + half level), per RAW.
+  const backstab = posCtx.advantage.includes("backstab");
   const result = ctx.engine.attack({
     attacker: attacker.character,
     targetAc: target.def.ac,
     damage: attacker.weaponDamage,
+    weapon: item(attacker.cls.weaponId),
+    extraDamageDice: backstab ? 1 + Math.floor(attacker.character.level / 2) : 0,
     advantage: posCtx.advantage,
     disadvantage: posCtx.disadvantage,
   });
@@ -161,27 +201,14 @@ export function meleeSwing(deps: MeleeDeps, attacker: CharacterSprite): boolean 
   } else if (posCtx.disadvantage.length > 0 && posCtx.advantage.length === 0) {
     floatText(deps.scene, attacker.x, attacker.y - 34, posCtx.disadvantage[0]!, "#d07070", 11);
   }
-  return true;
+  return { swung: true, check: result.check };
 }
 
 export function applyDamageToMonster(deps: MeleeDeps, target: MonsterSprite, damage: number): void {
   target.hp -= damage;
   target.setTintFill(0xffffff);
   deps.scene.time.delayedCall(80, () => target.clearTint());
-
-  // Splatter particles
-  const isUndead = target.def.undead;
-  const color = isUndead ? [0xdeded7, 0xc2c2ba, 0x9e9e94] : [0xff3333, 0xcc0000, 0x880000];
-  const hitParticles = deps.scene.add.particles(target.x, target.y - 8, "pixel", {
-    color,
-    speed: { min: 40, max: 120 },
-    scale: { start: 2, end: 0 },
-    lifespan: { min: 200, max: 400 },
-    duration: 150,
-    maxParticles: 15,
-    blendMode: "NORMAL",
-  }).setDepth(25);
-  deps.scene.time.delayedCall(500, () => hitParticles.destroy());
+  hitBurst(deps.scene, target.x, target.y, target.def.undead);
 
   if (target.hp <= 0) {
     deps.onMonsterKilled(target);
@@ -210,18 +237,7 @@ export function monsterSwing(
     floatText(scene, target.x, target.y - 16, `-${result.damage}`, "#ff5050");
     const wentDown = ctx.engine.damageCharacter(target.character, result.damage);
     scene.cameras.main.shake(80, 0.004);
-
-    // Blood splatter on character
-    const hitParticles = scene.add.particles(target.x, target.y - 8, "pixel", {
-      color: [0xff3333, 0xcc0000, 0xaa0000],
-      speed: { min: 40, max: 120 },
-      scale: { start: 2, end: 0 },
-      lifespan: { min: 200, max: 400 },
-      duration: 150,
-      maxParticles: 15,
-      blendMode: "NORMAL",
-    }).setDepth(25);
-    scene.time.delayedCall(500, () => hitParticles.destroy());
+    hitBurst(scene, target.x, target.y, false);
 
     if (wentDown) {
       ctx.say(

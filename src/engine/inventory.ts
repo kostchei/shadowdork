@@ -15,6 +15,18 @@ export interface ItemDef {
   /** Damage dice for weapons, e.g. "1d8". */
   damage?: string;
   twoHanded?: boolean;
+  /** Finesse weapons attack with the better of STR or DEX. */
+  finesse?: boolean;
+  /** Wearable armor: base AC plus DEX modifier capped at dexCap. */
+  armor?: {
+    acBase: number;
+    /** Max DEX modifier the armor allows (0 for plate, Infinity-like cap via 99). */
+    dexCap: number;
+    /** Class names permitted to wear it. */
+    classes: readonly string[];
+  };
+  /** Shields grant +2 AC and occupy a hand while readied. */
+  shield?: boolean;
 }
 
 export interface ItemStack {

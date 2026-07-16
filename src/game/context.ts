@@ -14,10 +14,15 @@ export class GameContext {
   readonly events = new Phaser.Events.EventEmitter();
   readonly messages: GameMessage[] = [];
 
+  /** Monsters slain this run (for the end-of-run summary). */
+  kills = 0;
+
   constructor() {
     this.engine = new Engine({
-      // Playtest house rule: torches burn 3 real minutes instead of 1 hour.
-      config: { torchMs: 3 * 60 * 1000, roundMs: 3000, crawlingRoundMs: 10 * 60 * 1000 },
+      // Playtest house rules: torches burn 3 real minutes instead of 1 hour,
+      // and a crawling round is 45 s so random-encounter checks matter in a
+      // 10-minute run. RAW values are one config change away.
+      config: { torchMs: 3 * 60 * 1000, roundMs: 3000, crawlingRoundMs: 45 * 1000 },
     });
     registerTables(this.engine);
   }

@@ -5,6 +5,7 @@ import {
   Dice,
   Engine,
   resolveCheck,
+  rollStats,
   statModifier,
   xpToNextLevel,
 } from "../src/engine";
@@ -72,7 +73,6 @@ describe("resolveCheck", () => {
       className: "fighter",
       stats: { STR: 16, DEX: 12, CON: 14, INT: 9, WIS: 10, CHA: 11 },
       maxHp: 10,
-      baseAc: 15,
     });
   }
 
@@ -177,11 +177,11 @@ describe("spellcasting state machine", () => {
 describe("inventory gear slots", () => {
   it("capacity is max(STR, 10) and overflow throws", () => {
     const engine = makeEngine();
-    const wiz = createCharacter(engine, "w", "Wizard", "wizard"); // STR 9 => capacity 10
-    expect(wiz.inventory.capacity).toBe(10);
-    // Starting gear: staff + 2 torches + ration = 4 slots.
+    const wiz = createCharacter(engine, "w", "Wizard", "wizard");
+    expect(wiz.inventory.capacity).toBe(Math.max(wiz.stats.STR, 10));
+    // Starting gear: staff + 2 torches + ration = 4 slots (wizards wear no armor).
     expect(wiz.inventory.slotsUsed()).toBe(4);
-    wiz.inventory.add(item("ration"), 6); // 10 slots used
+    wiz.inventory.add(item("ration"), wiz.inventory.slotsFree());
     expect(() => wiz.inventory.add(item("torch"))).toThrow(/Cannot carry/);
   });
 
@@ -199,10 +199,134 @@ describe("inventory gear slots", () => {
 
   it("fighters haul extra slots equal to their CON modifier", () => {
     const engine = makeEngine();
-    const f = createCharacter(engine, "f", "Fighter", "fighter"); // STR 16, CON 14 (+2)
-    expect(f.inventory.capacity).toBe(18);
-    const t = createCharacter(engine, "t", "Thief", "thief"); // STR 10, no hauler
-    expect(t.inventory.capacity).toBe(10);
+    const f = createCharacter(engine, "f", "Fighter", "fighter");
+    const conMod = Math.max(0, statModifier(f.stats.CON));
+    expect(f.inventory.capacity).toBe(Math.max(f.stats.STR, 10) + conMod);
+    const t = createCharacter(engine, "t", "Thief", "thief");
+    expect(t.inventory.capacity).toBe(Math.max(t.stats.STR, 10)); // no hauler
+  });
+});
+
+describe("character generation", () => {
+  it("rolled stat arrays always pass the heroic gate", () => {
+    const dice = new Dice(11);
+    for (let i = 0; i < 200; i++) {
+      const stats = rollStats(dice);
+      const scores = Object.values(stats);
+      expect(scores.filter((s) => s >= 15).length).toBeGreaterThanOrEqual(2);
+      expect(scores.filter((s) => s < 6).length).toBeLessThanOrEqual(1);
+      for (const s of scores) {
+        expect(s).toBeGreaterThanOrEqual(3);
+        expect(s).toBeLessThanOrEqual(18);
+      }
+    }
+  });
+
+  it("derives level-1 HP from the hit die + CON and never below 1", () => {
+    for (let seed = 0; seed < 50; seed++) {
+      const engine = makeEngine(seed);
+      const w = createCharacter(engine, "w", "Wizard", "wizard"); // d4 hit die
+      expect(w.maxHp).toBeGreaterThanOrEqual(1);
+      expect(w.maxHp).toBeLessThanOrEqual(4 + statModifier(w.stats.CON));
+    }
+  });
+
+  it("starts every character with a luck token", () => {
+    const engine = makeEngine();
+    expect(createCharacter(engine, "f", "Fighter", "fighter").luckToken).toBe(true);
+  });
+});
+
+describe("armor and AC", () => {
+  it("computes AC from armor base + capped DEX + shield", () => {
+    const engine = makeEngine();
+    const f = createCharacter(engine, "f", "Fighter", "fighter"); // chainmail + shield
+    const dex = statModifier(f.stats.DEX);
+    expect(f.ac).toBe(13 + dex + 2);
+    f.shieldStowed = true;
+    expect(f.ac).toBe(13 + dex);
+    f.equipArmor(item("plate-mail")); // dexCap 0
+    expect(f.ac).toBe(15);
+  });
+
+  it("unarmored AC is 10 + DEX", () => {
+    const engine = makeEngine();
+    const w = createCharacter(engine, "w", "Wizard", "wizard");
+    expect(w.ac).toBe(10 + statModifier(w.stats.DEX));
+  });
+
+  it("forbidden armor throws", () => {
+    const engine = makeEngine();
+    const w = createCharacter(engine, "w", "Wizard", "wizard");
+    expect(() => w.equipArmor(item("leather-armor"))).toThrow(/cannot wear/);
+    const t = createCharacter(engine, "t", "Thief", "thief");
+    expect(() => t.equipArmor(item("plate-mail"))).toThrow(/cannot wear/);
+  });
+});
+
+describe("attack fidelity", () => {
+  it("finesse weapons attack with DEX when it beats STR", () => {
+    const engine = makeEngine();
+    const t = new Character({
+      id: "t",
+      name: "Sneak",
+      className: "thief",
+      stats: { STR: 8, DEX: 16, CON: 10, INT: 10, WIS: 10, CHA: 10 },
+      maxHp: 6,
+    });
+    const r = engine.attack({ attacker: t, targetAc: 10, damage: "1d4", weapon: item("dagger") });
+    expect(r.check.modifier).toBe(3); // DEX +3, not STR -1
+  });
+
+  it("backstab extra dice raise the damage ceiling", () => {
+    const engine = makeEngine(3);
+    const t = new Character({
+      id: "t",
+      name: "Sneak",
+      className: "thief",
+      stats: { STR: 10, DEX: 16, CON: 10, INT: 10, WIS: 10, CHA: 10 },
+      maxHp: 6,
+    });
+    let sawAboveSingleDie = false;
+    for (let i = 0; i < 200; i++) {
+      const r = engine.attack({
+        attacker: t,
+        targetAc: 1,
+        damage: "1d4",
+        weapon: item("dagger"),
+        extraDamageDice: 2,
+      });
+      if (r.check.success && !r.check.crit && r.damage > 4) sawAboveSingleDie = true;
+    }
+    expect(sawAboveSingleDie).toBe(true);
+  });
+
+  it("a lowered crit range no longer auto-hits", () => {
+    const actor = new Character({
+      id: "c",
+      name: "Critter",
+      className: "fighter",
+      stats: { STR: 10, DEX: 10, CON: 10, INT: 10, WIS: 10, CHA: 10 },
+      maxHp: 10,
+    });
+    actor.addEffect({ id: "t", name: "crit 19", hooks: [{ kind: "critRange", value: 19 }] });
+    const dice = new Dice(2);
+    for (let i = 0; i < 500; i++) {
+      const r = resolveCheck(dice, { actor, stat: "STR", dc: 999, kind: "attack" });
+      if (r.natural === 19) {
+        expect(r.success).toBe(false); // hits DC 999 only on a natural 20
+        expect(r.crit).toBe(false);
+      }
+      if (r.natural === 20) expect(r.success).toBe(true);
+    }
+  });
+
+  it("fighter weapon mastery scales damage with half level", () => {
+    const engine = makeEngine();
+    const f = createCharacter(engine, "f", "Fighter", "fighter");
+    const base = f.damageBonus; // +1 mastery at level 1
+    f.level = 4;
+    expect(f.damageBonus).toBe(base + 2);
   });
 });
 
@@ -216,9 +340,11 @@ describe("advancement", () => {
     const award = engine.awardXp(f, 1);
     expect(award.leveledUp).toBe(true);
     const before = f.maxHp;
+    f.takeDamage(2);
     const result = engine.levelUp(f, "1d8", "fighter-talents");
     expect(result.newLevel).toBe(2);
     expect(f.maxHp).toBeGreaterThan(before);
+    expect(f.hp).toBe(f.maxHp); // leveling heals to full
     expect(f.xp).toBe(0);
     expect(f.effects.some((e) => e.id.startsWith("talent-L2"))).toBe(true);
   });

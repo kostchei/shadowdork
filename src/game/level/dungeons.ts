@@ -2,13 +2,34 @@
  * Replayable Five Room Dungeons assembled from the game's existing verbs.
  *
  * Every layout keeps the same compact character legend, which lets the scene
- * render any dungeon without knowing how it was authored. Layouts intentionally
- * vary their combat rhythm, verticality, hazards, and light placement while
- * remaining completable by the starting Fighter.
+ * render any dungeon without knowing how it was authored. Each dungeon draws
+ * its rooms from a themed variant pool (so The Ember Crypt always reads as a
+ * crypt), rescues follow a designed distribution (mostly front-loaded, with a
+ * tuned chance of one late reward rescue), and the climax's monster budget is
+ * chosen AFTER rescue placement so the boss room is always beatable by the
+ * party guaranteed to exist on arrival. Every generated grid passes
+ * validateGrid before it reaches the renderer — invalid grids throw.
  */
 
 export const DUNGEON_W = 120;
 export const DUNGEON_H = 17;
+
+/** Room bands along x, exclusive of the shared shell walls. */
+export const ROOM_BANDS: readonly { room: number; x1: number; x2: number }[] = [
+  { room: 1, x1: 1, x2: 20 },
+  { room: 2, x1: 22, x2: 41 },
+  { room: 3, x1: 43, x2: 63 },
+  { room: 4, x1: 65, x2: 84 },
+  { room: 5, x1: 86, x2: 97 },
+  { room: 6, x1: 99, x2: 118 }, // sanctuary
+];
+
+/** Chance a run places one rescue late, in the climax room, as a reward. */
+export const REWARD_RESCUE_CHANCE = 0.22;
+
+const MONSTER_TILES = new Set(["g", "s", "r", "O"]);
+const RESCUE_TILES = new Set(["2", "3", "4"]);
+export const LEGAL_TILES = new Set([..."." , ..."#%=|^P234gsrOcGIKtnfFDb*qvh:"]);
 
 export interface DungeonTheme {
   background: number;
@@ -18,6 +39,16 @@ export interface DungeonTheme {
   darkness: number;
 }
 
+/** Which authored variants each room may draw, per dungeon (theme coupling). */
+export interface VariantPools {
+  room1: readonly number[];
+  room2: readonly number[];
+  room3: readonly number[];
+  room4: readonly number[];
+  room5: readonly number[];
+  sanctuary: readonly number[];
+}
+
 export interface DungeonDefinition {
   id: string;
   name: string;
@@ -25,6 +56,11 @@ export interface DungeonDefinition {
   objective: string;
   grid: readonly string[];
   theme: DungeonTheme;
+  pools: VariantPools;
+  /** Crawling danger level: 1 deadly (check every crawl round), 2 risky, 3 unsafe. */
+  danger: 1 | 2 | 3;
+  /** Monster spawned by random encounters in this dungeon. */
+  encounterMonsterId: string;
 }
 
 interface GridBuilder {
@@ -89,15 +125,27 @@ function seededRng(seed: number) {
   return {
     next: rng,
     between: (min: number, max: number) => min + Math.floor(rng() * (max - min + 1)),
-    pick: <T>(arr: readonly T[]): T => arr[Math.floor(rng() * arr.length)]!,
+    pick: <T>(arr: readonly T[]): T => {
+      if (arr.length === 0) throw new Error("Cannot pick from an empty variant pool");
+      return arr[Math.floor(rng() * arr.length)]!;
+    },
+    shuffle: <T>(arr: readonly T[]): T[] => {
+      const out = [...arr];
+      for (let i = out.length - 1; i > 0; i--) {
+        const j = Math.floor(rng() * (i + 1));
+        [out[i], out[j]] = [out[j]!, out[i]!];
+      }
+      return out;
+    },
   };
 }
 
-function buildRoom1(g: GridBuilder, rng: ReturnType<typeof seededRng>, npc?: string): void {
-  // Always place player starting point at x=2, y=14
+type Rng = ReturnType<typeof seededRng>;
+
+function buildRoom1(g: GridBuilder, variant: number, npc?: string): void {
+  // The player always enters at x=2, y=14.
   g.put(2, 14, "P");
 
-  const variant = rng.between(0, 3);
   if (variant === 0) {
     // Gloom Entrance: guarded cage
     g.put(4, 14, "t");
@@ -151,8 +199,7 @@ function buildRoom1(g: GridBuilder, rng: ReturnType<typeof seededRng>, npc?: str
   g.divider(21);
 }
 
-function buildRoom2(g: GridBuilder, rng: ReturnType<typeof seededRng>, npc?: string): void {
-  const variant = rng.between(0, 3);
+function buildRoom2(g: GridBuilder, variant: number, npc?: string): void {
   if (variant === 0) {
     // Freezing Crossing
     g.hline(24, 26, 12, "=");
@@ -207,8 +254,7 @@ function buildRoom2(g: GridBuilder, rng: ReturnType<typeof seededRng>, npc?: str
   g.divider(42);
 }
 
-function buildRoom3(g: GridBuilder, rng: ReturnType<typeof seededRng>, npc?: string): void {
-  const variant = rng.between(0, 3);
+function buildRoom3(g: GridBuilder, variant: number, npc?: string): void {
   if (variant === 0) {
     // Spike Bed Ambush
     g.hline(46, 48, 15, ".");
@@ -268,11 +314,15 @@ function buildRoom3(g: GridBuilder, rng: ReturnType<typeof seededRng>, npc?: str
   g.divider(64);
 }
 
-function buildRoom4(g: GridBuilder, rng: ReturnType<typeof seededRng>, npc?: string): void {
+/**
+ * The climax. `easier` is set when only two rescues precede this room —
+ * the boss keeps the arena but sheds minions so the guaranteed-on-arrival
+ * party can win it. A solo-Fighter brute path exists in every variant.
+ */
+function buildRoom4(g: GridBuilder, variant: number, npc: string | undefined, easier: boolean): void {
   g.put(67, 14, "b");
-  g.put(69, 14, "g");
+  if (!easier) g.put(69, 14, "g");
 
-  const variant = rng.between(0, 3);
   if (variant === 0) {
     // Gloom Dais
     g.put(74, 14, "O");
@@ -306,14 +356,14 @@ function buildRoom4(g: GridBuilder, rng: ReturnType<typeof seededRng>, npc?: str
     } else {
       g.put(81, 8, "I");
     }
-    g.put(83, 14, "r");
+    if (!easier) g.put(83, 14, "r");
   } else {
     // Pit of the Beast
     g.put(74, 14, "O");
     g.hline(67, 69, 11, "=");
     g.hline(79, 81, 11, "=");
     g.put(68, 10, "s");
-    g.put(80, 10, "s");
+    if (!easier) g.put(80, 10, "s");
     if (npc) {
       g.put(77, 14, npc);
     } else {
@@ -323,8 +373,7 @@ function buildRoom4(g: GridBuilder, rng: ReturnType<typeof seededRng>, npc?: str
   g.divider(85);
 }
 
-function buildRoom5(g: GridBuilder, rng: ReturnType<typeof seededRng>): void {
-  const variant = rng.between(0, 3);
+function buildRoom5(g: GridBuilder, variant: number): void {
   if (variant === 0) {
     // Gloom Shrine
     g.put(87, 14, "s");
@@ -365,12 +414,12 @@ function buildRoom5(g: GridBuilder, rng: ReturnType<typeof seededRng>): void {
   g.divider(98);
 }
 
-function buildSanctuary(g: GridBuilder, rng: ReturnType<typeof seededRng>): void {
-  const variant = rng.between(0, 2);
-  g.put(103, 14, "F"); // Sanctuary Campfire
+function buildSanctuary(g: GridBuilder, variant: number): void {
+  g.put(103, 14, "F"); // Sanctuary campfire
+  g.put(101, 14, "h"); // Shrine: priest atonement
   if (variant === 0) {
     g.put(106, 14, "n");
-    g.put(112, 14, "D"); // Door
+    g.put(112, 14, "D");
   } else if (variant === 1) {
     g.put(106, 14, "t");
     g.put(108, 14, "*");
@@ -382,49 +431,142 @@ function buildSanctuary(g: GridBuilder, rng: ReturnType<typeof seededRng>): void
   }
 }
 
-export function generateSeededGrid(dungeonId: string, seed: number): readonly string[] {
-  void dungeonId;
-  const g = gridBuilder();
-  const rng = seededRng(seed);
-
-  // Assign recruits and items deterministically based on seed
-  // Thief (2) in Room 1 or 2
-  const npc1Room = rng.between(1, 2);
-  // Priest (3) in Room 2 or 3 (never overlaps with same room as Thief)
-  const npc2Room = rng.between(npc1Room + 1, 3);
-  // Wizard (4) in Room 3 or 4 (never overlaps with same room as Priest)
-  const npc3Room = rng.between(npc2Room + 1, 4);
-
-  const npcAt = (roomIdx: number): string | undefined => {
-    if (roomIdx === npc1Room) return "2";
-    if (roomIdx === npc2Room) return "3";
-    if (roomIdx === npc3Room) return "4";
-    return undefined;
-  };
-
-  buildRoom1(g, rng, npcAt(1));
-  buildRoom2(g, rng, npcAt(2));
-  buildRoom3(g, rng, npcAt(3));
-  buildRoom4(g, rng, npcAt(4));
-  buildRoom5(g, rng);
-  buildSanctuary(g, rng);
-
-  return g.finish();
+interface RescuePlacement {
+  /** room number -> rescue tile ("2" thief, "3" priest, "4" wizard). */
+  byRoom: Map<number, string>;
+  /** How many rescues sit in rooms 1–3, i.e. precede the climax. */
+  before4: number;
 }
 
-export const DUNGEONS: readonly DungeonDefinition[] = [
+/**
+ * Designed rescue distribution: all three rescues land in rooms 1–3 (one per
+ * room, shuffled), except a tuned REWARD_RESCUE_CHANCE of runs where one
+ * rescue becomes the climax room's reward (the bible's Chained Companion).
+ */
+function placeRescues(rng: Rng): RescuePlacement {
+  const npcs = ["2", "3", "4"];
+  const earlyRooms = rng.shuffle([1, 2, 3]);
+  const byRoom = new Map<number, string>();
+
+  if (rng.next() < REWARD_RESCUE_CHANCE) {
+    const rewardIdx = rng.between(0, 2);
+    byRoom.set(4, npcs[rewardIdx]!);
+    const rest = npcs.filter((_, i) => i !== rewardIdx);
+    byRoom.set(earlyRooms[0]!, rest[0]!);
+    byRoom.set(earlyRooms[1]!, rest[1]!);
+    return { byRoom, before4: 2 };
+  }
+
+  npcs.forEach((npc, i) => byRoom.set(earlyRooms[i]!, npc));
+  return { byRoom, before4: 3 };
+}
+
+function bandOf(x: number): number {
+  const band = ROOM_BANDS.find((b) => x >= b.x1 && x <= b.x2);
+  if (!band) throw new Error(`x=${x} falls on a divider or shell wall`);
+  return band.room;
+}
+
+/**
+ * Hard validation gate: every grid the renderer ever sees passes this.
+ * Structural rules AND the beatability budget — violations throw.
+ */
+export function validateGrid(grid: readonly string[]): void {
+  if (grid.length !== DUNGEON_H) throw new Error(`Grid height ${grid.length}, expected ${DUNGEON_H}`);
+  if (grid.some((row) => row.length !== DUNGEON_W)) {
+    throw new Error(`Grid row width mismatch, expected ${DUNGEON_W}`);
+  }
+
+  const positions = new Map<string, { x: number; y: number }[]>();
+  for (let y = 0; y < DUNGEON_H; y++) {
+    for (let x = 0; x < DUNGEON_W; x++) {
+      const ch = grid[y]![x]!;
+      if (!LEGAL_TILES.has(ch)) throw new Error(`Illegal tile "${ch}" at (${x},${y})`);
+      const list = positions.get(ch) ?? [];
+      list.push({ x, y });
+      positions.set(ch, list);
+    }
+  }
+
+  for (const required of ["P", "2", "3", "4", "K", "F", "D", "h"]) {
+    const n = positions.get(required)?.length ?? 0;
+    if (n !== 1) throw new Error(`Expected exactly one "${required}", found ${n}`);
+  }
+
+  // Structural placement rules.
+  if (bandOf(positions.get("P")![0]!.x) !== 1) throw new Error("Spawn must be in room 1");
+  if (bandOf(positions.get("K")![0]!.x) !== 5) throw new Error("Crown must be in the vault (room 5)");
+  if (bandOf(positions.get("F")![0]!.x) !== 6) throw new Error("Rest campfire must be in the sanctuary");
+  if (bandOf(positions.get("D")![0]!.x) !== 6) throw new Error("Exit door must be in the sanctuary");
+
+  // Beatability budget: a rescue in the climax band means the on-arrival
+  // party is smaller, so the climax must carry a trimmed monster manifest.
+  const climaxBand = ROOM_BANDS[3]!;
+  const inClimax = (x: number) => x >= climaxBand.x1 && x <= climaxBand.x2;
+  const rescueInClimax = [...RESCUE_TILES].some((t) =>
+    (positions.get(t) ?? []).some((p) => inClimax(p.x)),
+  );
+  let climaxMonsters = 0;
+  for (const t of MONSTER_TILES) {
+    climaxMonsters += (positions.get(t) ?? []).filter((p) => inClimax(p.x)).length;
+  }
+  if (climaxMonsters === 0) throw new Error("Climax room has no monsters");
+  if (rescueInClimax && climaxMonsters > 3) {
+    throw new Error(
+      `Climax holds a reward rescue but ${climaxMonsters} monsters — budget is 3 for a short-handed party`,
+    );
+  }
+}
+
+/** Build one validated grid for a dungeon's variant pools and a run seed. */
+export function generateGrid(pools: VariantPools, seed: number): readonly string[] {
+  const g = gridBuilder();
+  const rng = seededRng(seed);
+  const rescues = placeRescues(rng);
+  const easierClimax = rescues.before4 < 3;
+
+  buildRoom1(g, rng.pick(pools.room1), rescues.byRoom.get(1));
+  buildRoom2(g, rng.pick(pools.room2), rescues.byRoom.get(2));
+  buildRoom3(g, rng.pick(pools.room3), rescues.byRoom.get(3));
+  buildRoom4(g, rng.pick(pools.room4), rescues.byRoom.get(4), easierClimax);
+  buildRoom5(g, rng.pick(pools.room5));
+  buildSanctuary(g, rng.pick(pools.sanctuary));
+
+  const grid = g.finish();
+  validateGrid(grid);
+  return grid;
+}
+
+const ALL_SANCTUARIES = [0, 1, 2] as const;
+
+/**
+ * The dungeon library. Each dungeon's pools mix its signature variants with
+ * the theme-neutral ones (index 3), so identity and layout stay coupled.
+ * (The Crystal Chasm and Sunken Bastion recolors were removed: they return
+ * when they have at least one mechanic of their own — see the scope doc.)
+ */
+const DUNGEON_BASES: readonly Omit<DungeonDefinition, "grid">[] = [
   {
     id: "gloom-below",
     name: "The Gloom Below",
     tagline: "Old stone. Thin light. Hungry eyes.",
     objective: "Recover the Crown of the Deep",
-    grid: generateSeededGrid("gloom-below", 0),
+    danger: 2,
+    encounterMonsterId: "goblin",
+    pools: {
+      room1: [0, 3],
+      room2: [0, 3],
+      room3: [0, 3],
+      room4: [0, 3],
+      room5: [0, 3],
+      sanctuary: ALL_SANCTUARIES,
+    },
     theme: {
       background: 0x090b13,
       stoneTint: 0xaeb5d0,
-      accent: 0xd6a64b,
-      haze: 0x39476d,
-      darkness: 0x03040a,
+      accent: 0x8890c8,
+      haze: 0x232742,
+      darkness: 0x030408,
     },
   },
   {
@@ -432,13 +574,22 @@ export const DUNGEONS: readonly DungeonDefinition[] = [
     name: "The Ember Crypt",
     tagline: "The dead keep their fires burning.",
     objective: "Climb the reliquary and seize its crown",
-    grid: generateSeededGrid("ember-crypt", 1),
+    danger: 3,
+    encounterMonsterId: "skeleton",
+    pools: {
+      room1: [1, 3],
+      room2: [1, 3],
+      room3: [1, 3],
+      room4: [1, 3],
+      room5: [1, 3],
+      sanctuary: ALL_SANCTUARIES,
+    },
     theme: {
       background: 0x140b0a,
       stoneTint: 0xd0a692,
-      accent: 0xf0733e,
-      haze: 0x723726,
-      darkness: 0x080302,
+      accent: 0xe08040,
+      haze: 0x3a1d12,
+      darkness: 0x070302,
     },
   },
   {
@@ -446,49 +597,39 @@ export const DUNGEONS: readonly DungeonDefinition[] = [
     name: "The Mold Warrens",
     tagline: "Everything down here is growing.",
     objective: "Cross the warrens and rob the fungal shrine",
-    grid: generateSeededGrid("mold-warrens", 2),
+    danger: 1,
+    encounterMonsterId: "giant-rat",
+    pools: {
+      room1: [2, 3],
+      room2: [2, 3],
+      room3: [2, 3],
+      room4: [2, 3],
+      room5: [2, 3],
+      sanctuary: ALL_SANCTUARIES,
+    },
     theme: {
       background: 0x07100d,
       stoneTint: 0x9ebda6,
-      accent: 0x79d486,
-      haze: 0x285a48,
+      accent: 0x74c888,
+      haze: 0x14301e,
       darkness: 0x020806,
-    },
-  },
-  {
-    id: "crystal-chasm",
-    name: "The Crystal Chasm",
-    tagline: "A glowing labyrinth of razor-sharp crystal.",
-    objective: "Infiltrate the crystal vault and retrieve its crown",
-    grid: generateSeededGrid("crystal-chasm", 3),
-    theme: {
-      background: 0x0d0716,
-      stoneTint: 0xcda3e2,
-      accent: 0xd94cef,
-      haze: 0x49185a,
-      darkness: 0x050207,
-    },
-  },
-  {
-    id: "sunken-bastion",
-    name: "The Sunken Bastion",
-    tagline: "Water drips in the dark. The deep is waiting.",
-    objective: "Dive into the bastion and claim the submerged crown",
-    grid: generateSeededGrid("sunken-bastion", 4),
-    theme: {
-      background: 0x060f16,
-      stoneTint: 0x9cc3d6,
-      accent: 0x3bd5e7,
-      haze: 0x1f4d62,
-      darkness: 0x020508,
     },
   },
 ];
 
+export const DUNGEONS: readonly DungeonDefinition[] = DUNGEON_BASES.map((base, i) => ({
+  ...base,
+  grid: generateGrid(base.pools, i),
+}));
+
+/**
+ * The dungeon for a given run index. Pure: never mutates the library — the
+ * returned definition carries a fresh grid seeded by the run index, already
+ * validated by generateGrid.
+ */
 export function dungeonAt(index: number): DungeonDefinition {
   if (!Number.isInteger(index)) throw new Error(`Dungeon index must be an integer, got ${index}`);
-  const wrappedIndex = ((index % DUNGEONS.length) + DUNGEONS.length) % DUNGEONS.length;
-  const baseDungeon = DUNGEONS[wrappedIndex]!;
-  (baseDungeon as any).grid = generateSeededGrid(baseDungeon.id, index);
-  return baseDungeon;
+  const wrapped = ((index % DUNGEONS.length) + DUNGEONS.length) % DUNGEONS.length;
+  const base = DUNGEONS[wrapped]!;
+  return { ...base, grid: generateGrid(base.pools, index) };
 }

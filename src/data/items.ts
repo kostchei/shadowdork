@@ -8,9 +8,24 @@ const ITEM_LIST: readonly ItemDef[] = [
 
   // Weapons
   { id: "longsword", name: "Longsword", slotCost: 1, bundleSize: 1, tags: ["weapon"], damage: "1d8" },
-  { id: "dagger", name: "Dagger", slotCost: 1, bundleSize: 1, tags: ["weapon"], damage: "1d4" },
+  { id: "dagger", name: "Dagger", slotCost: 1, bundleSize: 1, tags: ["weapon"], damage: "1d4", finesse: true },
   { id: "mace", name: "Mace", slotCost: 1, bundleSize: 1, tags: ["weapon"], damage: "1d6" },
   { id: "staff", name: "Staff", slotCost: 1, bundleSize: 1, tags: ["weapon"], damage: "1d4", twoHanded: true },
+
+  // Armor — AC = acBase + DEX (capped); class permissions are RAW.
+  {
+    id: "leather-armor", name: "Leather Armor", slotCost: 1, bundleSize: 1, tags: ["armor"],
+    armor: { acBase: 11, dexCap: 99, classes: ["fighter", "priest", "thief"] },
+  },
+  {
+    id: "chainmail", name: "Chainmail", slotCost: 2, bundleSize: 1, tags: ["armor"],
+    armor: { acBase: 13, dexCap: 99, classes: ["fighter", "priest"] },
+  },
+  {
+    id: "plate-mail", name: "Plate Mail", slotCost: 3, bundleSize: 1, tags: ["armor"],
+    armor: { acBase: 15, dexCap: 0, classes: ["fighter", "priest"] },
+  },
+  { id: "shield", name: "Shield", slotCost: 1, bundleSize: 1, tags: ["armor"], shield: true },
 
   // Treasure — treasure IS XP (minor 1, major 2-3, legendary 10)
   // First 100 coins ride free; every 100 after costs a slot. XP: 1 per 100 banked (handled by the game).

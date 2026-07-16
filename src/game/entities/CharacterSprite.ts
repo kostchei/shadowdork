@@ -8,8 +8,15 @@ import Phaser from "phaser";
 import type { Character } from "../../engine";
 import { classDef, item, type ClassDef } from "../../data";
 import type { GameContext } from "../context";
+import { floatText } from "../systems/combat";
+import { flameFollowing } from "../fx/vfx";
 import type { LightSystem } from "../systems/light";
 import { SELF_GLOW_RADIUS } from "../systems/light";
+import { TILE } from "../textures";
+
+/** Falls up to this many tiles are free; beyond, 1d6 per 3 tiles (RAW ~10 ft). */
+const SAFE_FALL_TILES = 4;
+const TILES_PER_FALL_DIE = 3;
 
 const CLASS_SPEED: Record<string, number> = {
   fighter: 160,
@@ -42,6 +49,8 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
   private lastGroundedAt = 0;
   private shadow: Phaser.GameObjects.Image;
   private torchEmitter: Phaser.GameObjects.Particles.ParticleEmitter | null = null;
+  /** Highest point (lowest y) reached while airborne — falls measure from here. */
+  private fallPeakY: number | null = null;
 
   constructor(
     scene: Phaser.Scene,
@@ -119,6 +128,7 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
 
   tick(delta: number): void {
     this.swingCooldown = Math.max(0, this.swingCooldown - delta);
+    this.trackFalling();
     this.shadow.setPosition(this.x, this.y + 15).setVisible(!this.character.dead);
     const speedRatio = Math.min(1, Math.abs(this.body?.velocity.x ?? 0) / this.speed);
     this.shadow.setScale(1 - speedRatio * 0.12, 1);
@@ -144,20 +154,36 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
 
     if (this.torchLit) {
       if (!this.torchEmitter) {
-        this.torchEmitter = this.scene.add.particles(0, 0, "pixel", {
-          color: [0xff7722, 0xffaa44, 0xffe077],
-          speedY: { min: -25, max: -5 },
-          speedX: { min: -15, max: 15 },
-          scale: { start: 1.2, end: 0 },
-          lifespan: { min: 300, max: 700 },
-          frequency: 100,
-          blendMode: "ADD",
-        }).setDepth(12);
-        this.torchEmitter.startFollow(this, 6, -4);
+        this.torchEmitter = flameFollowing(this.scene, this, this.facing * 6, -4);
       }
+      // The torch hand leads: keep the flame on the facing side.
+      this.torchEmitter.followOffset.x = this.facing * 6;
     } else if (this.torchEmitter) {
       this.torchEmitter.destroy();
       this.torchEmitter = null;
+    }
+  }
+
+  /** RAW falling damage: 1d6 per ~10 ft. Short hops are free; long drops bite. */
+  private trackFalling(): void {
+    if (this.character.dead || this.climbing) {
+      this.fallPeakY = null;
+      return;
+    }
+    if (!this.grounded) {
+      if (this.fallPeakY === null || this.y < this.fallPeakY) this.fallPeakY = this.y;
+      return;
+    }
+    if (this.fallPeakY === null) return;
+    const tilesFallen = (this.y - this.fallPeakY) / TILE;
+    this.fallPeakY = null;
+    if (tilesFallen <= SAFE_FALL_TILES) return;
+    const diceCount = Math.max(1, Math.floor((tilesFallen - SAFE_FALL_TILES) / TILES_PER_FALL_DIE) + 1);
+    const dmg = this.ctx.engine.dice.roll(`${diceCount}d6`);
+    floatText(this.scene, this.x, this.y - 16, `-${dmg} fall`, "#ff8050");
+    const wentDown = this.ctx.engine.damageCharacter(this.character, dmg);
+    if (wentDown) {
+      this.ctx.say(`${this.character.name} hits the stone hard and goes down!`, "#ff5050");
     }
   }
 

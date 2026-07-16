@@ -47,6 +47,7 @@ const MONSTER_LIST: readonly MonsterDef[] = [
     wisMod: 0,
     darkvision: true,
     undead: false,
+    leader: true,
     xpTier: "major",
   },
 ];

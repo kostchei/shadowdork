@@ -30,6 +30,10 @@ export interface AttackInput {
   targetAc: number;
   /** Damage dice of the weapon/spell used, e.g. "1d8". */
   damage: string;
+  /** Attack stat. Melee defaults to STR; finesse picks the better of STR/DEX; ranged is DEX. */
+  weapon?: ItemDef;
+  /** Extra weapon damage dice on a hit (thief backstab: 1 + half level). */
+  extraDamageDice?: number;
   advantage?: readonly string[];
   disadvantage?: readonly string[];
 }
@@ -135,9 +139,13 @@ export class Engine {
   }
 
   attack(input: AttackInput): AttackResult {
+    // Finesse weapons swing on the better of STR/DEX (the Thief's dagger is DEX).
+    const finesse = input.weapon?.finesse === true;
+    const a = input.attacker;
+    const stat = finesse && a.mod("DEX") > a.mod("STR") ? "DEX" : "STR";
     const check = this.check({
-      actor: input.attacker,
-      stat: "STR",
+      actor: a,
+      stat,
       dc: input.targetAc,
       kind: "attack",
       advantage: input.advantage,
@@ -145,12 +153,16 @@ export class Engine {
     });
     let damage = 0;
     if (check.success) {
-      damage = this.dice.roll(input.damage) + input.attacker.damageBonus;
-      if (check.crit) damage += this.dice.roll(input.damage);
+      const diceRolls = 1 + (input.extraDamageDice ?? 0);
+      for (let i = 0; i < diceRolls; i++) damage += this.dice.roll(input.damage);
+      damage += a.damageBonus;
+      // Crits double the damage dice (all of them, backstab dice included).
+      if (check.crit) for (let i = 0; i < diceRolls; i++) damage += this.dice.roll(input.damage);
       damage = Math.max(1, damage);
     }
     this.log.append(this.clock.elapsedMs, "attack", {
-      who: input.attacker.id,
+      who: a.id,
+      stat,
       hit: check.success,
       crit: check.crit,
       damage,

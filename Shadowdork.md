@@ -39,14 +39,17 @@ lost spells recovered, until-rest conditions cleared, and a fresh torch per
 party member — then the exit door. (Planned rest-spot economy: free food vs
 food for sale, selling loot, shrines for priest atonement.)
 
-Level geometry is built programmatically (`src/game/level/dungeons.ts`) from
-room-segment placements into ASCII grids. Three complete dungeons ship today:
-**The Gloom Below**, **The Ember Crypt**, and **The Mold Warrens**. They vary
-verticality, hazards, monster rhythm, light placement, rescues, and vault
-approach while sharing one renderer. Runs rotate through the library after a
-win or wipe. The full level-design bible — per-room variant libraries, legal
-order shuffles, and 2D layout patterns (loops, vertical stacks, two-layer
-screens, foreshadowing) — is in
+Level geometry is built programmatically (`src/game/level/dungeons.ts`):
+every run seeds a fresh grid from the run index, drawing each room from the
+dungeon's **themed variant pool** so The Ember Crypt always reads as a crypt.
+Three dungeons ship today: **The Gloom Below**, **The Ember Crypt**, and
+**The Mold Warrens**, rotating after a win or wipe. Rescues follow a designed
+distribution — usually front-loaded into rooms 1–3, with a tuned ~22% of runs
+placing one rescue in the climax room as its *reward* (the party member IS
+the treasure); those runs get a trimmed boss-room monster budget so the
+short-handed party can still win. Every generated grid passes a hard
+validation gate (`validateGrid`) at runtime and in a seeded property-test
+sweep. The full level-design bible is in
 [docs/five-room-dungeons.md](docs/five-room-dungeons.md).
 
 ## The core tension: light
@@ -67,24 +70,46 @@ adjacent monsters, and teleport-catch-up if hopelessly separated. Tab or 1–4
 swaps leader instantly; if the leader drops, control passes to the next living
 member.
 
-**Classes are platformer verbs:**
-- *Fighter* — highest HP/AC, breaks weak walls, hauls extra gear (+CON slots).
-- *Thief* — climbs vine walls others can't, disarms spike traps by touch (DEX
-  check), backstab advantage on unaware enemies.
-- *Wizard* — ranged spell attacks; every cast is a real spell check, fail and
-  the spell is lost until rest, nat 1 rolls the mishap table live.
-- *Priest* — heals, turns undead (forced rout), Light spell as a hands-free
-  torch substitute.
+**Characters are rolled, not fixed**: 3d6 per stat, silently regenerated
+until the array is heroic (at least two stats 15+, at most one under 6).
+Stats drive everything — level-1 HP is the class hit die + CON, AC is
+computed from worn armor + DEX (capped per armor), attacks add STR (or DEX
+for finesse weapons). Everyone starts with one **luck token** (★): when a
+swing, cast, or stabilize fails, a short window opens — press L to spend the
+token and reroll.
+
+**Classes are platformer verbs (with RAW armor kits):**
+- *Fighter* — chainmail + shield, breaks weak walls, hauls extra gear (+CON
+  slots), Weapon Mastery (+1 attack/damage, +½ level damage).
+- *Thief* — leather armor, climbs vine walls others can't, disarms spike
+  traps (DEX check), backstab = advantage AND extra damage dice (1 + ½ level).
+- *Wizard* — no armor; ranged spell attacks; every cast is a real spell
+  check, fail and the spell is lost until rest, nat 1 rolls the mishap table.
+- *Priest* — chainmail + shield, heals, turns undead (forced rout), Light
+  spell as a hands-free torch substitute; a nat-1 cast cuts them off until
+  they atone at a shrine.
+
+**Shields vs torches**: a readied shield is +2 AC and a full hand. Lighting a
+torch slings the shield onto your back — light literally costs armor until
+the torch gutters out.
 
 ## Combat
 
 Real-time swings on a ~1 s cooldown (a compressed round), each resolving
-d20+STR vs AC through the engine. The natural die floats over every swing so
-the system stays legible. Crits double damage dice with screen-shake.
-**Advantage is positional**: above = advantage, backstab = advantage, airborne
-or in darkness = disadvantage — platforming skill literally improves your
-rolls. Monster **morale** breaks when half a group falls (DC 15 WIS): enemies
-rout and flee off-screen.
+d20+stat vs AC through the engine (finesse weapons use DEX). The natural die
+floats over every swing so the system stays legible. Crits double damage dice
+with screen-shake. **Advantage is positional**: above = advantage, backstab =
+advantage, airborne or in darkness = disadvantage — platforming skill
+literally improves your rolls. **Falling hurts**: drops beyond ~4 tiles deal
+1d6 per ~3 tiles (RAW 1d6 per 10 ft), so the high route is a bet. Spike traps
+allow a DEX save for half damage. Monster **morale** breaks when half a group
+falls (DC 15 WIS) — but a group led by a leader (the ogre) never checks while
+the leader stands, and the whole warband checks at once when it falls.
+
+**Random encounters** ride the engine's crawling clock: each dungeon has a
+danger cadence (the Mold Warrens check every crawling round), a 1-in-6 roll
+spawns a themed hunting wave at the screen edge — and in **total darkness the
+check runs every round**. The dark is not just disadvantage; it hunts.
 
 **Death timers as rescue windows**: at 0 HP a character collapses with a
 visible 1d4+CON round countdown (nat 20 on any round self-revives at 1 HP).
@@ -110,8 +135,9 @@ party-wide.
 | J or X | Attack (fighter: also smashes weak walls) |
 | K or C | Cast prepared spell |
 | Q | Cycle prepared spell |
-| T | Light a torch |
-| E | Interact (rescue / stabilize / disarm / rest / exit) |
+| T | Light a torch (slings a readied shield) |
+| E | Interact (rescue / stabilize / disarm / atone / rest / exit) — a prompt shows what E will do |
+| L | Spend your luck token to reroll a just-failed swing/cast/stabilize |
 | H | Followers: follow ↔ hold |
 | Tab / 1–4 | Swap leader |
 | R | Enter the next dungeon after win or wipe |
@@ -128,8 +154,11 @@ tests/         engine unit tests (vitest, seeded dice)
 
 ## Roadmap
 
-- Rest-spot economy: buy food, sell loot, priest atonement at shrines.
-- Procedural room-variant composition and multi-dungeon campaigns with retained parties.
-- Random encounters on the crawling-round clock (engine hook already exists).
-- Ancestries, luck tokens, stealth/surprise (see the RAW pseudocode doc).
+The full prioritized scope lives in [docs/scope-of-works.md](docs/scope-of-works.md).
+
+- Rest-spot economy: buy food, sell loot, shrine atonement costs.
+- Room builders with metadata + bible invariants enforced at assembly (WS-3):
+  interactables, gates, throwables, zone effects, water, AI flags.
+- Multi-dungeon campaigns with retained parties, difficulty tiers, run history.
+- Ancestries, stealth/surprise (see the RAW pseudocode doc).
 - Sound, real art, mobile touch controls.

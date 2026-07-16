@@ -247,13 +247,16 @@ the player can *see* rooms they can't reach yet.
 ## Implementation status
 
 Works today: light/darkness + `snuffAll`, torch timers, weak walls, climb
-walls, one-way platforms, spikes, morale + rout, rescues + death timers, gear
-slots + auto-loot + coin banking, room dividers, and a reusable dungeon library
-(`src/game/level/dungeons.ts`). The library currently ships three Five Room
-layouts with distinct geometry, encounter cadence, rescue placement, light
-placement, decoration, palette, and reward approach. Runs rotate through them
-after a win or wipe, and tests validate every grid's dimensions, tile alphabet,
-and mandatory encounter markers.
+walls, one-way platforms, spikes (with DEX saves), falling damage, morale +
+rout + **leader-led groups** (the Warchief rule: the ogre's band never checks
+while it stands, and mass-checks when it falls), rescues + death timers, gear
+slots + auto-loot + coin banking, armor + shields (shield hand vs torch hand),
+luck tokens, **random encounters on the crawling clock** (every round in total
+darkness), shrine atonement, room dividers, and a seeded dungeon library
+(`src/game/level/dungeons.ts`). Each dungeon draws rooms from a themed variant
+pool; rescues follow a designed distribution with a tuned reward-rescue chance
+in the climax (budget-trimmed for beatability); `validateGrid` gates every
+generated grid at runtime and a 200-seed property sweep runs in tests.
 
 Highest-leverage new primitives (each unlocks several variants above):
 1. **Interactables** — levers, pressure plates, offering bowls, winches,

@@ -5,11 +5,12 @@
  */
 
 import Phaser from "phaser";
-import { classDef, createCharacter, item, monster } from "../../data";
-import type { Character } from "../../engine";
+import { classDef, createCharacter, item, monster, spell } from "../../data";
+import { DC } from "../../engine";
 import { GameContext } from "../context";
 import { CharacterSprite } from "../entities/CharacterSprite";
 import { MonsterSprite, MONSTER_ATTACK_COOLDOWN_MS } from "../entities/MonsterSprite";
+import { flameAt, sparkleBurst } from "../fx/vfx";
 import {
   floatText,
   meleeSwing,
@@ -17,6 +18,7 @@ import {
   MoraleTracker,
   type MeleeDeps,
 } from "../systems/combat";
+import { EncounterSystem } from "../systems/encounters";
 import { CAMPFIRE_RADIUS, LightSystem } from "../systems/light";
 import { PartyManager } from "../systems/party";
 import { CLOSE_PX, zoneBetween } from "../systems/position";
@@ -24,6 +26,7 @@ import { castSelectedSpell, type SpellDeps } from "../systems/spells";
 import {
   DUNGEON_H,
   DUNGEON_W,
+  ROOM_BANDS,
   dungeonAt,
   type DungeonDefinition,
 } from "../level/dungeons";
@@ -45,6 +48,20 @@ interface Pickup {
   qty: number;
 }
 
+/** A short window in which L spends a luck token to reroll the leader's last failure. */
+export interface LuckWindow {
+  member: CharacterSprite;
+  label: string;
+  redo: () => void;
+  expiresAt: number;
+}
+
+/** What pressing E would do right now — also drives the on-screen prompt. */
+interface Interaction {
+  label: string;
+  run: () => void;
+}
+
 export class DungeonScene extends Phaser.Scene {
   ctx!: GameContext;
   party!: PartyManager;
@@ -56,15 +73,21 @@ export class DungeonScene extends Phaser.Scene {
   private climbTiles: Phaser.GameObjects.Rectangle[] = [];
   private spikes: Phaser.Physics.Arcade.Image[] = [];
   private monsters: MonsterSprite[] = [];
+  private monsterGroup!: Phaser.GameObjects.Group;
   private pickups: Pickup[] = [];
   private npcs: RescuableNpc[] = [];
   private campfires: { x: number; y: number; free: boolean }[] = [];
+  private shrines: { x: number; y: number }[] = [];
   private door!: { x: number; y: number };
   private morale = new MoraleTracker();
   private dyingLabels = new Map<string, Phaser.GameObjects.Text>();
   private gameOver = false;
   private won = false;
   private lastHurtAt = new Map<string, number>();
+  private encounterWaves = 0;
+  private interactPrompt!: Phaser.GameObjects.Text;
+  /** Read by the HUD to show the reroll hint. */
+  luckWindow: LuckWindow | null = null;
 
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
 
@@ -82,10 +105,13 @@ export class DungeonScene extends Phaser.Scene {
     this.pickups = [];
     this.npcs = [];
     this.campfires = [];
+    this.shrines = [];
     this.climbTiles = [];
     this.spikes = [];
     this.dyingLabels = new Map();
     this.morale = new MoraleTracker();
+    this.luckWindow = null;
+    this.encounterWaves = 0;
 
     const storedIndex = this.registry.get("dungeonIndex");
     const dungeonIndex = typeof storedIndex === "number" ? storedIndex : 0;
@@ -106,13 +132,35 @@ export class DungeonScene extends Phaser.Scene {
 
     // Colliders
     const partyGroup = this.add.group(this.party.members);
-    const monsterGroup = this.add.group(this.monsters);
+    this.monsterGroup = this.add.group(this.monsters);
     this.physics.add.collider(partyGroup, this.walls);
     this.physics.add.collider(partyGroup, this.weakWalls);
-    this.physics.add.collider(monsterGroup, this.walls);
-    this.physics.add.collider(monsterGroup, this.weakWalls);
+    this.physics.add.collider(this.monsterGroup, this.walls);
+    this.physics.add.collider(this.monsterGroup, this.weakWalls);
 
     this.cameras.main.startFollow(this.party.leader, true, 0.12, 0.12);
+
+    this.interactPrompt = this.add
+      .text(0, 0, "", {
+        fontFamily: "Consolas, monospace",
+        fontSize: "12px",
+        color: "#ffe9a0",
+        stroke: "#050508",
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5, 1)
+      .setDepth(940)
+      .setVisible(false);
+
+    // Random encounters ride the engine's crawling clock.
+    new EncounterSystem({
+      ctx: this.ctx,
+      dungeon: this.activeDungeon,
+      camera: () => this.cameras.main,
+      partyInTotalDarkness: () =>
+        this.party.aliveMembers().every((m) => this.light.levelAt(m.x, m.y) === "dark"),
+      spawnWave: (monsterId, count, x) => this.spawnEncounterWave(monsterId, count, x),
+    });
 
     this.ctx.say(
       `${this.activeDungeon.name}. ${this.activeDungeon.objective}. Watch your torch.`,
@@ -121,6 +169,27 @@ export class DungeonScene extends Phaser.Scene {
     this.cameras.main.fadeIn(450, 0, 0, 0);
 
     this.scene.launch("Hud");
+  }
+
+  /** Spawn an encounter wave off-screen, already hunting the party. */
+  private spawnEncounterWave(monsterId: string, count: number, x: number): void {
+    if (this.gameOver || this.won) return;
+    const clampedX = Phaser.Math.Clamp(x, TILE * 1.5, (DUNGEON_W - 2) * TILE);
+    const groupId = `encounter-${this.encounterWaves++}`;
+    for (let i = 0; i < count; i++) {
+      const m = new MonsterSprite(
+        this,
+        clampedX + i * 14,
+        13 * TILE,
+        monster(monsterId),
+        groupId,
+        this.ctx.engine.dice,
+      );
+      m.aiState = "aggro";
+      this.morale.register(m);
+      this.monsters.push(m);
+      this.monsterGroup.add(m);
+    }
   }
 
   get hasCrown(): boolean {
@@ -252,8 +321,10 @@ export class DungeonScene extends Phaser.Scene {
           case "r":
           case "O": {
             const defId = { g: "goblin", s: "skeleton", r: "giant-rat", O: "gloom-ogre" }[ch];
-            const groupId = `${defId}-${Math.floor(x / 12)}`;
-            const m = new MonsterSprite(this, px, py, monster(defId), groupId, this.ctx.engine.dice);
+            // One morale group per room: a leader in the room commands all of it.
+            const band = ROOM_BANDS.find((b) => x >= b.x1 && x <= b.x2);
+            if (!band) throw new Error(`Monster at x=${x} sits on a room divider`);
+            const m = new MonsterSprite(this, px, py, monster(defId), `room-${band.room}`, this.ctx.engine.dice);
             this.morale.register(m);
             this.monsters.push(m);
             break;
@@ -281,15 +352,12 @@ export class DungeonScene extends Phaser.Scene {
             this.add.image(px, py + 6, "campfire").setDepth(5);
             this.campfires.push({ x: px, y: py, free: ch === "F" });
             this.light.addSource(CAMPFIRE_RADIUS, () => ({ x: px, y: py }));
-            this.add.particles(px, py + 2, "pixel", {
-              color: [0xffa500, 0xff4500, 0xffd700],
-              speedY: { min: -40, max: -15 },
-              speedX: { min: -10, max: 10 },
-              scale: { start: 1.5, end: 0 },
-              lifespan: { min: 600, max: 1200 },
-              frequency: 120,
-              blendMode: "ADD",
-            }).setDepth(4);
+            flameAt(this, px, py + 2, "campfire");
+            break;
+          }
+          case "h": {
+            this.add.image(px, py + 2, "shrine").setDepth(5);
+            this.shrines.push({ x: px, y: py });
             break;
           }
           case "b": {
@@ -303,15 +371,7 @@ export class DungeonScene extends Phaser.Scene {
               yoyo: true,
               repeat: -1,
             });
-            this.add.particles(px, py - 4, "pixel", {
-              color: [0xff4500, 0xff8c00, 0xffd700],
-              speedY: { min: -30, max: -10 },
-              speedX: { min: -6, max: 6 },
-              scale: { start: 1.2, end: 0 },
-              lifespan: { min: 400, max: 900 },
-              frequency: 180,
-              blendMode: "ADD",
-            }).setDepth(4);
+            flameAt(this, px, py - 4, "brazier");
             break;
           }
           case "*":
@@ -374,7 +434,7 @@ export class DungeonScene extends Phaser.Scene {
     const kb = this.input.keyboard;
     if (!kb) throw new Error("Keyboard input unavailable");
     this.keys = kb.addKeys(
-      "A,D,W,LEFT,RIGHT,UP,SPACE,J,X,K,C,Q,E,T,H,R,TAB,ONE,TWO,THREE,FOUR",
+      "A,D,W,LEFT,RIGHT,UP,SPACE,J,X,K,C,Q,E,T,H,L,R,TAB,ONE,TWO,THREE,FOUR",
     ) as Record<string, Phaser.Input.Keyboard.Key>;
     kb.on("keydown-TAB", (ev: KeyboardEvent) => ev.preventDefault());
   }
@@ -395,8 +455,47 @@ export class DungeonScene extends Phaser.Scene {
     this.updateFollowerCombat();
     for (const m of this.party.members) m.tick(delta);
     this.light.update();
+    this.updateInteractPrompt();
+    this.updateLuckWindow(time);
     this.checkLevelUps();
     this.checkEndConditions();
+  }
+
+  /** Floating "E — do the thing" prompt above the leader. */
+  private updateInteractPrompt(): void {
+    const leader = this.party.leader;
+    const interaction = leader.alive ? this.findInteraction(leader) : null;
+    if (interaction) {
+      this.interactPrompt
+        .setText(`E — ${interaction.label}`)
+        .setPosition(leader.x, leader.y - 42)
+        .setVisible(true);
+    } else {
+      this.interactPrompt.setVisible(false);
+    }
+  }
+
+  private updateLuckWindow(time: number): void {
+    const w = this.luckWindow;
+    if (!w) return;
+    if (time > w.expiresAt || w.member !== this.party.leader || !w.member.alive) {
+      this.luckWindow = null;
+      return;
+    }
+    if (this.justDown("L")) {
+      const c = w.member.character;
+      if (!c.luckToken) throw new Error(`${c.name} has no luck token but a luck window was open`);
+      c.luckToken = false;
+      this.luckWindow = null;
+      this.ctx.say(`${c.name} spends their luck — ${w.label}!`, "#ffd040");
+      w.redo();
+    }
+  }
+
+  /** Open a short reroll window if the member still holds their luck token. */
+  private offerLuck(member: CharacterSprite, label: string, redo: () => void): void {
+    if (!member.character.luckToken) return;
+    this.luckWindow = { member, label, redo, expiresAt: this.time.now + 2500 };
   }
 
   private justDown(key: string): boolean {
@@ -467,18 +566,32 @@ export class DungeonScene extends Phaser.Scene {
 
     // Attack
     if (this.keys.J!.isDown || this.keys.X!.isDown) {
-      const swung = meleeSwing(this.meleeDeps(), leader);
-      if (swung && leader.character.className === "fighter") this.breakWeakWalls(leader);
+      const outcome = meleeSwing(this.meleeDeps(), leader);
+      if (outcome.swung && leader.character.className === "fighter") this.breakWeakWalls(leader);
+      if (outcome.check && !outcome.check.success) {
+        this.offerLuck(leader, "the blade finds its mark", () => {
+          leader.swingCooldown = 0;
+          meleeSwing(this.meleeDeps(), leader);
+        });
+      }
     }
 
     // Cast / cycle spell
     if (this.justDown("Q") && leader.character.knownSpells.length > 0) {
       leader.spellIndex = (leader.spellIndex + 1) % leader.character.knownSpells.length;
       const slot = leader.character.knownSpells[leader.spellIndex]!;
-      this.ctx.say(`Prepared: ${slot.spellId}${slot.status === "lost" ? " (LOST)" : ""}`);
+      this.ctx.say(`Prepared: ${spell(slot.spellId).name}${slot.status === "lost" ? " (LOST)" : ""}`);
     }
-    if ((this.keys.K!.isDown || this.keys.C!.isDown) && leader.character.knownSpells.length > 0) {
-      castSelectedSpell(this.spellDeps(), leader);
+    if ((this.justDown("K") || this.justDown("C")) && leader.character.knownSpells.length > 0) {
+      const result = castSelectedSpell(this.spellDeps(), leader);
+      // Luck can save a plain failure; a nat-1 mishap already detonated — no take-backs.
+      if (result?.outcome === "fail") {
+        this.offerLuck(leader, "the weave holds", () => {
+          leader.character.knownSpell(result.spell.id).status = "available";
+          leader.swingCooldown = 0;
+          castSelectedSpell(this.spellDeps(), leader);
+        });
+      }
     }
 
     // Torch
@@ -539,14 +652,23 @@ export class DungeonScene extends Phaser.Scene {
       this.ctx.say(`${leader.character.name} has no torches left!`, "#d07070");
       return;
     }
-    leader.character.inventory.remove("torch", 1);
     const c = leader.character;
+    // The torch hand: a readied shield gets slung on the back. Light costs AC.
+    if (!c.handFreeOfShield) {
+      c.shieldStowed = true;
+      this.ctx.say(`${c.name} slings the shield to carry the light (−2 AC).`, "#e0c060");
+    }
+    c.inventory.remove("torch", 1);
     leader.torchTimerId = this.light.lightTorch(
       c.id,
       () => (c.dead || !this.torchStillHeld(leader) ? null : { x: leader.x, y: leader.y }),
       () => {
         this.ctx.say(`${c.name}'s torch gutters out. The dark presses close.`, "#d07070");
         leader.torchTimerId = null;
+        if (c.carriedShield && c.shieldStowed) {
+          c.shieldStowed = false;
+          this.ctx.say(`${c.name} readies the shield again (+2 AC).`);
+        }
       },
     );
     this.ctx.say(
@@ -560,22 +682,22 @@ export class DungeonScene extends Phaser.Scene {
   }
 
   private interact(leader: CharacterSprite): void {
+    const interaction = this.findInteraction(leader);
+    if (interaction) interaction.run();
+    else this.ctx.say("Nothing to do here.");
+  }
+
+  /** Priority-ordered E action for the leader's position — also feeds the prompt. */
+  private findInteraction(leader: CharacterSprite): Interaction | null {
     // 1. Stabilize a dying ally
     const dying = this.party.members.find(
       (m) => m !== leader && m.character.dying && zoneBetween(leader, m) === "close",
     );
     if (dying) {
-      if (!leader.canSwing()) return;
-      leader.startSwingCooldown();
-      const result = this.ctx.engine.stabilize(leader.character, dying.character);
-      if (result.success) {
-        floatText(this, dying.x, dying.y - 20, `${result.natural} stable!`, "#60e080");
-        this.ctx.say(`${dying.character.name} is stabilized at 1 HP.`, "#60e080");
-      } else {
-        floatText(this, dying.x, dying.y - 20, `${result.natural} — failed`, "#d07070");
-        this.ctx.say(`Stabilize failed (rolled ${result.total} vs DC 15). Try again!`, "#d07070");
-      }
-      return;
+      return {
+        label: `stabilize ${dying.character.name}`,
+        run: () => this.tryStabilize(leader, dying),
+      };
     }
 
     // 2. Rescue an NPC
@@ -583,18 +705,22 @@ export class DungeonScene extends Phaser.Scene {
       (n) => !n.rescued && Phaser.Math.Distance.Between(leader.x, leader.y, n.x, n.y) < TILE * 1.6,
     );
     if (npc) {
-      npc.rescued = true;
-      npc.sprite.destroy();
-      npc.prop?.destroy();
-      const recruit = this.spawnCharacter(`pc-${npc.className}`, npc.name, npc.className, npc.x, npc.y);
-      this.party.add(recruit);
-      this.physics.add.collider(recruit, this.walls);
-      this.physics.add.collider(recruit, this.weakWalls);
-      this.ctx.say(
-        `${npc.name} the ${classDef(npc.className).displayName} joins the party! (${this.party.size}/4)`,
-        "#60e080",
-      );
-      return;
+      return {
+        label: `rescue ${npc.name}`,
+        run: () => {
+          npc.rescued = true;
+          npc.sprite.destroy();
+          npc.prop?.destroy();
+          const recruit = this.spawnCharacter(`pc-${npc.className}`, npc.name, npc.className, npc.x, npc.y);
+          this.party.add(recruit);
+          this.physics.add.collider(recruit, this.walls);
+          this.physics.add.collider(recruit, this.weakWalls);
+          this.ctx.say(
+            `${npc.name} the ${classDef(npc.className).displayName} joins the party! (${this.party.size}/4)`,
+            "#60e080",
+          );
+        },
+      };
     }
 
     // 3. Disarm spikes (thief)
@@ -603,39 +729,89 @@ export class DungeonScene extends Phaser.Scene {
         (s) => s.active && Phaser.Math.Distance.Between(leader.x, leader.y, s.x, s.y) < TILE * 2,
       );
       if (nearSpikes.length > 0) {
-        const result = this.ctx.engine.check({
-          actor: leader.character,
-          stat: "DEX",
-          dc: 12,
-          kind: "stat",
-        });
-        if (result.success) {
-          for (const s of nearSpikes) s.destroy();
-          this.ctx.say(`${leader.character.name} disarms the spike trap. (rolled ${result.total})`, "#60e080");
-        } else {
-          this.ctx.say(`Disarm failed (rolled ${result.total} vs DC 12).`, "#d07070");
-        }
-        return;
+        return {
+          label: "disarm the spikes",
+          run: () => {
+            const result = this.ctx.engine.check({
+              actor: leader.character,
+              stat: "DEX",
+              dc: DC.NORMAL,
+              kind: "stat",
+            });
+            if (result.success) {
+              for (const s of nearSpikes) s.destroy();
+              this.spikes = this.spikes.filter((s) => s.active);
+              this.ctx.say(`${leader.character.name} disarms the spike trap. (rolled ${result.total})`, "#60e080");
+            } else {
+              this.ctx.say(`Disarm failed (rolled ${result.total} vs DC ${DC.NORMAL}).`, "#d07070");
+            }
+          },
+        };
       }
     }
 
-    // 4. Rest at campfire
+    // 4. Atone at a shrine (priest whose deity has cut them off)
+    const shrine = this.shrines.find(
+      (s) => Phaser.Math.Distance.Between(leader.x, leader.y, s.x, s.y) < TILE * 2,
+    );
+    if (shrine && leader.character.knownSpells.some((s) => s.requiresAtonement)) {
+      return {
+        label: "atone at the shrine",
+        run: () => {
+          for (const s of leader.character.knownSpells) {
+            if (s.requiresAtonement) {
+              s.requiresAtonement = false;
+              s.status = "available";
+            }
+          }
+          this.ctx.say(
+            `${leader.character.name} kneels in penance — the deity's silence lifts.`,
+            "#f0e090",
+          );
+        },
+      };
+    }
+
+    // 5. Rest at campfire
     const fire = this.campfires.find(
       (f) => Phaser.Math.Distance.Between(leader.x, leader.y, f.x, f.y) < TILE * 2.5,
     );
     if (fire) {
-      this.restParty(fire.free);
-      return;
+      return {
+        label: fire.free ? "rest (safe haven)" : "rest (1 ration each)",
+        run: () => this.restParty(fire.free),
+      };
     }
 
-    // 5. Exit door
+    // 6. Exit door
     if (Phaser.Math.Distance.Between(leader.x, leader.y, this.door.x, this.door.y) < TILE * 1.6) {
-      this.won = true;
-      this.ctx.events.emit("won");
-      return;
+      return {
+        label: this.hasCrown ? "leave with the crown" : "leave empty-handed",
+        run: () => {
+          this.won = true;
+          this.ctx.events.emit("won");
+        },
+      };
     }
 
-    this.ctx.say("Nothing to do here.");
+    return null;
+  }
+
+  private tryStabilize(leader: CharacterSprite, dying: CharacterSprite): void {
+    if (!leader.canSwing()) return;
+    leader.startSwingCooldown();
+    const result = this.ctx.engine.stabilize(leader.character, dying.character);
+    if (result.success) {
+      floatText(this, dying.x, dying.y - 20, `${result.natural} stable!`, "#60e080");
+      this.ctx.say(`${dying.character.name} is stabilized at 1 HP.`, "#60e080");
+    } else {
+      floatText(this, dying.x, dying.y - 20, `${result.natural} — failed`, "#d07070");
+      this.ctx.say(`Stabilize failed (rolled ${result.total} vs DC 15). Try again!`, "#d07070");
+      this.offerLuck(leader, "steady hands", () => {
+        leader.swingCooldown = 0;
+        if (dying.character.dying) this.tryStabilize(leader, dying);
+      });
+    }
   }
 
   private restParty(free: boolean): void {
@@ -700,6 +876,7 @@ export class DungeonScene extends Phaser.Scene {
 
   private killMonster(m: MonsterSprite): void {
     floatText(this, m.x, m.y - 10, "slain", "#c0c0c0");
+    this.ctx.kills++;
     this.dropLoot(m);
     this.morale.onDeath(this.ctx, this, m, this.monsters);
     this.tweens.add({
@@ -745,8 +922,9 @@ export class DungeonScene extends Phaser.Scene {
   }
 
   private updatePickups(): void {
+    // Collected pickups leave the list — don't rescan dead sprites every frame.
+    this.pickups = this.pickups.filter((p) => p.sprite.active);
     for (const p of this.pickups) {
-      if (!p.sprite.active) continue;
       const collector = this.party
         .aliveMembers()
         .find((m) => Phaser.Math.Distance.Between(m.x, m.y, p.sprite.x, p.sprite.y) < 26);
@@ -762,19 +940,9 @@ export class DungeonScene extends Phaser.Scene {
       const pyCoord = p.sprite.y;
       p.sprite.destroy();
 
-      // Sparkles explosion
-      const sparklesColor = def.id === "gem" || def.id === "jeweled-idol" || def.id === "crown-of-the-deep"
-        ? [0x69e4df, 0xc5ffff, 0xffffff]
-        : [0xffd700, 0xffea70, 0xffffff];
-      const sparkles = this.add.particles(pxCoord, pyCoord, "pixel", {
-        color: sparklesColor,
-        speed: { min: 30, max: 90 },
-        scale: { start: 1.8, end: 0 },
-        lifespan: { min: 250, max: 550 },
-        blendMode: "ADD",
-      }).setDepth(25);
-      sparkles.explode(12);
-      this.time.delayedCall(600, () => sparkles.destroy());
+      const jewel =
+        def.id === "gem" || def.id === "jeweled-idol" || def.id === "crown-of-the-deep";
+      sparkleBurst(this, pxCoord, pyCoord, jewel);
       // Coins bank toward 100-coin XP thresholds; other treasure is XP outright.
       const xp = def.id === "coins" ? this.ctx.bankCoins(p.qty) : (def.xpValue ?? 0);
       const label = p.qty > 1 ? `${p.qty} ${def.name}` : def.name;
@@ -793,17 +961,35 @@ export class DungeonScene extends Phaser.Scene {
   }
 
   private updateSpikes(time: number): void {
+    this.spikes = this.spikes.filter((s) => s.active);
     for (const s of this.spikes) {
-      if (!s.active) continue;
       for (const m of this.party.aliveMembers()) {
         if (Math.abs(m.x - s.x) < 20 && Math.abs(m.y - s.y) < 26) {
           const last = this.lastHurtAt.get(m.character.id) ?? -Infinity;
           if (time - last < 800) continue;
           this.lastHurtAt.set(m.character.id, time);
-          const dmg = this.ctx.engine.dice.roll("1d6");
-          floatText(this, m.x, m.y - 16, `-${dmg} spikes`, "#ff5050");
-          const wentDown = this.ctx.engine.damageCharacter(m.character, dmg);
+          // RAW traps allow a save: DEX check to twist aside for half damage.
+          const save = this.ctx.engine.check({
+            actor: m.character,
+            stat: "DEX",
+            dc: DC.NORMAL,
+            kind: "stat",
+          });
+          const rolled = this.ctx.engine.dice.roll("1d6");
+          const dmg = save.success ? Math.floor(rolled / 2) : rolled;
           m.setVelocityY(-260);
+          if (dmg === 0) {
+            floatText(this, m.x, m.y - 16, `${save.natural} — twists clear!`, "#60e080");
+            continue;
+          }
+          floatText(
+            this,
+            m.x,
+            m.y - 16,
+            save.success ? `-${dmg} spikes (grazed)` : `-${dmg} spikes`,
+            "#ff5050",
+          );
+          const wentDown = this.ctx.engine.damageCharacter(m.character, dmg);
           if (wentDown) this.ctx.say(`${m.character.name} is impaled and down!`, "#ff5050");
         }
       }

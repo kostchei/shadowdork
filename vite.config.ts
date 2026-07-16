@@ -30,7 +30,8 @@ function screenshotEndpoint(): Plugin {
 }
 
 export default defineConfig({
-  server: { port: 5173 },
+  // PORT is set by tooling that assigns a free port; 5173 is the manual default.
+  server: { port: process.env.PORT ? Number(process.env.PORT) : 5173 },
   build: { target: "es2022" },
   plugins: [screenshotEndpoint()],
 });

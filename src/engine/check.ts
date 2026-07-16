@@ -67,14 +67,15 @@ export function resolveCheck(dice: Dice, input: CheckInput): CheckResult {
   const total = roll.natural + modifier;
 
   const critAt = kind === "attack" ? (input.critThreshold ?? actor.critThreshold) : 20;
-  const crit = roll.natural >= critAt;
   const fumble = roll.natural === 1;
 
-  const success = fumble ? false : roll.natural === 20 ? true : crit ? true : total >= dc;
+  // Only a natural 20 auto-succeeds; a talent-lowered crit range still has to hit.
+  const success = fumble ? false : roll.natural === 20 ? true : total >= dc;
+  const crit = success && roll.natural >= critAt;
 
   return {
     success,
-    crit: crit && !fumble,
+    crit,
     fumble,
     natural: roll.natural,
     total,

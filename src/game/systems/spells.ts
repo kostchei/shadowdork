@@ -93,6 +93,19 @@ function resolveSpellEffect(deps: SpellDeps, caster: CharacterSprite, result: Ca
       const victims = deps.monsters().filter(
         (m) => m.aliveInFight && zoneBetween(caster, m) === "close",
       );
+      // Fire spray particles
+      const fireParticles = scene.add.particles(caster.x + caster.facing * 10, caster.y, "pixel", {
+        color: [0xff4500, 0xff8c00, 0xffd700],
+        speedX: { min: caster.facing * 80, max: caster.facing * 180 },
+        speedY: { min: -40, max: 40 },
+        scale: { start: 2.5, end: 0 },
+        lifespan: { min: 200, max: 450 },
+        duration: 250,
+        maxParticles: 25,
+        blendMode: "ADD",
+      }).setDepth(25);
+      scene.time.delayedCall(800, () => fireParticles.destroy());
+
       if (victims.length === 0) {
         ctx.say("Flames fan out over nothing.");
         return;
@@ -127,6 +140,20 @@ function resolveSpellEffect(deps: SpellDeps, caster: CharacterSprite, result: Ca
       const wasDying = wounded.character.dying !== null;
       wounded.character.heal(heal);
       floatText(scene, wounded.x, wounded.y - 16, `+${heal}`, "#60e080");
+
+      // Healing sparkle particles
+      const healParticles = scene.add.particles(wounded.x, wounded.y, "pixel", {
+        color: [0x60e080, 0xa0ffd0, 0xffffff],
+        speedY: { min: -60, max: -20 },
+        speedX: { min: -15, max: 15 },
+        scale: { start: 2, end: 0 },
+        lifespan: { min: 400, max: 800 },
+        duration: 300,
+        maxParticles: 20,
+        blendMode: "ADD",
+      }).setDepth(25);
+      scene.time.delayedCall(1000, () => healParticles.destroy());
+
       if (wasDying && !wounded.character.dying) {
         ctx.say(`${wounded.character.name} is pulled back from the brink!`, "#60e080");
       }
@@ -146,6 +173,19 @@ function resolveSpellEffect(deps: SpellDeps, caster: CharacterSprite, result: Ca
         .monsters()
         .filter((m) => m.aliveInFight && m.def.undead && zoneBetween(caster, m) !== "beyond")
         .filter((m) => Phaser.Math.Distance.Between(caster.x, caster.y, m.x, m.y) <= NEAR_PX * (mult === 2 ? 2 : 1));
+      
+      // Holy golden burst particles
+      const holyParticles = scene.add.particles(caster.x, caster.y, "pixel", {
+        color: [0xffd700, 0xffea70, 0xffffff],
+        speed: { min: 50, max: 150 },
+        scale: { start: 2, end: 0 },
+        lifespan: 400,
+        duration: 200,
+        maxParticles: 30,
+        blendMode: "ADD",
+      }).setDepth(25);
+      scene.time.delayedCall(800, () => holyParticles.destroy());
+
       if (undead.length === 0) {
         ctx.say("No undead stir within reach of the litany.");
         return;
@@ -221,12 +261,25 @@ function fireBolt(
 ): void {
   const bolt = scene.add.image(from.x, from.y - 8, "spell-bolt").setDepth(20);
   bolt.setRotation(Phaser.Math.Angle.Between(from.x, from.y, to.x, to.y));
+
+  // Magic trail particles
+  const particles = scene.add.particles(0, 0, "pixel", {
+    color: [0x7ed9dd, 0x505fc1, 0xffffff],
+    speed: { min: -10, max: 10 },
+    scale: { start: 1.5, end: 0 },
+    lifespan: 300,
+    frequency: 20,
+    blendMode: "ADD",
+  }).setDepth(19);
+  particles.startFollow(bolt);
+
   scene.tweens.add({
     targets: bolt,
     x: to.x,
     y: to.y,
     duration: 180,
     onComplete: () => {
+      particles.destroy();
       bolt.destroy();
       onHit();
     },

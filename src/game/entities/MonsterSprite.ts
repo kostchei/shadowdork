@@ -66,6 +66,7 @@ export class MonsterSprite extends Phaser.Physics.Arcade.Sprite {
       const dir = target && target.x > this.x ? -1 : 1;
       this.setVelocityX(dir * this.speed * 1.4);
       this.setFlipX(dir === -1);
+      this.play(`monster-${this.def.id}-walk`, true);
       return;
     }
 
@@ -93,6 +94,13 @@ export class MonsterSprite extends Phaser.Physics.Arcade.Sprite {
       if (body.blocked.right) this.patrolDir = -1;
       this.setVelocityX(this.patrolDir * this.speed * 0.4);
       this.setFlipX(this.patrolDir === -1);
+    }
+
+    const isMoving = Math.abs(body.velocity.x) > 10;
+    if (isMoving) {
+      this.play(`monster-${this.def.id}-walk`, true);
+    } else {
+      this.play(`monster-${this.def.id}-idle`, true);
     }
   }
 

@@ -281,6 +281,15 @@ export class DungeonScene extends Phaser.Scene {
             this.add.image(px, py + 6, "campfire").setDepth(5);
             this.campfires.push({ x: px, y: py, free: ch === "F" });
             this.light.addSource(CAMPFIRE_RADIUS, () => ({ x: px, y: py }));
+            this.add.particles(px, py + 2, "pixel", {
+              color: [0xffa500, 0xff4500, 0xffd700],
+              speedY: { min: -40, max: -15 },
+              speedX: { min: -10, max: 10 },
+              scale: { start: 1.5, end: 0 },
+              lifespan: { min: 600, max: 1200 },
+              frequency: 120,
+              blendMode: "ADD",
+            }).setDepth(4);
             break;
           }
           case "b": {
@@ -294,6 +303,15 @@ export class DungeonScene extends Phaser.Scene {
               yoyo: true,
               repeat: -1,
             });
+            this.add.particles(px, py - 4, "pixel", {
+              color: [0xff4500, 0xff8c00, 0xffd700],
+              speedY: { min: -30, max: -10 },
+              speedX: { min: -6, max: 6 },
+              scale: { start: 1.2, end: 0 },
+              lifespan: { min: 400, max: 900 },
+              frequency: 180,
+              blendMode: "ADD",
+            }).setDepth(4);
             break;
           }
           case "*":
@@ -740,7 +758,23 @@ export class DungeonScene extends Phaser.Scene {
         continue;
       }
       collector.character.inventory.add(def, p.qty);
+      const pxCoord = p.sprite.x;
+      const pyCoord = p.sprite.y;
       p.sprite.destroy();
+
+      // Sparkles explosion
+      const sparklesColor = def.id === "gem" || def.id === "jeweled-idol" || def.id === "crown-of-the-deep"
+        ? [0x69e4df, 0xc5ffff, 0xffffff]
+        : [0xffd700, 0xffea70, 0xffffff];
+      const sparkles = this.add.particles(pxCoord, pyCoord, "pixel", {
+        color: sparklesColor,
+        speed: { min: 30, max: 90 },
+        scale: { start: 1.8, end: 0 },
+        lifespan: { min: 250, max: 550 },
+        blendMode: "ADD",
+      }).setDepth(25);
+      sparkles.explode(12);
+      this.time.delayedCall(600, () => sparkles.destroy());
       // Coins bank toward 100-coin XP thresholds; other treasure is XP outright.
       const xp = def.id === "coins" ? this.ctx.bankCoins(p.qty) : (def.xpValue ?? 0);
       const label = p.qty > 1 ? `${p.qty} ${def.name}` : def.name;

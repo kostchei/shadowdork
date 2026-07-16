@@ -17,198 +17,327 @@ function texture(
   g.destroy();
 }
 
+function drawBrick(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number): void {
+  // Base brick color (neutral stone gray, multiply-tinted by active theme)
+  g.fillStyle(0x5e6170, 1);
+  g.fillRect(x, y, w, h);
+
+  // Bevel highlight (top and left edges)
+  g.fillStyle(0x868a9d, 1);
+  g.fillRect(x, y, w, 1);
+  g.fillRect(x, y, 1, h);
+
+  // Shadow bevel (bottom and right edges)
+  g.fillStyle(0x3e404b, 1);
+  g.fillRect(x, y + h - 1, w, 1);
+  g.fillRect(x + w - 1, y, 1, h);
+
+  // Add deterministic rock texture noise
+  for (let i = 2; i < w - 2; i += 3) {
+    for (let j = 2; j < h - 2; j += 3) {
+      const val = ((x + i) * 17 + (y + j) * 23) % 100;
+      if (val < 16) {
+        g.fillStyle(0x2e2f38, 0.45); // dark pit
+        g.fillRect(x + i, y + j, 1, 1);
+      } else if (val > 84) {
+        g.fillStyle(0xa1a6be, 0.4); // crystal speckle
+        g.fillRect(x + i, y + j, 1, 1);
+      }
+    }
+  }
+}
+
 function stoneTile(scene: Phaser.Scene, variant: number): void {
   texture(scene, `tile-wall-${variant}`, TILE, TILE, (g) => {
-    g.fillStyle(0x555765, 1);
-    g.fillRect(0, 0, 32, 32);
-    g.fillStyle(0x343641, 1);
-    g.fillRect(0, 28, 32, 4);
-    g.fillRect(29, 0, 3, 32);
-    g.fillStyle(0x737686, 0.75);
-    g.fillRect(1, 1, 28, 2);
-    g.fillStyle(0x444651, 1);
+    // Mortar background
+    g.fillStyle(0x2c2d35, 1);
+    g.fillRect(0, 0, TILE, TILE);
+
     if (variant === 0) {
-      g.fillRect(0, 15, 32, 2);
-      g.fillRect(15, 0, 2, 15);
-      g.fillRect(8, 17, 2, 11);
+      // Running bond bricks
+      drawBrick(g, 1, 1, 30, 14);
+      drawBrick(g, 1, 16, 14, 15);
+      drawBrick(g, 16, 16, 15, 15);
     } else if (variant === 1) {
-      g.fillRect(0, 10, 32, 2);
-      g.fillRect(20, 0, 2, 10);
-      g.fillRect(11, 12, 2, 16);
-      g.fillStyle(0x30313a, 1);
-      g.fillRect(4, 21, 5, 2);
+      // Stack bond grid blocks
+      drawBrick(g, 1, 1, 14, 14);
+      drawBrick(g, 16, 1, 15, 14);
+      drawBrick(g, 1, 16, 14, 15);
+      drawBrick(g, 16, 16, 15, 15);
     } else {
-      g.fillRect(0, 20, 32, 2);
-      g.fillRect(9, 0, 2, 20);
-      g.fillRect(23, 22, 2, 6);
-      g.fillStyle(0x838696, 0.5);
-      g.fillRect(17, 6, 7, 2);
+      // Large heavy block with cracks
+      drawBrick(g, 1, 1, 30, 30);
+      // Crack lines
+      g.fillStyle(0x2c2d35, 1);
+      g.fillRect(10, 1, 1, 6);
+      g.fillRect(11, 7, 2, 1);
+      g.fillRect(12, 8, 1, 8);
+      g.fillRect(13, 16, 4, 1);
+      g.fillRect(17, 17, 1, 8);
     }
   });
 }
 
-function drawFace(g: Phaser.GameObjects.Graphics, skin: number): void {
+function drawFace(g: Phaser.GameObjects.Graphics, skin: number, bodyYOffset = 0): void {
   g.fillStyle(skin, 1);
-  g.fillRect(7, 5, 10, 9);
+  g.fillRect(7, 5 + bodyYOffset, 10, 9);
   g.fillStyle(0x201b20, 1);
-  g.fillRect(9, 8, 2, 2);
-  g.fillRect(14, 8, 2, 2);
+  g.fillRect(9, 8 + bodyYOffset, 2, 2);
+  g.fillRect(14, 8 + bodyYOffset, 2, 2);
+}
+
+function drawCharacterFrame(g: Phaser.GameObjects.Graphics, cls: string, type: "idle" | "walk", frame: number): void {
+  // Determine body bounce offset
+  let bodyYOffset = 0;
+  if (type === "idle" && frame === 1) {
+    bodyYOffset = 1;
+  } else if (type === "walk" && (frame === 1 || frame === 3)) {
+    bodyYOffset = -1;
+  }
+
+  // Draw feet base
+  g.fillStyle(cls === "fighter" ? 0x352b32 : cls === "thief" ? 0x20292a : cls === "priest" ? 0x473c39 : 0x282342, 1);
+  if (type === "idle") {
+    g.fillRect(5, 29, 6, 3);
+    g.fillRect(13, 29, 6, 3);
+  } else if (type === "walk") {
+    if (frame === 0) {
+      g.fillRect(3, 29, 6, 3);
+      g.fillRect(15, 29, 6, 3);
+    } else if (frame === 2) {
+      g.fillRect(7, 29, 6, 3);
+      g.fillRect(11, 29, 6, 3);
+    } else { // Frame 1 & 3: passing feet together
+      g.fillRect(9, 29, 6, 3);
+    }
+  }
+
+  const y = (val: number) => val + bodyYOffset;
+
+  if (cls === "fighter") {
+    // Red plate body
+    g.fillStyle(0x7b2632, 1);
+    g.fillRect(4, y(14), 16, 13);
+    g.fillStyle(0xc54b3c, 1);
+    g.fillRect(6, y(14), 12, 5);
+    drawFace(g, 0xd8ad86, bodyYOffset);
+    // Steel helmet
+    g.fillStyle(0x9aa0a8, 1);
+    g.fillRect(5, y(2), 14, 5);
+    g.fillRect(4, y(5), 3, 6);
+    g.fillRect(17, y(5), 3, 6);
+    g.fillStyle(0xe0bd58, 1);
+    g.fillRect(11, y(16), 3, 3);
+    // Sword
+    g.fillStyle(0xced2d8, 1);
+    g.fillRect(19, y(14), 3, 13);
+  } else if (cls === "thief") {
+    // Green cloak
+    g.fillStyle(0x285a48, 1);
+    g.fillRect(5, y(13), 14, 15);
+    g.fillStyle(0x3c8062, 1);
+    g.fillTriangle(3, y(13), 12, y(1), 21, y(13));
+    drawFace(g, 0xc99d78, bodyYOffset);
+    // Yellow eyes/goggles
+    g.fillStyle(0xe6d27b, 1);
+    g.fillRect(9, y(9), 2, 1);
+    g.fillRect(14, y(9), 2, 1);
+    // Belt
+    g.fillStyle(0x7d5438, 1);
+    g.fillRect(4, y(18), 17, 3);
+    // Dagger
+    g.fillStyle(0xcbd2d8, 1);
+    g.fillTriangle(19, y(21), 24, y(18), 21, y(25));
+  } else if (cls === "priest") {
+    // Beige robe
+    g.fillStyle(0xd7d0b0, 1);
+    g.fillRect(4, y(13), 16, 16);
+    g.fillStyle(0x8e3044, 1);
+    g.fillRect(4, y(18), 16, 4);
+    drawFace(g, 0xd8ad86, bodyYOffset);
+    // Golden mitre/cross
+    g.fillStyle(0xe7d98a, 1);
+    g.fillRect(6, y(2), 12, 4);
+    g.fillRect(10, y(0), 4, 8);
+    // Holy staff
+    g.fillStyle(0xb89535, 1);
+    g.fillRect(11, y(15), 3, 10);
+    g.fillRect(8, y(18), 9, 3);
+  } else if (cls === "wizard") {
+    // Purple robe
+    g.fillStyle(0x3c438f, 1);
+    g.fillRect(4, y(14), 16, 15);
+    drawFace(g, 0xc99d78, bodyYOffset);
+    // Pointy hat
+    g.fillStyle(0x505fc1, 1);
+    g.fillTriangle(2, y(7), 13, y(0), 20, y(12));
+    g.fillRect(3, y(10), 18, 4);
+    g.fillStyle(0xe5c85d, 1);
+    g.fillRect(13, y(4), 2, 2);
+    g.fillRect(7, y(18), 3, 3);
+    // Crystal staff
+    g.fillStyle(0x9e6b3c, 1);
+    g.fillRect(20, y(13), 2, 17);
+    g.fillStyle(0x7ed9dd, 1);
+    g.fillCircle(21, y(11), 3);
+  }
 }
 
 function characterTextures(scene: Phaser.Scene): void {
-  texture(scene, "char-fighter", 24, 32, (g) => {
-    g.fillStyle(0x352b32, 1);
-    g.fillRect(5, 29, 6, 3);
-    g.fillRect(14, 29, 6, 3);
-    g.fillStyle(0x7b2632, 1);
-    g.fillRect(4, 14, 16, 13);
-    g.fillStyle(0xc54b3c, 1);
-    g.fillRect(6, 14, 12, 5);
-    drawFace(g, 0xd8ad86);
-    g.fillStyle(0x9aa0a8, 1);
-    g.fillRect(5, 2, 14, 5);
-    g.fillRect(4, 5, 3, 6);
-    g.fillRect(17, 5, 3, 6);
-    g.fillStyle(0xe0bd58, 1);
-    g.fillRect(11, 16, 3, 3);
-    g.fillStyle(0xced2d8, 1);
-    g.fillRect(19, 14, 3, 13);
-  });
+  const classes = ["fighter", "thief", "priest", "wizard"];
+  for (const cls of classes) {
+    texture(scene, `char-${cls}`, 24, 32, (g) => drawCharacterFrame(g, cls, "idle", 0));
+    for (let f = 0; f < 2; f++) {
+      texture(scene, `char-${cls}-idle-${f}`, 24, 32, (g) => drawCharacterFrame(g, cls, "idle", f));
+    }
+    for (let f = 0; f < 4; f++) {
+      texture(scene, `char-${cls}-walk-${f}`, 24, 32, (g) => drawCharacterFrame(g, cls, "walk", f));
+    }
+  }
+}
 
-  texture(scene, "char-thief", 24, 32, (g) => {
-    g.fillStyle(0x20292a, 1);
-    g.fillRect(5, 29, 5, 3);
-    g.fillRect(15, 29, 5, 3);
-    g.fillStyle(0x285a48, 1);
-    g.fillRect(5, 13, 14, 15);
-    g.fillStyle(0x3c8062, 1);
-    g.fillTriangle(3, 13, 12, 1, 21, 13);
-    drawFace(g, 0xc99d78);
-    g.fillStyle(0xe6d27b, 1);
-    g.fillRect(9, 9, 2, 1);
-    g.fillRect(14, 9, 2, 1);
-    g.fillStyle(0x7d5438, 1);
-    g.fillRect(4, 18, 17, 3);
-    g.fillStyle(0xcbd2d8, 1);
-    g.fillTriangle(19, 21, 24, 18, 21, 25);
-  });
+function drawMonsterFrame(g: Phaser.GameObjects.Graphics, id: string, type: "idle" | "walk", frame: number): void {
+  let bodyYOffset = 0;
+  if (type === "idle" && frame === 1) {
+    bodyYOffset = 1;
+  } else if (type === "walk" && (frame === 1 || frame === 3)) {
+    bodyYOffset = -1;
+  }
+  const y = (val: number) => val + bodyYOffset;
 
-  texture(scene, "char-priest", 24, 32, (g) => {
-    g.fillStyle(0x473c39, 1);
-    g.fillRect(5, 29, 5, 3);
-    g.fillRect(15, 29, 5, 3);
-    g.fillStyle(0xd7d0b0, 1);
-    g.fillRect(4, 13, 16, 16);
-    g.fillStyle(0x8e3044, 1);
-    g.fillRect(4, 18, 16, 4);
-    drawFace(g, 0xd8ad86);
-    g.fillStyle(0xe7d98a, 1);
-    g.fillRect(6, 2, 12, 4);
-    g.fillRect(10, 0, 4, 8);
-    g.fillStyle(0xb89535, 1);
-    g.fillRect(11, 15, 3, 10);
-    g.fillRect(8, 18, 9, 3);
-  });
+  if (id === "goblin") {
+    // Draw feet
+    g.fillStyle(0x2e3b25, 1);
+    if (type === "idle" || frame === 1 || frame === 3) {
+      g.fillRect(5, 19, 5, 5);
+      g.fillRect(13, 19, 5, 5);
+    } else if (frame === 0) {
+      g.fillRect(3, 19, 5, 5);
+      g.fillRect(15, 19, 5, 5);
+    } else {
+      g.fillRect(7, 19, 5, 5);
+      g.fillRect(11, 19, 5, 5);
+    }
 
-  texture(scene, "char-wizard", 24, 32, (g) => {
-    g.fillStyle(0x282342, 1);
-    g.fillRect(5, 29, 5, 3);
-    g.fillRect(15, 29, 5, 3);
-    g.fillStyle(0x3c438f, 1);
-    g.fillRect(4, 14, 16, 15);
-    drawFace(g, 0xc99d78);
-    g.fillStyle(0x505fc1, 1);
-    g.fillTriangle(2, 7, 13, 0, 20, 12);
-    g.fillRect(3, 10, 18, 4);
-    g.fillStyle(0xe5c85d, 1);
-    g.fillRect(13, 4, 2, 2);
-    g.fillRect(7, 18, 3, 3);
-    g.fillStyle(0x9e6b3c, 1);
-    g.fillRect(20, 13, 2, 17);
-    g.fillStyle(0x7ed9dd, 1);
-    g.fillCircle(21, 11, 3);
-  });
+    g.fillStyle(0x537c3b, 1);
+    g.fillRect(4, y(7), 15, 13);
+    g.fillTriangle(0, y(5), 7, y(8), 5, y(13));
+    g.fillTriangle(22, y(5), 16, y(8), 18, y(13));
+    g.fillStyle(0xb5c84d, 1);
+    g.fillRect(6, y(10), 3, 2);
+    g.fillRect(14, y(10), 3, 2);
+    g.fillStyle(0x6b2931, 1);
+    g.fillRect(8, y(15), 7, 2);
+    g.fillStyle(0x9c713f, 1);
+    g.fillRect(18, y(13), 3, 10);
+  } else if (id === "skeleton") {
+    // Draw feet
+    g.fillStyle(0xa9a995, 1);
+    if (type === "idle" || frame === 1 || frame === 3) {
+      g.fillRect(7, 25, 3, 5);
+      g.fillRect(15, 25, 3, 5);
+    } else if (frame === 0) {
+      g.fillRect(5, 25, 3, 5);
+      g.fillRect(17, 25, 3, 5);
+    } else {
+      g.fillRect(9, 25, 3, 5);
+      g.fillRect(13, 25, 3, 5);
+    }
+
+    g.fillStyle(0xa9a995, 1);
+    g.fillRect(10, y(13), 5, 12);
+    g.fillRect(5, y(15), 15, 3);
+    g.fillStyle(0xe2dfc6, 1);
+    g.fillRect(5, y(2), 15, 12);
+    g.fillRect(7, y(0), 11, 2);
+    g.fillStyle(0x27242a, 1);
+    g.fillRect(8, y(5), 3, 4);
+    g.fillRect(15, y(5), 3, 4);
+    g.fillRect(10, y(11), 6, 2);
+    g.fillStyle(0x727067, 1);
+    g.fillRect(7, y(19), 12, 2);
+    g.fillRect(8, y(23), 10, 2);
+  } else if (id === "giant-rat") {
+    // Draw feet
+    g.fillStyle(0x302527, 1);
+    if (type === "idle" || frame === 1 || frame === 3) {
+      g.fillRect(9, 15, 4, 2);
+      g.fillRect(19, 15, 4, 2);
+    } else if (frame === 0) {
+      g.fillRect(7, 15, 4, 2);
+      g.fillRect(21, 15, 4, 2);
+    } else {
+      g.fillRect(11, 15, 4, 2);
+      g.fillRect(17, 15, 4, 2);
+    }
+
+    g.lineStyle(2, 0x8c6b57, 1);
+    g.beginPath();
+    g.arc(23, y(10), 8, -0.6, 1.8);
+    g.strokePath();
+    g.fillStyle(0x5f493e, 1);
+    g.fillEllipse(13, y(10), 22, 13);
+    g.fillStyle(0x8a6b5b, 1);
+    g.fillTriangle(5, y(6), 8, y(0), 11, y(6));
+    g.fillStyle(0xf05b62, 1);
+    g.fillRect(5, y(7), 2, 2);
+    g.fillStyle(0xcda58d, 1);
+    g.fillRect(0, y(11), 5, 2);
+  } else if (id === "gloom-ogre") {
+    // Draw feet
+    g.fillStyle(0x312637, 1);
+    if (type === "idle" || frame === 1 || frame === 3) {
+      g.fillRect(6, 45, 12, 7);
+      g.fillRect(27, 45, 12, 7);
+    } else if (frame === 0) {
+      g.fillRect(3, 45, 12, 7);
+      g.fillRect(30, 45, 12, 7);
+    } else {
+      g.fillRect(9, 45, 12, 7);
+      g.fillRect(24, 45, 12, 7);
+    }
+
+    g.fillStyle(0x584065, 1);
+    g.fillRect(4, y(17), 36, 28);
+    g.fillRect(0, y(21), 8, 22);
+    g.fillRect(36, y(21), 8, 22);
+    g.fillStyle(0x765784, 1);
+    g.fillRect(7, y(3), 30, 23);
+    g.fillTriangle(5, y(8), 12, y(0), 14, y(9));
+    g.fillTriangle(39, y(8), 32, y(0), 30, y(9));
+    g.fillStyle(0xd7dd58, 1);
+    g.fillRect(12, y(10), 6, 5);
+    g.fillRect(27, y(10), 6, 5);
+    g.fillStyle(0x241b28, 1);
+    g.fillRect(13, y(12), 3, 3);
+    g.fillRect(29, y(12), 3, 3);
+    g.fillRect(13, y(20), 20, 4);
+    g.fillStyle(0xc8bd9a, 1);
+    g.fillTriangle(15, y(20), 19, y(20), 17, y(25));
+    g.fillTriangle(27, y(20), 31, y(20), 29, y(25));
+    g.fillStyle(0x9d6b3e, 1);
+    g.fillRect(2, y(32), 40, 5);
+  }
 }
 
 function monsterTextures(scene: Phaser.Scene): void {
-  texture(scene, "monster-goblin", 22, 24, (g) => {
-    g.fillStyle(0x2e3b25, 1);
-    g.fillRect(5, 19, 5, 5);
-    g.fillRect(13, 19, 5, 5);
-    g.fillStyle(0x537c3b, 1);
-    g.fillRect(4, 7, 15, 13);
-    g.fillTriangle(0, 5, 7, 8, 5, 13);
-    g.fillTriangle(22, 5, 16, 8, 18, 13);
-    g.fillStyle(0xb5c84d, 1);
-    g.fillRect(6, 10, 3, 2);
-    g.fillRect(14, 10, 3, 2);
-    g.fillStyle(0x6b2931, 1);
-    g.fillRect(8, 15, 7, 2);
-    g.fillStyle(0x9c713f, 1);
-    g.fillRect(18, 13, 3, 10);
-  });
-
-  texture(scene, "monster-skeleton", 24, 30, (g) => {
-    g.fillStyle(0xa9a995, 1);
-    g.fillRect(7, 25, 3, 5);
-    g.fillRect(15, 25, 3, 5);
-    g.fillRect(10, 13, 5, 13);
-    g.fillRect(5, 15, 15, 3);
-    g.fillStyle(0xe2dfc6, 1);
-    g.fillRect(5, 2, 15, 12);
-    g.fillRect(7, 0, 11, 2);
-    g.fillStyle(0x27242a, 1);
-    g.fillRect(8, 5, 3, 4);
-    g.fillRect(15, 5, 3, 4);
-    g.fillRect(10, 11, 6, 2);
-    g.fillStyle(0x727067, 1);
-    g.fillRect(7, 19, 12, 2);
-    g.fillRect(8, 23, 10, 2);
-  });
-
-  texture(scene, "monster-giant-rat", 28, 17, (g) => {
-    g.lineStyle(2, 0x8c6b57, 1);
-    g.beginPath();
-    g.arc(23, 10, 8, -0.6, 1.8);
-    g.strokePath();
-    g.fillStyle(0x5f493e, 1);
-    g.fillEllipse(13, 10, 22, 13);
-    g.fillStyle(0x8a6b5b, 1);
-    g.fillTriangle(5, 6, 8, 0, 11, 6);
-    g.fillStyle(0xf05b62, 1);
-    g.fillRect(5, 7, 2, 2);
-    g.fillStyle(0xcda58d, 1);
-    g.fillRect(0, 11, 5, 2);
-    g.fillStyle(0x302527, 1);
-    g.fillRect(9, 15, 4, 2);
-    g.fillRect(19, 15, 4, 2);
-  });
-
-  texture(scene, "monster-gloom-ogre", 44, 52, (g) => {
-    g.fillStyle(0x312637, 1);
-    g.fillRect(6, 45, 12, 7);
-    g.fillRect(27, 45, 12, 7);
-    g.fillStyle(0x584065, 1);
-    g.fillRect(4, 17, 36, 30);
-    g.fillRect(0, 21, 8, 22);
-    g.fillRect(36, 21, 8, 22);
-    g.fillStyle(0x765784, 1);
-    g.fillRect(7, 3, 30, 23);
-    g.fillTriangle(5, 8, 12, 0, 14, 9);
-    g.fillTriangle(39, 8, 32, 0, 30, 9);
-    g.fillStyle(0xd7dd58, 1);
-    g.fillRect(12, 10, 6, 5);
-    g.fillRect(27, 10, 6, 5);
-    g.fillStyle(0x241b28, 1);
-    g.fillRect(13, 12, 3, 3);
-    g.fillRect(29, 12, 3, 3);
-    g.fillRect(13, 20, 20, 4);
-    g.fillStyle(0xc8bd9a, 1);
-    g.fillTriangle(15, 20, 19, 20, 17, 25);
-    g.fillTriangle(27, 20, 31, 20, 29, 25);
-    g.fillStyle(0x9d6b3e, 1);
-    g.fillRect(2, 32, 40, 5);
-  });
+  const monsters = ["goblin", "skeleton", "giant-rat", "gloom-ogre"];
+  const dimensions: Record<string, { w: number; h: number }> = {
+    goblin: { w: 22, h: 24 },
+    skeleton: { w: 24, h: 30 },
+    "giant-rat": { w: 28, h: 17 },
+    "gloom-ogre": { w: 44, h: 52 },
+  };
+  for (const mon of monsters) {
+    const dim = dimensions[mon]!;
+    texture(scene, `monster-${mon}`, dim.w, dim.h, (g) => drawMonsterFrame(g, mon, "idle", 0));
+    for (let f = 0; f < 2; f++) {
+      texture(scene, `monster-${mon}-idle-${f}`, dim.w, dim.h, (g) => drawMonsterFrame(g, mon, "idle", f));
+    }
+    for (let f = 0; f < 4; f++) {
+      texture(scene, `monster-${mon}-walk-${f}`, dim.w, dim.h, (g) => drawMonsterFrame(g, mon, "walk", f));
+    }
+  }
 }
 
 function environmentTextures(scene: Phaser.Scene): void {

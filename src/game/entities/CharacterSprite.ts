@@ -41,6 +41,7 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
 
   private lastGroundedAt = 0;
   private shadow: Phaser.GameObjects.Image;
+  private torchEmitter: Phaser.GameObjects.Particles.ParticleEmitter | null = null;
 
   constructor(
     scene: Phaser.Scene,
@@ -125,12 +126,38 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
       this.setVelocityX(0);
       this.setTint(0x884444);
       this.setAngle(90);
+      this.anims.stop();
     } else if (this.character.dead) {
       this.setVisible(false);
       (this.body as Phaser.Physics.Arcade.Body).enable = false;
+      this.anims.stop();
     } else {
       this.clearTint();
       this.setAngle(0);
+      const isMoving = Math.abs(this.body?.velocity.x ?? 0) > 10;
+      if (isMoving && this.grounded) {
+        this.play(`char-${this.character.className}-walk`, true);
+      } else {
+        this.play(`char-${this.character.className}-idle`, true);
+      }
+    }
+
+    if (this.torchLit) {
+      if (!this.torchEmitter) {
+        this.torchEmitter = this.scene.add.particles(0, 0, "pixel", {
+          color: [0xff7722, 0xffaa44, 0xffe077],
+          speedY: { min: -25, max: -5 },
+          speedX: { min: -15, max: 15 },
+          scale: { start: 1.2, end: 0 },
+          lifespan: { min: 300, max: 700 },
+          frequency: 100,
+          blendMode: "ADD",
+        }).setDepth(12);
+        this.torchEmitter.startFollow(this, 6, -4);
+      }
+    } else if (this.torchEmitter) {
+      this.torchEmitter.destroy();
+      this.torchEmitter = null;
     }
   }
 
@@ -151,6 +178,7 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
 
   override destroy(fromScene?: boolean): void {
     if (this.shadow.active) this.shadow.destroy();
+    if (this.torchEmitter) this.torchEmitter.destroy();
     super.destroy(fromScene);
   }
 }

@@ -151,6 +151,7 @@ export function meleeSwing(deps: MeleeDeps, attacker: CharacterSprite): boolean 
     const label = result.check.crit ? `${die}! CRIT ${result.damage}` : `${die} → ${result.damage}`;
     floatText(deps.scene, target.x, target.y - 16, label, result.check.crit ? "#ffd040" : "#ff7050");
     if (result.check.crit) deps.scene.cameras.main.shake(150, 0.008);
+    else deps.scene.cameras.main.shake(80, 0.003);
     applyDamageToMonster(deps, target, result.damage);
   } else {
     floatText(deps.scene, target.x, target.y - 16, `${die} miss`, "#8888aa");
@@ -167,6 +168,21 @@ export function applyDamageToMonster(deps: MeleeDeps, target: MonsterSprite, dam
   target.hp -= damage;
   target.setTintFill(0xffffff);
   deps.scene.time.delayedCall(80, () => target.clearTint());
+
+  // Splatter particles
+  const isUndead = target.def.undead;
+  const color = isUndead ? [0xdeded7, 0xc2c2ba, 0x9e9e94] : [0xff3333, 0xcc0000, 0x880000];
+  const hitParticles = deps.scene.add.particles(target.x, target.y - 8, "pixel", {
+    color,
+    speed: { min: 40, max: 120 },
+    scale: { start: 2, end: 0 },
+    lifespan: { min: 200, max: 400 },
+    duration: 150,
+    maxParticles: 15,
+    blendMode: "NORMAL",
+  }).setDepth(25);
+  deps.scene.time.delayedCall(500, () => hitParticles.destroy());
+
   if (target.hp <= 0) {
     deps.onMonsterKilled(target);
   } else if (target.aiState === "patrol") {
@@ -194,6 +210,19 @@ export function monsterSwing(
     floatText(scene, target.x, target.y - 16, `-${result.damage}`, "#ff5050");
     const wentDown = ctx.engine.damageCharacter(target.character, result.damage);
     scene.cameras.main.shake(80, 0.004);
+
+    // Blood splatter on character
+    const hitParticles = scene.add.particles(target.x, target.y - 8, "pixel", {
+      color: [0xff3333, 0xcc0000, 0xaa0000],
+      speed: { min: 40, max: 120 },
+      scale: { start: 2, end: 0 },
+      lifespan: { min: 200, max: 400 },
+      duration: 150,
+      maxParticles: 15,
+      blendMode: "NORMAL",
+    }).setDepth(25);
+    scene.time.delayedCall(500, () => hitParticles.destroy());
+
     if (wentDown) {
       ctx.say(
         `${target.character.name} is down! Dying in ${target.character.dying!.roundsRemaining} rounds — stabilize or heal them!`,

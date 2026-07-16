@@ -39,9 +39,12 @@ lost spells recovered, until-rest conditions cleared, and a fresh torch per
 party member — then the exit door. (Planned rest-spot economy: free food vs
 food for sale, selling loot, shrines for priest atonement.)
 
-Level geometry is built programmatically (`src/game/level/level1.ts`) from
-room-segment placements into an ASCII grid, so new five-room dungeons are cheap
-to author. The full level-design bible — per-room variant libraries, legal
+Level geometry is built programmatically (`src/game/level/dungeons.ts`) from
+room-segment placements into ASCII grids. Three complete dungeons ship today:
+**The Gloom Below**, **The Ember Crypt**, and **The Mold Warrens**. They vary
+verticality, hazards, monster rhythm, light placement, rescues, and vault
+approach while sharing one renderer. Runs rotate through the library after a
+win or wipe. The full level-design bible — per-room variant libraries, legal
 order shuffles, and 2D layout patterns (loops, vertical stacks, two-layer
 screens, foreshadowing) — is in
 [docs/five-room-dungeons.md](docs/five-room-dungeons.md).
@@ -111,7 +114,7 @@ party-wide.
 | E | Interact (rescue / stabilize / disarm / rest / exit) |
 | H | Followers: follow ↔ hold |
 | Tab / 1–4 | Swap leader |
-| R | Restart after win or wipe |
+| R | Enter the next dungeon after win or wipe |
 
 ## Project shape
 
@@ -126,7 +129,7 @@ tests/         engine unit tests (vitest, seeded dice)
 ## Roadmap
 
 - Rest-spot economy: buy food, sell loot, priest atonement at shrines.
-- Multiple five-room dungeons chained by rest spots; procedural room variants.
+- Procedural room-variant composition and multi-dungeon campaigns with retained parties.
 - Random encounters on the crawling-round clock (engine hook already exists).
 - Ancestries, luck tokens, stealth/surprise (see the RAW pseudocode doc).
 - Sound, real art, mobile touch controls.

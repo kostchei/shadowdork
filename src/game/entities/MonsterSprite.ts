@@ -23,6 +23,7 @@ export class MonsterSprite extends Phaser.Physics.Arcade.Sprite {
   attackCooldown = 0;
   patrolDir: 1 | -1 = 1;
   private patrolOriginX: number;
+  private shadow: Phaser.GameObjects.Image;
 
   constructor(
     scene: Phaser.Scene,
@@ -37,6 +38,7 @@ export class MonsterSprite extends Phaser.Physics.Arcade.Sprite {
     this.groupId = groupId;
     this.hp = Math.max(1, dice.roll(def.hitDice));
     this.patrolOriginX = x;
+    this.shadow = scene.add.image(x, y + 14, "entity-shadow").setDepth(7).setAlpha(0.62);
     scene.add.existing(this);
     scene.physics.add.existing(this);
     this.setDepth(9);
@@ -55,6 +57,8 @@ export class MonsterSprite extends Phaser.Physics.Arcade.Sprite {
 
   updateAi(delta: number, target: { x: number; y: number } | null): void {
     this.attackCooldown = Math.max(0, this.attackCooldown - delta);
+    this.shadow.setPosition(this.x, this.y + this.displayHeight * 0.42);
+    this.shadow.setScale(this.def.id === "gloom-ogre" ? 1.45 : 0.8, 1);
     const body = this.body as Phaser.Physics.Arcade.Body;
 
     if (this.aiState === "fleeing") {
@@ -95,5 +99,10 @@ export class MonsterSprite extends Phaser.Physics.Arcade.Sprite {
   flee(): void {
     this.aiState = "fleeing";
     this.setTint(0x9999cc);
+  }
+
+  override destroy(fromScene?: boolean): void {
+    if (this.shadow.active) this.shadow.destroy();
+    super.destroy(fromScene);
   }
 }

@@ -21,7 +21,12 @@ import { CAMPFIRE_RADIUS, LightSystem } from "../systems/light";
 import { PartyManager } from "../systems/party";
 import { CLOSE_PX, zoneBetween } from "../systems/position";
 import { castSelectedSpell, type SpellDeps } from "../systems/spells";
-import { LEVEL1, LEVEL_H, LEVEL_W } from "../level/level1";
+import {
+  DUNGEON_H,
+  DUNGEON_W,
+  dungeonAt,
+  type DungeonDefinition,
+} from "../level/dungeons";
 import { TILE } from "../textures";
 
 interface RescuableNpc {
@@ -44,6 +49,7 @@ export class DungeonScene extends Phaser.Scene {
   ctx!: GameContext;
   party!: PartyManager;
   light!: LightSystem;
+  activeDungeon!: DungeonDefinition;
 
   private walls!: Phaser.Physics.Arcade.StaticGroup;
   private weakWalls!: Phaser.Physics.Arcade.StaticGroup;
@@ -81,14 +87,19 @@ export class DungeonScene extends Phaser.Scene {
     this.dyingLabels = new Map();
     this.morale = new MoraleTracker();
 
-    this.physics.world.setBounds(0, 0, LEVEL_W * TILE, LEVEL_H * TILE);
-    this.cameras.main.setBounds(0, 0, LEVEL_W * TILE, LEVEL_H * TILE);
-    this.cameras.main.setBackgroundColor(0x14141c);
+    const storedIndex = this.registry.get("dungeonIndex");
+    const dungeonIndex = typeof storedIndex === "number" ? storedIndex : 0;
+    this.activeDungeon = dungeonAt(dungeonIndex);
+
+    this.physics.world.setBounds(0, 0, DUNGEON_W * TILE, DUNGEON_H * TILE);
+    this.cameras.main.setBounds(0, 0, DUNGEON_W * TILE, DUNGEON_H * TILE);
+    this.cameras.main.setBackgroundColor(this.activeDungeon.theme.background);
+    this.createAtmosphere(dungeonIndex);
 
     this.walls = this.physics.add.staticGroup();
     this.weakWalls = this.physics.add.staticGroup();
     this.party = new PartyManager(this.ctx);
-    this.light = new LightSystem(this, this.ctx);
+    this.light = new LightSystem(this, this.ctx, this.activeDungeon.theme.darkness);
 
     this.buildLevel();
     this.setupInput();
@@ -103,28 +114,108 @@ export class DungeonScene extends Phaser.Scene {
 
     this.cameras.main.startFollow(this.party.leader, true, 0.12, 0.12);
 
-    this.ctx.say("The Gloom Below. Find the crown. Watch your torch.", "#f0e090");
+    this.ctx.say(
+      `${this.activeDungeon.name}. ${this.activeDungeon.objective}. Watch your torch.`,
+      "#f0e090",
+    );
+    this.cameras.main.fadeIn(450, 0, 0, 0);
 
     this.scene.launch("Hud");
   }
 
+  get hasCrown(): boolean {
+    return this.party.members.some((member) =>
+      member.character.inventory.has("crown-of-the-deep"),
+    );
+  }
+
+  private createAtmosphere(dungeonIndex: number): void {
+    const worldW = DUNGEON_W * TILE;
+    const worldH = DUNGEON_H * TILE;
+    const theme = this.activeDungeon.theme;
+
+    this.add
+      .tileSprite(0, 0, worldW, worldH, "bg-cavern")
+      .setOrigin(0)
+      .setScrollFactor(0.12, 0.05)
+      .setTint(theme.haze)
+      .setAlpha(0.72)
+      .setDepth(-30);
+    this.add
+      .tileSprite(0, worldH - 190, worldW, 190, "bg-fog")
+      .setOrigin(0)
+      .setScrollFactor(0.28, 0.12)
+      .setTint(theme.accent)
+      .setAlpha(0.14)
+      .setDepth(-20);
+
+    // Deterministic motes make each theme feel alive without affecting play.
+    for (let i = 0; i < 36; i++) {
+      const x = ((i * 173 + dungeonIndex * 97) % (DUNGEON_W * TILE - 80)) + 40;
+      const y = ((i * 71 + dungeonIndex * 43) % 330) + 90;
+      const mote = this.add
+        .image(x, y, "pixel")
+        .setTint(theme.accent)
+        .setAlpha(0.08 + (i % 4) * 0.025)
+        .setDepth(-10)
+        .setScale(i % 3 === 0 ? 1.5 : 1);
+      this.tweens.add({
+        targets: mote,
+        y: y - 18 - (i % 5) * 4,
+        alpha: { from: mote.alpha, to: 0.02 },
+        duration: 2600 + (i % 7) * 420,
+        delay: (i % 9) * 160,
+        yoyo: true,
+        repeat: -1,
+        ease: "Sine.inOut",
+      });
+    }
+
+    const roomLabels = [
+      "I  THE GATE",
+      "II  THE TEST",
+      "III  THE SETBACK",
+      "IV  THE CLIMAX",
+      "V  THE REWARD",
+      "SANCTUARY",
+    ];
+    const roomCenters = [11, 31, 53, 74, 91, 108];
+    roomLabels.forEach((label, i) => {
+      this.add
+        .text(roomCenters[i]! * TILE, 56, label, {
+          fontFamily: "Georgia, serif",
+          fontSize: "18px",
+          color: `#${theme.accent.toString(16).padStart(6, "0")}`,
+          letterSpacing: 3,
+        })
+        .setOrigin(0.5)
+        .setAlpha(0.22)
+        .setDepth(-5);
+    });
+  }
+
   private buildLevel(): void {
-    for (let y = 0; y < LEVEL_H; y++) {
-      const row = LEVEL1[y]!;
-      for (let x = 0; x < LEVEL_W; x++) {
+    const theme = this.activeDungeon.theme;
+    for (let y = 0; y < DUNGEON_H; y++) {
+      const row = this.activeDungeon.grid[y]!;
+      for (let x = 0; x < DUNGEON_W; x++) {
         const ch = row[x]!;
         const px = x * TILE + TILE / 2;
         const py = y * TILE + TILE / 2;
         switch (ch) {
           case "#":
-            this.walls.create(px, py, "tile-wall");
+            this.walls
+              .create(px, py, `tile-wall-${(x * 17 + y * 31) % 3}`)
+              .setTint(theme.stoneTint)
+              .setDepth(1);
             break;
           case "%":
-            this.weakWalls.create(px, py, "tile-weak");
+            this.weakWalls.create(px, py, "tile-weak").setTint(theme.stoneTint).setDepth(2);
             break;
           case "=": {
             // One-way platform: solid on top only, jump up through it.
             const tile = this.walls.create(px, py - TILE / 2 + 6, "tile-platform");
+            tile.setTint(theme.stoneTint).setDepth(2);
             const body = (tile as Phaser.Physics.Arcade.Image).body as Phaser.Physics.Arcade.StaticBody;
             body.checkCollision.down = false;
             body.checkCollision.left = false;
@@ -132,7 +223,7 @@ export class DungeonScene extends Phaser.Scene {
             break;
           }
           case "|": {
-            this.walls.create(px, py, "tile-climb");
+            this.walls.create(px, py, "tile-climb").setTint(theme.stoneTint).setDepth(2);
             const zone = this.add.rectangle(px - TILE, py, TILE, TILE, 0, 0);
             this.climbTiles.push(zone);
             break;
@@ -192,6 +283,31 @@ export class DungeonScene extends Phaser.Scene {
             this.light.addSource(CAMPFIRE_RADIUS, () => ({ x: px, y: py }));
             break;
           }
+          case "b": {
+            const brazier = this.add.image(px, py + 3, "brazier").setDepth(5);
+            this.light.addSource(TILE * 2.8, () => ({ x: px, y: py - 8 }));
+            this.tweens.add({
+              targets: brazier,
+              scaleY: { from: 0.96, to: 1.06 },
+              alpha: { from: 0.86, to: 1 },
+              duration: 360 + ((x * 29) % 150),
+              yoyo: true,
+              repeat: -1,
+            });
+            break;
+          }
+          case "*":
+            this.add.image(px, py + 5, "deco-mushrooms").setDepth(3).setTint(theme.accent);
+            break;
+          case "q":
+            this.add.image(px, py + 9, "deco-bones").setDepth(3);
+            break;
+          case "v":
+            this.add.image(px, py - 2, "deco-banner").setDepth(3).setTint(theme.accent);
+            break;
+          case ":":
+            this.add.image(px, py - 7, "deco-stalactite").setDepth(3).setTint(theme.stoneTint);
+            break;
           case "D": {
             this.add.image(px, py - TILE / 2, "door").setDepth(5);
             this.door = { x: px, y: py };
@@ -541,7 +657,7 @@ export class DungeonScene extends Phaser.Scene {
       if (!m.active) continue;
       if (m.aiState === "fleeing") {
         m.updateAi(delta, this.party.leader);
-        if (m.x < TILE || m.x > (LEVEL_W - 2) * TILE) m.destroy();
+        if (m.x < TILE || m.x > (DUNGEON_W - 2) * TILE) m.destroy();
         continue;
       }
       // Target the nearest active party member; monsters see fine in the dark.
@@ -717,6 +833,8 @@ export class DungeonScene extends Phaser.Scene {
   }
 
   private restartRun(): void {
+    const currentIndex = this.registry.get("dungeonIndex");
+    this.registry.set("dungeonIndex", (typeof currentIndex === "number" ? currentIndex : 0) + 1);
     this.registry.set("ctx", new GameContext());
     this.scene.stop("Hud");
     this.scene.restart();

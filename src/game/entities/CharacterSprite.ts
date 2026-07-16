@@ -40,6 +40,7 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
   spellIndex = 0;
 
   private lastGroundedAt = 0;
+  private shadow: Phaser.GameObjects.Image;
 
   constructor(
     scene: Phaser.Scene,
@@ -53,6 +54,7 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
     this.ctx = ctx;
     this.character = character;
     this.cls = classDef(character.className);
+    this.shadow = scene.add.image(x, y + 15, "entity-shadow").setDepth(8).setAlpha(0.72);
     scene.add.existing(this);
     scene.physics.add.existing(this);
     this.setSize(20, 30).setDepth(10);
@@ -116,6 +118,9 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
 
   tick(delta: number): void {
     this.swingCooldown = Math.max(0, this.swingCooldown - delta);
+    this.shadow.setPosition(this.x, this.y + 15).setVisible(!this.character.dead);
+    const speedRatio = Math.min(1, Math.abs(this.body?.velocity.x ?? 0) / this.speed);
+    this.shadow.setScale(1 - speedRatio * 0.12, 1);
     if (this.character.dying) {
       this.setVelocityX(0);
       this.setTint(0x884444);
@@ -142,5 +147,10 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
 
   get canClimb(): boolean {
     return this.character.className === "thief" && this.touchingClimbable;
+  }
+
+  override destroy(fromScene?: boolean): void {
+    if (this.shadow.active) this.shadow.destroy();
+    super.destroy(fromScene);
   }
 }

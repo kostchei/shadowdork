@@ -4,13 +4,17 @@ A 1-player, 1–4 character side-scrolling dungeon crawler with Shadowdark mecha
 running entirely in the browser. Lost Vikings-style problem solving, not twitch
 platforming: you directly control one character while the rest follow with simple AI.
 
-Levels are [Five Room Dungeons](https://www.roleplayingtips.com/5-room-dungeons/) —
-Entrance & Guardian, Puzzle, Trick/Setback, Climax, Reward — followed by a rest
-spot: free full recovery, a fresh torch each, and the exit door.
+Runs draw from a replayable library of [Five Room Dungeons](https://www.roleplayingtips.com/5-room-dungeons/)
+— Entrance & Guardian, Puzzle, Trick/Setback, Climax, Reward — followed by a
+rest spot: free full recovery, a fresh torch each, and the exit door. The
+current library contains The Gloom Below, The Ember Crypt, and The Mold
+Warrens; completing or losing a run rotates to the next dungeon.
 
 Design docs: [Shadowdork.md](Shadowdork.md) (game design),
 [docs/five-room-dungeons.md](docs/five-room-dungeons.md) (level-design bible:
 room-variant library, order shuffles, 2D layout patterns),
+[docs/game-improvement-plan.md](docs/game-improvement-plan.md) (implemented
+presentation/replay plan and next phases),
 [the rules-engine doc](<Shadowdark Backend Rules Engine — Design Requirements.md>)
 (engine as built), [shadowdark_pseudocode.md](shadowdark_pseudocode.md) (RAW reference).
 
@@ -36,7 +40,7 @@ npm test         # rules-engine unit tests (vitest)
 | E | Interact: rescue NPCs, stabilize dying allies, disarm traps (thief), rest at campfires, exit door |
 | H | Toggle followers between FOLLOW and HOLD |
 | Tab / 1–4 | Swap leader |
-| R | Restart after a win or party wipe |
+| R | Enter the next dungeon after a win or party wipe |
 
 ## How Shadowdark maps to the game
 
@@ -76,9 +80,23 @@ src/data/     Rules-as-data: classes, spells, items, monsters, talent tables,
               wizard mishap table. The licensing boundary — table text is
               original paraphrase, kept out of the engine.
 src/game/     Phaser 3 (Arcade physics): scenes, entities, and systems
-              (light mask, party AI, combat, zones, spell effects).
+              (light mask, party AI, combat, zones, spell effects), a reusable
+              dungeon library, and runtime-generated themed pixel art.
 tests/        Engine unit tests.
 ```
+
+## Replay and presentation
+
+- Three complete dungeon layouts share the Five Room structure but vary room
+  geometry, hazards, platform routes, monster composition, rescue positions,
+  light placement, and reward approach.
+- A dungeon definition owns its palette, title, objective, atmosphere, and grid;
+  adding another does not require changing the scene renderer.
+- Pixel art is generated at boot with no external asset pipeline: themed stone
+  variants, distinct class and monster silhouettes, props, treasure, background
+  caverns, haze, motes, and entity shadows.
+- The HUD tracks the active dungeon objective, party HP bars, torch state,
+  selected spells, inventory use, event log, and crown/exit state.
 
 The game layer never rolls dice or mutates rules state itself — it calls the
 engine and renders consequences. Invalid states (unknown table, over-capacity

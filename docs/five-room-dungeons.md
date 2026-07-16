@@ -248,8 +248,12 @@ the player can *see* rooms they can't reach yet.
 
 Works today: light/darkness + `snuffAll`, torch timers, weak walls, climb
 walls, one-way platforms, spikes, morale + rout, rescues + death timers, gear
-slots + auto-loot + coin banking, room dividers, the level builder
-(`src/game/level/level1.ts`) that a variant library would plug into.
+slots + auto-loot + coin banking, room dividers, and a reusable dungeon library
+(`src/game/level/dungeons.ts`). The library currently ships three Five Room
+layouts with distinct geometry, encounter cadence, rescue placement, light
+placement, decoration, palette, and reward approach. Runs rotate through them
+after a win or wipe, and tests validate every grid's dimensions, tile alphabet,
+and mandatory encounter markers.
 
 Highest-leverage new primitives (each unlocks several variants above):
 1. **Interactables** — levers, pressure plates, offering bowls, winches,
@@ -262,6 +266,6 @@ Highest-leverage new primitives (each unlocks several variants above):
    leader-morale groups.
 7. **Heavy/placeable objects** — the 6-slot chest, planted standing torches.
 
-Target shape: each variant is a builder function
-(`roomGuardian.blindSentinels(grid, x0) → width`), and a dungeon is a seeded
+Next target: extract each authored room into a builder function
+(`roomGuardian.blindSentinels(grid, x0) → width`) so a dungeon can be a seeded
 draw of one variant per room type plus a layout pattern.

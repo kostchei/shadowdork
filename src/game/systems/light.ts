@@ -11,7 +11,7 @@ import { TILE } from "../textures";
 export const TORCH_RADIUS = TILE * 5;
 export const CAMPFIRE_RADIUS = TILE * 4;
 /** Faint self-glow so the player can always find their characters. */
-export const SELF_GLOW_RADIUS = TILE * 1.2;
+export const SELF_GLOW_RADIUS = TILE * 1.9;
 
 export type LightLevel = "lit" | "dim" | "dark";
 
@@ -29,10 +29,12 @@ export class LightSystem {
   private nextId = 0;
   private ctx: GameContext;
   private scene: Phaser.Scene;
+  private darknessColor: number;
 
-  constructor(scene: Phaser.Scene, ctx: GameContext) {
+  constructor(scene: Phaser.Scene, ctx: GameContext, darknessColor = 0x000008) {
     this.scene = scene;
     this.ctx = ctx;
+    this.darknessColor = darknessColor;
     const cam = scene.cameras.main;
     this.rt = scene.add.renderTexture(0, 0, cam.width, cam.height);
     this.rt.setOrigin(0, 0).setScrollFactor(0).setDepth(900);
@@ -99,7 +101,8 @@ export class LightSystem {
   update(): void {
     const cam = this.scene.cameras.main;
     this.rt.clear();
-    this.rt.fill(0x000008, 0.985);
+    // Near-black preserves danger while leaving a faint read of silhouettes.
+    this.rt.fill(this.darknessColor, 0.955);
     for (const [id, s] of [...this.sources.entries()]) {
       const pos = s.position();
       if (!pos) {

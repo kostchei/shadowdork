@@ -9,6 +9,8 @@ Entrance & Guardian, Puzzle, Trick/Setback, Climax, Reward — followed by a res
 spot: free full recovery, a fresh torch each, and the exit door.
 
 Design docs: [Shadowdork.md](Shadowdork.md) (game design),
+[docs/five-room-dungeons.md](docs/five-room-dungeons.md) (level-design bible:
+room-variant library, order shuffles, 2D layout patterns),
 [the rules-engine doc](<Shadowdark Backend Rules Engine — Design Requirements.md>)
 (engine as built), [shadowdark_pseudocode.md](shadowdark_pseudocode.md) (RAW reference).
 

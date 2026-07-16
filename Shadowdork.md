@@ -41,7 +41,10 @@ food for sale, selling loot, shrines for priest atonement.)
 
 Level geometry is built programmatically (`src/game/level/level1.ts`) from
 room-segment placements into an ASCII grid, so new five-room dungeons are cheap
-to author.
+to author. The full level-design bible — per-room variant libraries, legal
+order shuffles, and 2D layout patterns (loops, vertical stacks, two-layer
+screens, foreshadowing) — is in
+[docs/five-room-dungeons.md](docs/five-room-dungeons.md).
 
 ## The core tension: light
 

@@ -1,0 +1,234 @@
+/**
+ * Game-side spellcasting: turns engine CastResults into projectiles, heals,
+ * light, routed undead, and live mishap consequences.
+ */
+
+import Phaser from "phaser";
+import type { CastResult, EffectHook } from "../../engine";
+import { spell } from "../../data";
+import type { GameContext } from "../context";
+import type { CharacterSprite } from "../entities/CharacterSprite";
+import type { MonsterSprite } from "../entities/MonsterSprite";
+import { applyDamageToMonster, floatText, type MeleeDeps } from "./combat";
+import type { LightSystem } from "./light";
+import { TORCH_RADIUS } from "./light";
+import { CLOSE_PX, FAR_PX, NEAR_PX, zoneBetween } from "./position";
+
+export interface SpellDeps extends MeleeDeps {
+  party: () => CharacterSprite[];
+}
+
+export function castSelectedSpell(deps: SpellDeps, caster: CharacterSprite): void {
+  if (!caster.canSwing()) return;
+  const known = caster.character.knownSpells;
+  if (known.length === 0) {
+    deps.ctx.say(`${caster.character.name} knows no spells.`);
+    return;
+  }
+  const slot = known[caster.spellIndex % known.length]!;
+  const def = spell(slot.spellId);
+  if (slot.status === "lost") {
+    deps.ctx.say(`${def.name} is lost until ${caster.character.name} rests.`, "#d07070");
+    return;
+  }
+  caster.startSwingCooldown();
+
+  const inDark = deps.light.levelAt(caster.x, caster.y) === "dark";
+  const result = deps.ctx.engine.cast(caster.character, def, {
+    disadvantage: inDark ? ["darkness"] : [],
+  });
+
+  const die = result.check.natural;
+  if (result.outcome === "fail") {
+    floatText(deps.scene, caster.x, caster.y - 40, `${die} — spell lost!`, "#d07070");
+    deps.ctx.say(`${def.name} fizzles — lost until rest. (rolled ${die}+${result.check.modifier} vs DC ${result.check.dc})`, "#d07070");
+    return;
+  }
+  if (result.outcome === "mishap") {
+    deps.scene.cameras.main.shake(250, 0.01);
+    floatText(deps.scene, caster.x, caster.y - 40, "NAT 1 — MISHAP!", "#ff4060", 16);
+    if (result.mishap) {
+      deps.ctx.say(`Mishap: ${result.mishap.entry.text}`, "#ff4060");
+      applyMishap(deps, caster, result);
+    } else {
+      deps.ctx.say(
+        `${caster.character.name}'s deity is displeased — ${def.name} is cut off until atonement.`,
+        "#ff4060",
+      );
+    }
+    return;
+  }
+
+  const doubled = result.doubled;
+  floatText(
+    deps.scene,
+    caster.x,
+    caster.y - 40,
+    doubled ? `${die}! CRIT CAST` : `${die} cast`,
+    doubled ? "#ffd040" : "#70a0f0",
+  );
+  resolveSpellEffect(deps, caster, result);
+}
+
+function resolveSpellEffect(deps: SpellDeps, caster: CharacterSprite, result: CastResult): void {
+  const def = result.spell;
+  const mult = result.doubled ? 2 : 1;
+  const { ctx, scene } = deps;
+
+  switch (def.id) {
+    case "magic-missile": {
+      const target = nearestMonster(deps, caster, FAR_PX);
+      if (!target) {
+        ctx.say("The bolt streaks away into the dark — nothing in range.");
+        return;
+      }
+      const dmg = ctx.engine.dice.roll(def.dice!) * mult;
+      fireBolt(scene, caster, target, () => {
+        floatText(scene, target.x, target.y - 16, `${dmg}`, "#8090f8");
+        applyDamageToMonster(deps, target, dmg);
+      });
+      return;
+    }
+    case "burning-hands": {
+      const victims = deps.monsters().filter(
+        (m) => m.aliveInFight && zoneBetween(caster, m) === "close",
+      );
+      if (victims.length === 0) {
+        ctx.say("Flames fan out over nothing.");
+        return;
+      }
+      for (const m of victims) {
+        const dmg = ctx.engine.dice.roll(def.dice!) * mult;
+        floatText(scene, m.x, m.y - 16, `${dmg}`, "#f09040");
+        applyDamageToMonster(deps, m, dmg);
+      }
+      return;
+    }
+    case "mage-armor": {
+      caster.character.removeEffect("spell-mage-armor");
+      caster.character.addEffect({
+        id: "spell-mage-armor",
+        name: "Mage Armor (+3 AC)",
+        hooks: [{ kind: "acBonus", bonus: 3 }],
+        duration: { unit: "realMs", remaining: def.durationMs! * mult },
+      });
+      ctx.say(`Force hardens around ${caster.character.name} (+3 AC).`, "#70a0f0");
+      return;
+    }
+    case "cure-wounds": {
+      const wounded = deps
+        .party()
+        .filter((p) => !p.character.dead && zoneBetween(caster, p) !== "beyond")
+        .sort(
+          (a, b) => a.character.hp / a.character.maxHp - b.character.hp / b.character.maxHp,
+        )[0];
+      if (!wounded) throw new Error("cure-wounds found no valid target");
+      const heal = ctx.engine.dice.roll(def.dice!) * mult;
+      const wasDying = wounded.character.dying !== null;
+      wounded.character.heal(heal);
+      floatText(scene, wounded.x, wounded.y - 16, `+${heal}`, "#60e080");
+      if (wasDying && !wounded.character.dying) {
+        ctx.say(`${wounded.character.name} is pulled back from the brink!`, "#60e080");
+      }
+      return;
+    }
+    case "light": {
+      const durationMs = def.durationMs! * mult;
+      const sourceId = deps.light.addSource(TORCH_RADIUS * 1.1, () =>
+        caster.character.dead ? null : { x: caster.x, y: caster.y },
+      );
+      scene.time.delayedCall(durationMs, () => deps.light.removeSource(sourceId));
+      ctx.say(`Holy light blazes around ${caster.character.name} — no torch, no hands.`, "#f0e090");
+      return;
+    }
+    case "turn-undead": {
+      const undead = deps
+        .monsters()
+        .filter((m) => m.aliveInFight && m.def.undead && zoneBetween(caster, m) !== "beyond")
+        .filter((m) => Phaser.Math.Distance.Between(caster.x, caster.y, m.x, m.y) <= NEAR_PX * (mult === 2 ? 2 : 1));
+      if (undead.length === 0) {
+        ctx.say("No undead stir within reach of the litany.");
+        return;
+      }
+      for (const m of undead) {
+        m.flee();
+        floatText(scene, m.x, m.y - 20, "turned!", "#f0e090");
+      }
+      ctx.say(`${undead.length} undead recoil and flee the holy word!`, "#f0e090");
+      return;
+    }
+    default:
+      throw new Error(`No game effect implemented for spell "${def.id}"`);
+  }
+}
+
+function applyMishap(deps: SpellDeps, caster: CharacterSprite, result: CastResult): void {
+  const data = result.mishap!.entry.data ?? {};
+  const effects = result.mishap!.entry.effects;
+  const { ctx, scene } = deps;
+
+  if (typeof data.damageDice === "string") {
+    const dmg = ctx.engine.dice.roll(data.damageDice);
+    floatText(scene, caster.x, caster.y - 16, `-${dmg}`, "#ff4060");
+    const wentDown = ctx.engine.damageCharacter(caster.character, dmg);
+    if (wentDown) ctx.say(`${caster.character.name} is downed by their own magic!`, "#ff4060");
+  }
+  if (effects && effects.length > 0) {
+    caster.character.addEffect({
+      id: `mishap-${result.mishap!.roll}-${Date.now()}`,
+      name: result.mishap!.entry.text,
+      hooks: [...effects] as EffectHook[],
+      duration: { unit: "untilRest", remaining: 0 },
+    });
+  }
+  if (data.snuffLights === true) {
+    deps.light.snuffAll();
+    for (const p of deps.party()) p.torchTimerId = null;
+    ctx.say("Every flame in the party is snuffed out. The dark rushes in.", "#ff4060");
+  }
+  if (data.launch === true) {
+    caster.setVelocityY(-560);
+  }
+  if (data.attractMonsters === true) {
+    for (const m of deps.monsters()) {
+      if (m.aliveInFight) m.aiState = "aggro";
+    }
+  }
+}
+
+function nearestMonster(
+  deps: SpellDeps,
+  from: CharacterSprite,
+  maxDist: number,
+): MonsterSprite | undefined {
+  return deps
+    .monsters()
+    .filter(
+      (m) => m.aliveInFight && Phaser.Math.Distance.Between(from.x, from.y, m.x, m.y) <= maxDist,
+    )
+    .sort(
+      (a, b) =>
+        Phaser.Math.Distance.Between(from.x, from.y, a.x, a.y) -
+        Phaser.Math.Distance.Between(from.x, from.y, b.x, b.y),
+    )[0];
+}
+
+function fireBolt(
+  scene: Phaser.Scene,
+  from: CharacterSprite,
+  to: MonsterSprite,
+  onHit: () => void,
+): void {
+  const bolt = scene.add.image(from.x, from.y - 8, "spell-bolt").setDepth(20);
+  bolt.setRotation(Phaser.Math.Angle.Between(from.x, from.y, to.x, to.y));
+  scene.tweens.add({
+    targets: bolt,
+    x: to.x,
+    y: to.y,
+    duration: 180,
+    onComplete: () => {
+      bolt.destroy();
+      onHit();
+    },
+  });
+}

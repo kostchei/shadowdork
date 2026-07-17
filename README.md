@@ -7,8 +7,8 @@ platforming: you directly control one character while the rest follow with simpl
 Runs draw from a replayable library of [Five Room Dungeons](https://www.roleplayingtips.com/5-room-dungeons/)
 — Entrance & Guardian, Puzzle, Trick/Setback, Climax, Reward — followed by a
 rest spot: free full recovery, a fresh torch each, and the exit door. The
-current library contains The Gloom Below, The Ember Crypt, and The Mold
-Warrens; completing or losing a run rotates to the next dungeon.
+current library contains The Gloom Below, The Ember Crypt, The Mold Warrens,
+and The Drowned Angle; completing or losing a run rotates to the next dungeon.
 
 Design docs: [Shadowdork.md](Shadowdork.md) (game design),
 [docs/five-room-dungeons.md](docs/five-room-dungeons.md) (level-design bible:
@@ -92,7 +92,7 @@ tests/        Engine unit tests.
 
 ## Replay and presentation
 
-- Three complete dungeon layouts share the Five Room structure but vary room
+- Four complete dungeon layouts share the Five Room structure but vary room
   geometry, hazards, platform routes, monster composition, rescue positions,
   light placement, and reward approach.
 - Featured puzzle traps occur in roughly 40% of runs, never more than one per

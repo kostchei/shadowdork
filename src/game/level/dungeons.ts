@@ -150,7 +150,7 @@ export interface DungeonTheme {
   haze: number;
   darkness: number;
   /** Which math-built parallax backdrop the dungeon renders behind play. */
-  backdrop: "greek-temple" | "aztec" | "tentacles";
+  backdrop: "greek-temple" | "aztec" | "natural-caverns" | "eldritch-depths";
 }
 
 /** Which authored variants each room may draw, per dungeon (theme coupling). */
@@ -928,7 +928,32 @@ const DUNGEON_BASES: readonly Omit<DungeonDefinition, "grid" | "traps">[] = [
       accent: 0x74c888,
       haze: 0x14301e,
       darkness: 0x020806,
-      backdrop: "tentacles",
+      backdrop: "natural-caverns",
+    },
+  },
+  {
+    id: "drowned-angle",
+    name: "The Drowned Angle",
+    tagline: "The sea is above you. The stars are below.",
+    objective: "Take the crown from the impossible sanctum",
+    danger: 1,
+    encounterMonsterId: "skeleton",
+    trapKinds: ["flooded-chamber", "light-runes", "undead-barrier", "counterweighted-lift"],
+    pools: {
+      room1: [3],
+      room2: [3],
+      room3: [3],
+      room4: [3],
+      room5: [3],
+      sanctuary: ALL_SANCTUARIES,
+    },
+    theme: {
+      background: 0x030b12,
+      stoneTint: 0x7899a7,
+      accent: 0x55d6c5,
+      haze: 0x0a3040,
+      darkness: 0x010609,
+      backdrop: "eldritch-depths",
     },
   },
 ];

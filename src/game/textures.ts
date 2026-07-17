@@ -614,8 +614,133 @@ function backdropTextures(scene: Phaser.Scene): void {
     for (let i = 0; i < 8; i++) nested(i * 40 + 20, 26, 15, 1, 0.3);
   });
 
+  texture(scene, "bg-natural-caverns", W, H, (g) => {
+    const rock = 0x8594a8;
+    const shadow = 0x293448;
+    const highlight = 0xb2c1cf;
+    const drawStalactite = (cx: number, topY: number, height: number, radius: number, rings: number, alpha: number): void => {
+      const steps = 18;
+      for (let step = 0; step < steps; step++) {
+        const t1 = step / steps;
+        const t2 = (step + 1) / steps;
+        const r1 = radius * Math.pow(1 - t1, 0.75) * (1 + Math.sin(t1 * Math.PI * rings) * 0.045);
+        const r2 = radius * Math.pow(1 - t2, 0.75) * (1 + Math.sin(t2 * Math.PI * rings) * 0.045);
+        const y1 = topY + height * t1;
+        const y2 = topY + height * t2;
+        g.fillStyle(rock, alpha);
+        g.fillTriangle(cx - r1, y1, cx + r1, y1, cx - r2, y2);
+        g.fillTriangle(cx + r1, y1, cx + r2, y2, cx - r2, y2);
+        g.fillStyle(shadow, alpha * 0.55);
+        g.fillTriangle(cx + r1 * 0.18, y1, cx + r1, y1, cx + r2, y2);
+      }
+    };
+    const drawStalagmite = (cx: number, baseY: number, height: number, radius: number, shapeRatio: number, alpha: number): void => {
+      const steps = 16;
+      for (let step = 0; step < steps; step++) {
+        const t1 = step / steps;
+        const t2 = (step + 1) / steps;
+        const r1 = radius * Math.pow(1 - t1, shapeRatio);
+        const r2 = radius * Math.pow(1 - t2, shapeRatio);
+        const y1 = baseY - height * t1;
+        const y2 = baseY - height * t2;
+        g.fillStyle(rock, alpha);
+        g.fillTriangle(cx - r1, y1, cx + r1, y1, cx - r2, y2);
+        g.fillTriangle(cx + r1, y1, cx + r2, y2, cx - r2, y2);
+        g.fillStyle(highlight, alpha * 0.25);
+        g.fillTriangle(cx - r1 * 0.62, y1, cx - r1 * 0.12, y1, cx - r2 * 0.12, y2);
+      }
+    };
+    const drawDrapery = (leftX: number, topY: number, width: number, height: number, folds: number, alpha: number): void => {
+      const strips = Math.ceil(width / 4);
+      for (let strip = 0; strip < strips; strip++) {
+        const t1 = strip / strips;
+        const t2 = (strip + 1) / strips;
+        const x1 = leftX + width * t1;
+        const x2 = leftX + width * t2;
+        const wave1 = Math.sin(t1 * Math.PI * folds) * height * 0.12;
+        const wave2 = Math.sin(t2 * Math.PI * folds) * height * 0.12;
+        const lower1 = topY + height * (0.72 + 0.28 * t1) + wave1;
+        const lower2 = topY + height * (0.72 + 0.28 * t2) + wave2;
+        g.fillStyle(strip % 2 === 0 ? rock : shadow, alpha);
+        g.fillTriangle(x1, topY + t1 * height * 0.12, x2, topY + t2 * height * 0.12, x1, lower1);
+        g.fillTriangle(x2, topY + t2 * height * 0.12, x2, lower2, x1, lower1);
+      }
+    };
+    const drawColumn = (cx: number, topY: number, bottomY: number, width: number, alpha: number): void => {
+      const steps = 20;
+      for (let step = 0; step < steps; step++) {
+        const t1 = step / steps;
+        const t2 = (step + 1) / steps;
+        const r1 = width * (0.62 + 0.38 * Math.pow(Math.abs(t1 - 0.5) * 2, 0.8));
+        const r2 = width * (0.62 + 0.38 * Math.pow(Math.abs(t2 - 0.5) * 2, 0.8));
+        const y1 = topY + (bottomY - topY) * t1;
+        const y2 = topY + (bottomY - topY) * t2;
+        g.fillStyle(rock, alpha);
+        g.fillTriangle(cx - r1, y1, cx + r1, y1, cx - r2, y2);
+        g.fillTriangle(cx + r1, y1, cx + r2, y2, cx - r2, y2);
+      }
+      g.fillStyle(highlight, alpha * 0.28);
+      g.fillRect(cx - width * 0.5, topY + 5, 2, bottomY - topY - 10);
+    };
+
+    drawDrapery(22, 0, 88, 74, 4.5, 0.24);
+    drawDrapery(204, 0, 74, 60, 3.5, 0.2);
+    drawStalactite(8, 0, 82, 19, 6, 0.35);
+    drawStalactite(142, 0, 60, 14, 4, 0.3);
+    drawStalactite(316, 0, 96, 23, 7, 0.36);
+    drawStalagmite(40, H, 64, 22, 0.65, 0.34);
+    drawStalagmite(170, H, 78, 17, 1.1, 0.35);
+    drawStalagmite(285, H, 52, 25, 1.8, 0.3);
+    drawColumn(118, 58, H, 15, 0.25);
+    drawColumn(228, 72, H, 12, 0.2);
+    for (let ridge = 0; ridge < 5; ridge++) {
+      const x = 56 + ridge * 51;
+      g.fillStyle(highlight, 0.11 + (ridge % 2) * 0.025);
+      g.fillTriangle(x - 18, H, x + 16, H, x + Math.sin(ridge * 2.1) * 9, H - 34 - (ridge % 3) * 8);
+    }
+  });
+
   // Tentacle swirls: logarithmic spirals plus sine-wave feelers from below.
-  texture(scene, "bg-tentacles", W, H, (g) => {
+  texture(scene, "bg-eldritch-depths", W, H, (g) => {
+    const drawImpossibleFrame = (cx: number, cy: number, size: number, phase: number, alpha: number): void => {
+      for (let depth = 0; depth < 4; depth++) {
+        const scale = 1 - depth * 0.2;
+        const half = size * scale * 0.5;
+        const skew = Math.sin(phase + depth * 1.7) * size * 0.13;
+        const lift = depth * size * 0.045;
+        g.lineStyle(Math.max(1, 4 - depth), depth % 2 === 0 ? 0x91b6c4 : 0x425d70, alpha * (1 - depth * 0.12));
+        g.beginPath();
+        g.moveTo(cx - half + skew, cy + half - lift);
+        g.lineTo(cx - half - skew, cy - half - lift);
+        g.lineTo(cx + half + skew, cy - half + lift);
+        g.lineTo(cx + half - skew, cy + half + lift);
+        g.closePath();
+        g.strokePath();
+      }
+      g.fillStyle(0x182d3c, alpha * 0.9);
+      g.fillTriangle(cx - size * 0.5, cy + size * 0.5, cx - size * 0.25, cy + size * 0.31, cx + size * 0.42, cy + size * 0.5);
+      g.fillStyle(0x9abfcc, alpha * 0.7);
+      g.fillTriangle(cx + size * 0.5, cy - size * 0.5, cx + size * 0.25, cy - size * 0.31, cx - size * 0.42, cy - size * 0.5);
+    };
+    const drawImpossibleTriangle = (cx: number, cy: number, size: number, alpha: number): void => {
+      const height = size * 0.84;
+      g.lineStyle(7, 0x283f50, alpha);
+      g.beginPath();
+      g.moveTo(cx, cy - height / 2);
+      g.lineTo(cx + size / 2, cy + height / 2);
+      g.lineTo(cx - size / 2, cy + height / 2);
+      g.closePath();
+      g.strokePath();
+      g.lineStyle(2, 0xa1c5ce, alpha * 0.72);
+      g.beginPath();
+      g.moveTo(cx, cy - height / 2);
+      g.lineTo(cx + size / 2, cy + height / 2);
+      g.lineTo(cx - size / 2, cy + height / 2);
+      g.closePath();
+      g.strokePath();
+      g.fillStyle(0x283f50, alpha);
+      g.fillTriangle(cx - 5, cy - height / 2 - 2, cx + 7, cy - height / 2 + 8, cx - size / 2 - 2, cy + height / 2 + 2);
+    };
     const spiral = (cx: number, cy: number, R: number, phase: number, alpha: number) => {
       const maxTheta = Math.PI * 4.5;
       for (let theta = 0; theta < maxTheta; theta += 0.07) {
@@ -627,6 +752,22 @@ function backdropTextures(scene: Phaser.Scene): void {
         wrapCircle(g, px, py, 0.8 + (1 - t) * 3, W);
       }
     };
+
+    for (let band = 0; band < 5; band++) {
+      const baseY = 18 + band * 31;
+      g.lineStyle(1, 0x8fd6d2, 0.05 + band * 0.012);
+      g.beginPath();
+      for (let x = 0; x <= W; x += 4) {
+        const y = baseY + Math.sin(x * 0.055 + band * 1.9) * (4 + band);
+        if (x === 0) g.moveTo(x, y);
+        else g.lineTo(x, y);
+      }
+      g.strokePath();
+    }
+    drawImpossibleFrame(86, 94, 104, 0.4, 0.28);
+    drawImpossibleFrame(274, 76, 76, 2.1, 0.23);
+    drawImpossibleTriangle(180, 56, 62, 0.21);
+
     spiral(64, 58, 44, 0.4, 0.3);
     spiral(208, 96, 58, 2.1, 0.26);
     spiral(300, 40, 34, 4.0, 0.3);
@@ -642,6 +783,13 @@ function backdropTextures(scene: Phaser.Scene): void {
         g.fillStyle(0x7e8aa6, 0.24 * (1 - t * 0.55));
         wrapCircle(g, baseX + sway, y, 1 + (1 - t) * 5, W);
       }
+    }
+    for (let bubble = 0; bubble < 22; bubble++) {
+      const x = (bubble * 73 + bubble * bubble * 19) % W;
+      const y = (bubble * 47 + 23) % H;
+      const radius = 1 + (bubble % 4) * 0.7;
+      g.lineStyle(1, 0xb8eeee, 0.08 + (bubble % 3) * 0.035);
+      g.strokeCircle(x, y, radius);
     }
   });
 

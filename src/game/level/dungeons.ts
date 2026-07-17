@@ -150,7 +150,7 @@ export interface DungeonTheme {
   haze: number;
   darkness: number;
   /** Which math-built parallax backdrop the dungeon renders behind play. */
-  backdrop: "columns" | "aztec" | "tentacles";
+  backdrop: "greek-temple" | "aztec" | "tentacles";
 }
 
 /** Which authored variants each room may draw, per dungeon (theme coupling). */
@@ -878,7 +878,7 @@ const DUNGEON_BASES: readonly Omit<DungeonDefinition, "grid" | "traps">[] = [
       accent: 0x8890c8,
       haze: 0x232742,
       darkness: 0x030408,
-      backdrop: "columns",
+      backdrop: "greek-temple",
     },
   },
   {

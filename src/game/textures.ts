@@ -514,6 +514,69 @@ function backdropTextures(scene: Phaser.Scene): void {
     g.fillEllipse(W / 2, midY, W * 0.5, 14);
   });
 
+  texture(scene, "bg-greek-temple", W, H, (g) => {
+    type Order = "doric" | "ionic" | "corinthian";
+    const drawColumn = (
+      cx: number,
+      baseY: number,
+      height: number,
+      baseWidth: number,
+      order: Order,
+      alpha: number,
+    ): void => {
+      const fluteCount = order === "doric" ? 20 : 24;
+      const taper = order === "doric" ? 0.15 : order === "ionic" ? 0.1 : 0.05;
+      const topY = baseY - height;
+      const topWidth = baseWidth * (1 - taper);
+      const light = 0x9aa4bf;
+      const shadow = 0x353b52;
+
+      g.fillStyle(light, alpha);
+      g.fillTriangle(cx - baseWidth / 2, baseY, cx + baseWidth / 2, baseY, cx + topWidth / 2, topY);
+      g.fillTriangle(cx - baseWidth / 2, baseY, cx + topWidth / 2, topY, cx - topWidth / 2, topY);
+
+      const fluteStep = Math.max(2, Math.floor(baseWidth / (fluteCount / 2)));
+      g.fillStyle(shadow, alpha * 0.72);
+      for (let x = cx - baseWidth / 2 + fluteStep; x < cx + baseWidth / 2; x += fluteStep) {
+        const progress = (x - (cx - baseWidth / 2)) / baseWidth;
+        const shaftTopX = cx - topWidth / 2 + progress * topWidth;
+        g.fillTriangle(x, baseY - 2, x + 1, baseY - 2, shaftTopX, topY + 3);
+      }
+
+      g.fillStyle(light, alpha * 1.12);
+      g.fillRect(cx - topWidth / 2 - 3, topY - 4, topWidth + 6, 3);
+      g.fillRect(cx - baseWidth / 2 - 3, baseY - 3, baseWidth + 6, 3);
+      if (order !== "doric") g.fillRect(cx - topWidth / 2 - 5, topY - 7, topWidth + 10, 2);
+      if (order === "corinthian") {
+        g.fillStyle(light, alpha * 0.65);
+        g.fillCircle(cx - topWidth / 3, topY - 7, 2);
+        g.fillCircle(cx + topWidth / 3, topY - 7, 2);
+      }
+    };
+    const drawPediment = (cx: number, baseY: number, span: number, pitchDegrees: number, alpha: number): void => {
+      const peakHeight = (span / 2) * Math.tan((pitchDegrees * Math.PI) / 180);
+      g.fillStyle(0x8f99b4, alpha);
+      g.fillTriangle(cx - span / 2, baseY, cx + span / 2, baseY, cx, baseY - peakHeight);
+      g.fillStyle(0x30364c, alpha * 0.8);
+      g.fillTriangle(cx - span / 2 + 3, baseY - 2, cx + span / 2 - 3, baseY - 2, cx, baseY - peakHeight + 4);
+      g.fillStyle(0xaab4d0, alpha * 0.9);
+      g.fillRect(cx - span / 2 - 2, baseY, span + 4, 3);
+    };
+
+    for (const temple of [
+      { cx: 80, baseY: 166, span: 136, height: 86, order: "doric" as const, alpha: 0.38 },
+      { cx: 248, baseY: 160, span: 112, height: 68, order: "ionic" as const, alpha: 0.3 },
+    ]) {
+      drawPediment(temple.cx, temple.baseY - temple.height - 7, temple.span, 14, temple.alpha);
+      for (let index = -2; index <= 2; index++) {
+        drawColumn(temple.cx + index * (temple.span / 5), temple.baseY, temple.height, 13, temple.order, temple.alpha);
+      }
+    }
+
+    drawColumn(0, H, 112, 24, "corinthian", 0.28);
+    drawColumn(W, H, 112, 24, "corinthian", 0.28);
+  });
+
   // Fractal stepped pyramids and a nested-square frieze.
   texture(scene, "bg-aztec", W, H, (g) => {
     const pyramid = (cx: number, baseY: number, baseW: number, tiers: number, alpha: number) => {

@@ -39,13 +39,16 @@ Vite and opens the game directly in Chrome.
 | A/D or ←/→ | Move |
 | W / ↑ / Space | Jump (thief: hold W on vine walls to climb) |
 | J or X | Melee attack (fighter also breaks cracked walls) |
-| K or C | Cast prepared spell |
+| K | Cast prepared spell |
 | Q | Cycle prepared spell |
 | T | Light a torch (consumes one; burns in real time) |
 | E | Interact: rescue NPCs, stabilize dying allies, disarm traps (thief), rest at campfires, exit door |
 | H | Toggle followers between FOLLOW and HOLD |
 | Tab / 1–4 | Swap leader |
 | R | Enter the next dungeon after a win or party wipe |
+| Esc | Pause / unpause the game |
+| C | Toggle character stats sheet (pauses game) |
+| I | Toggle gear / inventory panel (pauses game) |
 
 ## How Shadowdark maps to the game
 

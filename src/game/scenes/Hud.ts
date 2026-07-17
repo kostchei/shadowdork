@@ -146,7 +146,7 @@ export class HudScene extends Phaser.Scene {
       .text(
         w / 2,
         h - 15,
-        "MOVE A/D   JUMP W/SPACE   ATTACK J/CTRL   USE E   TORCH T   MAGIC K/Q   SWAP TAB/1-4   HOLD H   LUCK L",
+        "MOVE A/D   JUMP W/SPACE   ATTACK J/CTRL   USE E   TORCH T   MAGIC K/Q   SWAP TAB/1-4   HOLD H   LUCK L   STATS C   GEAR I   PAUSE ESC",
         { ...DATA_STYLE, fontSize: "9px", color: "#9da2ad" },
       )
       .setOrigin(0.5)

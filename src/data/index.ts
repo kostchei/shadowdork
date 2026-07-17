@@ -58,7 +58,8 @@ export function createCharacter(
   }
 
   const conMod = Math.floor((stats.CON - 10) / 2);
-  const maxHp = Math.max(1, engine.dice.roll(def.hitDie) + conMod);
+  const hitDieSides = parseInt(def.hitDie.split("d")[1] || "8", 10);
+  const maxHp = Math.max(1, hitDieSides + conMod);
   const c = new Character({ id, name, className: cls, stats, maxHp, ancestry });
   for (const f of def.features) c.addEffect(structuredClone(f) as typeof f);
 

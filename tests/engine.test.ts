@@ -233,6 +233,13 @@ describe("character generation", () => {
     }
   });
 
+  it("maxes level-1 HP based on class hit die + CON modifier", () => {
+    const engine = makeEngine();
+    const f = createCharacter(engine, "f", "Fighter", "fighter"); // d8 hit die
+    const expected = Math.max(1, 8 + statModifier(f.stats.CON));
+    expect(f.maxHp).toBe(expected);
+  });
+
   it("starts every character with a luck token", () => {
     const engine = makeEngine();
     expect(createCharacter(engine, "f", "Fighter", "fighter").luckToken).toBe(true);
@@ -243,6 +250,8 @@ describe("armor and AC", () => {
   it("computes AC from armor base + capped DEX + shield", () => {
     const engine = makeEngine();
     const f = createCharacter(engine, "f", "Fighter", "fighter"); // chainmail + shield
+    // Clear starting talents to test AC in isolation
+    f.effects = f.effects.filter((e) => !e.id.startsWith("talent-start"));
     f.inventory.add(item("shield"), 1, true);
     f.equipShield(item("shield"));
     const dex = statModifier(f.stats.DEX);

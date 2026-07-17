@@ -37,6 +37,8 @@ export interface DungeonTheme {
   accent: number;
   haze: number;
   darkness: number;
+  /** Which math-built parallax backdrop the dungeon renders behind play. */
+  backdrop: "columns" | "aztec" | "tentacles";
 }
 
 /** Which authored variants each room may draw, per dungeon (theme coupling). */
@@ -567,6 +569,7 @@ const DUNGEON_BASES: readonly Omit<DungeonDefinition, "grid">[] = [
       accent: 0x8890c8,
       haze: 0x232742,
       darkness: 0x030408,
+      backdrop: "columns",
     },
   },
   {
@@ -590,6 +593,7 @@ const DUNGEON_BASES: readonly Omit<DungeonDefinition, "grid">[] = [
       accent: 0xe08040,
       haze: 0x3a1d12,
       darkness: 0x070302,
+      backdrop: "aztec",
     },
   },
   {
@@ -613,6 +617,7 @@ const DUNGEON_BASES: readonly Omit<DungeonDefinition, "grid">[] = [
       accent: 0x74c888,
       haze: 0x14301e,
       darkness: 0x020806,
+      backdrop: "tentacles",
     },
   },
 ];

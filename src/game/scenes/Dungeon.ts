@@ -86,6 +86,7 @@ export class DungeonScene extends Phaser.Scene {
   private lastHurtAt = new Map<string, number>();
   private encounterWaves = 0;
   private interactPrompt!: Phaser.GameObjects.Text;
+  private leaderMarker!: Phaser.GameObjects.Image;
   /** Read by the HUD to show the reroll hint. */
   luckWindow: LuckWindow | null = null;
 
@@ -151,6 +152,11 @@ export class DungeonScene extends Phaser.Scene {
       .setOrigin(0.5, 1)
       .setDepth(940)
       .setVisible(false);
+    this.leaderMarker = this.add
+      .image(0, 0, "leader-marker")
+      .setTint(this.activeDungeon.theme.accent)
+      .setDepth(939)
+      .setVisible(false);
 
     // Random encounters ride the engine's crawling clock.
     new EncounterSystem({
@@ -210,6 +216,22 @@ export class DungeonScene extends Phaser.Scene {
       .setTint(theme.haze)
       .setAlpha(0.72)
       .setDepth(-30);
+    // Themed math-built backdrop: columns, tentacle swirls, or aztec fractals.
+    this.add
+      .tileSprite(0, 0, worldW, worldH, `bg-${theme.backdrop}`)
+      .setOrigin(0)
+      .setScrollFactor(0.22, 0.08)
+      .setTint(theme.stoneTint)
+      .setAlpha(0.42)
+      .setDepth(-26);
+    // Bump-noise grain so the walls of the void aren't a flat wash.
+    this.add
+      .tileSprite(0, 0, worldW, worldH, "bg-bumps")
+      .setOrigin(0)
+      .setScrollFactor(0.45, 0.25)
+      .setTint(theme.accent)
+      .setAlpha(0.2)
+      .setDepth(-24);
     this.add
       .tileSprite(0, worldH - 190, worldW, 190, "bg-fog")
       .setOrigin(0)
@@ -350,8 +372,18 @@ export class DungeonScene extends Phaser.Scene {
           case "f":
           case "F": {
             this.add.image(px, py + 6, "campfire").setDepth(5);
+            this.add
+              .image(px, py - 8, "light-radial")
+              .setScale(0.82)
+              .setTint(ch === "F" ? 0xffc66b : 0xff9845)
+              .setBlendMode(Phaser.BlendModes.ADD)
+              .setAlpha(0.13)
+              .setDepth(4);
             this.campfires.push({ x: px, y: py, free: ch === "F" });
-            this.light.addSource(CAMPFIRE_RADIUS, () => ({ x: px, y: py }));
+            this.light.addSource(CAMPFIRE_RADIUS, () => ({ x: px, y: py }), {
+              tint: 0xe0a868,
+              tintAlpha: 0.45,
+            });
             flameAt(this, px, py + 2, "campfire");
             break;
           }
@@ -362,7 +394,17 @@ export class DungeonScene extends Phaser.Scene {
           }
           case "b": {
             const brazier = this.add.image(px, py + 3, "brazier").setDepth(5);
-            this.light.addSource(TILE * 2.8, () => ({ x: px, y: py - 8 }));
+            this.add
+              .image(px, py - 9, "light-radial")
+              .setScale(0.6)
+              .setTint(0xff8c3a)
+              .setBlendMode(Phaser.BlendModes.ADD)
+              .setAlpha(0.14)
+              .setDepth(4);
+            this.light.addSource(TILE * 2.8, () => ({ x: px, y: py - 8 }), {
+              tint: 0xdf9a52,
+              tintAlpha: 0.42,
+            });
             this.tweens.add({
               targets: brazier,
               scaleY: { from: 0.96, to: 1.06 },
@@ -426,6 +468,15 @@ export class DungeonScene extends Phaser.Scene {
   private addPickup(x: number, y: number, itemId: string, qty: number): void {
     const sprite = this.physics.add.image(x, y, `pickup-${itemId}`).setDepth(6);
     sprite.setBounce(0.2);
+    this.tweens.add({
+      targets: sprite,
+      scale: { from: 0.94, to: 1.08 },
+      alpha: { from: 0.82, to: 1 },
+      duration: 720 + ((Math.floor(x) * 13) % 240),
+      yoyo: true,
+      repeat: -1,
+      ease: "Sine.inOut",
+    });
     this.physics.add.collider(sprite, this.walls);
     this.pickups.push({ sprite, itemId, qty });
   }
@@ -455,10 +506,20 @@ export class DungeonScene extends Phaser.Scene {
     this.updateFollowerCombat();
     for (const m of this.party.members) m.tick(delta);
     this.light.update();
+    this.updateLeaderMarker(time);
     this.updateInteractPrompt();
     this.updateLuckWindow(time);
     this.checkLevelUps();
     this.checkEndConditions();
+  }
+
+  private updateLeaderMarker(time: number): void {
+    const leader = this.party.leader;
+    this.leaderMarker
+      .setVisible(leader.alive)
+      .setPosition(leader.x, leader.y - 31)
+      .setScale(1.12)
+      .setAlpha(0.88 + 0.12 * Math.sin(time / 180));
   }
 
   /** Floating "E — do the thing" prompt above the leader. */

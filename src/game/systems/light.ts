@@ -1,6 +1,8 @@
 /**
  * Light and visibility. Darkness is a screen-space overlay; light sources
- * erase soft circles from it. Torches burn on the engine's real-time clock.
+ * erase soft circles from it, and a second additive layer paints each
+ * source's colour cast over the lit area. Torches burn on the engine's
+ * real-time clock.
  * Characters derive a lit/dim/dark state that feeds check resolution.
  */
 
@@ -8,14 +10,36 @@ import Phaser from "phaser";
 import type { GameContext } from "../context";
 import { TILE } from "../textures";
 
-export const TORCH_RADIUS = TILE * 5;
-export const CAMPFIRE_RADIUS = TILE * 4;
-/** Faint self-glow so the player can always find their characters. */
-export const SELF_GLOW_RADIUS = TILE * 1.9;
+export const TORCH_RADIUS = TILE * 6.5;
+export const CAMPFIRE_RADIUS = TILE * 4.5;
+/**
+ * Dark-adapted eyes: with every torch out, the party still reads outlines
+ * to half a torch's reach — but it stays mechanically dark.
+ */
+export const SELF_GLOW_RADIUS = TORCH_RADIUS / 2;
+
+/** Desaturated pale yellow — torchlight's cast, whatever colour the flame is. */
+export const TORCH_TINT = 0xd8caa0;
+/** Blue-grey "you can see, but it is definitely dark" cast. */
+export const DARK_SIGHT_TINT = 0x64748e;
 
 export type LightLevel = "lit" | "dim" | "dark";
 
-export interface LightSource {
+export interface LightSourceOptions {
+  /** Colour cast painted additively over the lit area. */
+  tint: number;
+  /** Strength of that cast (0..1). */
+  tintAlpha: number;
+  /**
+   * Dim sources (dark-adapted eyes) only thin the darkness instead of
+   * cutting through it, and never count toward lit/dim checks.
+   */
+  dim?: boolean;
+  /** Marks a carried torch flame so snuffAll can target exactly those. */
+  torch?: boolean;
+}
+
+export interface LightSource extends LightSourceOptions {
   id: string;
   radius: number;
   /** Return null when the source is gone (owner died, spell ended). */
@@ -24,6 +48,7 @@ export interface LightSource {
 
 export class LightSystem {
   private rt: Phaser.GameObjects.RenderTexture;
+  private tintRt: Phaser.GameObjects.RenderTexture;
   private brush: Phaser.GameObjects.Image;
   private sources = new Map<string, LightSource>();
   private nextId = 0;
@@ -36,15 +61,28 @@ export class LightSystem {
     this.ctx = ctx;
     this.darknessColor = darknessColor;
     const cam = scene.cameras.main;
+    // Colour casts sit under the darkness overlay: fully visible where light
+    // has erased it, faintly visible through a dim source's thinned dark.
+    this.tintRt = scene.add.renderTexture(0, 0, cam.width, cam.height);
+    this.tintRt
+      .setOrigin(0, 0)
+      .setScrollFactor(0)
+      .setDepth(899)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setAlpha(0.34);
     this.rt = scene.add.renderTexture(0, 0, cam.width, cam.height);
     this.rt.setOrigin(0, 0).setScrollFactor(0).setDepth(900);
     this.brush = scene.make.image({ key: "light-radial", add: false });
     this.brush.setOrigin(0.5, 0.5);
   }
 
-  addSource(radius: number, position: LightSource["position"]): string {
+  addSource(
+    radius: number,
+    position: LightSource["position"],
+    options: LightSourceOptions,
+  ): string {
     const id = `light-${this.nextId++}`;
-    this.sources.set(id, { id, radius, position });
+    this.sources.set(id, { id, radius, position, ...options });
     return id;
   }
 
@@ -61,10 +99,15 @@ export class LightSystem {
     position: LightSource["position"],
     onExpire: () => void,
   ): string {
-    const sourceId = this.addSource(TORCH_RADIUS, position);
+    const sourceId = this.addSource(TORCH_RADIUS, position, {
+      tint: TORCH_TINT,
+      tintAlpha: 0.5,
+      torch: true,
+    });
     const timerId = `torch-${sourceId}-${carrierId}`;
     this.ctx.engine.clock.addTimer(timerId, this.ctx.engine.config.torchMs, () => {
-      this.removeSource(sourceId);
+      // A mishap may have snuffed this source before the timer ran out.
+      if (this.sources.has(sourceId)) this.removeSource(sourceId);
       onExpire();
     });
     return timerId;
@@ -78,10 +121,10 @@ export class LightSystem {
     return this.ctx.engine.clock.hasTimer(timerId);
   }
 
-  /** Extinguish every active torch timer + source (wizard mishap). */
+  /** Extinguish every carried torch flame (wizard mishap). */
   snuffAll(): void {
-    for (const id of [...this.sources.keys()]) {
-      if (id.startsWith("light-")) this.sources.delete(id);
+    for (const [id, s] of [...this.sources.entries()]) {
+      if (s.torch === true) this.sources.delete(id);
     }
   }
 
@@ -90,7 +133,7 @@ export class LightSystem {
     for (const s of this.sources.values()) {
       const pos = s.position();
       if (!pos) continue;
-      if (s.radius <= SELF_GLOW_RADIUS) continue; // self-glow doesn't count as light
+      if (s.dim === true) continue; // dark-adapted eyes don't count as light
       const d = Phaser.Math.Distance.Between(x, y, pos.x, pos.y);
       if (d <= s.radius * 0.7) return "lit";
       if (d <= s.radius * 1.1) best = "dim";
@@ -101,16 +144,34 @@ export class LightSystem {
   update(): void {
     const cam = this.scene.cameras.main;
     this.rt.clear();
-    // Near-black preserves danger while leaving a faint read of silhouettes.
-    this.rt.fill(this.darknessColor, 0.955);
+    this.tintRt.clear();
+    // Near-black preserves the mechanical danger while keeping silhouettes,
+    // platforms, and foreground art readable on ordinary displays.
+    this.rt.fill(this.darknessColor, 0.84);
     for (const [id, s] of [...this.sources.entries()]) {
       const pos = s.position();
       if (!pos) {
         this.sources.delete(id);
         continue;
       }
+      const sx = pos.x - cam.scrollX;
+      const sy = pos.y - cam.scrollY;
       this.brush.setScale((s.radius * 2) / 256);
-      this.rt.erase(this.brush, pos.x - cam.scrollX, pos.y - cam.scrollY);
+      if (s.dim === true) {
+        // Thin the darkness rather than cut it: outlines, not visibility.
+        this.brush.setAlpha(0.55);
+        this.rt.erase(this.brush, sx, sy);
+        this.brush.setAlpha(1);
+      } else {
+        this.rt.erase(this.brush, sx, sy);
+        // Second, tighter pass gives real flames a bright hot core.
+        this.brush.setScale((s.radius * 1.15) / 256);
+        this.rt.erase(this.brush, sx, sy);
+      }
+      this.brush.setScale((s.radius * 2) / 256);
+      this.brush.setTint(s.tint).setAlpha(s.tintAlpha);
+      this.tintRt.draw(this.brush, sx, sy);
+      this.brush.setTint(0xffffff).setAlpha(1);
     }
   }
 }

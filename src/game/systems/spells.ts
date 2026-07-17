@@ -163,8 +163,10 @@ function resolveSpellEffect(deps: SpellDeps, caster: CharacterSprite, result: Ca
     }
     case "light": {
       const durationMs = def.durationMs! * mult;
-      const sourceId = deps.light.addSource(TORCH_RADIUS * 1.1, () =>
-        caster.character.dead ? null : { x: caster.x, y: caster.y },
+      const sourceId = deps.light.addSource(
+        TORCH_RADIUS * 1.1,
+        () => (caster.character.dead ? null : { x: caster.x, y: caster.y }),
+        { tint: 0xc4d8ec, tintAlpha: 0.45 },
       );
       scene.time.delayedCall(durationMs, () => deps.light.removeSource(sourceId));
       ctx.say(`Holy light blazes around ${caster.character.name} — no torch, no hands.`, "#f0e090");

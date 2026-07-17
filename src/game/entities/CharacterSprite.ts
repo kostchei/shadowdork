@@ -11,7 +11,7 @@ import type { GameContext } from "../context";
 import { floatText } from "../systems/combat";
 import { flameFollowing } from "../fx/vfx";
 import type { LightSystem } from "../systems/light";
-import { SELF_GLOW_RADIUS } from "../systems/light";
+import { DARK_SIGHT_TINT, SELF_GLOW_RADIUS } from "../systems/light";
 import { TILE } from "../textures";
 
 /** Falls up to this many tiles are free; beyond, 1d6 per 3 tiles (RAW ~10 ft). */
@@ -70,7 +70,11 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
     this.setSize(20, 30).setDepth(10);
     this.setCollideWorldBounds(true);
 
-    light.addSource(SELF_GLOW_RADIUS, () => (this.character.dead ? null : { x: this.x, y: this.y }));
+    light.addSource(SELF_GLOW_RADIUS, () => (this.character.dead ? null : { x: this.x, y: this.y }), {
+      tint: DARK_SIGHT_TINT,
+      tintAlpha: 0.45,
+      dim: true,
+    });
   }
 
   get alive(): boolean {

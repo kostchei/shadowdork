@@ -1,38 +1,53 @@
-/** Readable, atmospheric HUD overlay for party state and run objectives. */
+/** Compact, high-contrast HUD that keeps the dungeon visible. */
 
 import Phaser from "phaser";
 import { spell } from "../../data";
-import { xpToNextLevel, MAX_LEVEL, type LevelUpResult } from "../../engine";
+import { MAX_LEVEL, xpToNextLevel, type LevelUpResult } from "../../engine";
 import type { GameContext } from "../context";
 import { ROOM_BANDS } from "../level/dungeons";
 import { TILE } from "../textures";
 import type { DungeonScene } from "./Dungeon";
 
-const TEXT_STYLE = {
+const UI_STYLE = {
+  fontFamily: '"Trebuchet MS", Arial, sans-serif',
+  fontSize: "12px",
+  color: "#f0eee9",
+} as const;
+
+const DATA_STYLE = {
   fontFamily: "Consolas, monospace",
-  fontSize: "13px",
-  color: "#e2e0dc",
-  stroke: "#050508",
-  strokeThickness: 3,
+  fontSize: "10px",
+  color: "#c9cbd1",
 } as const;
 
 const ROOM_LABELS = ["THE GATE", "THE TEST", "THE SETBACK", "THE CLIMAX", "THE REWARD", "SANCTUARY"];
-const ROMAN = ["I", "II", "III", "IV", "V", "•"];
+const ROMAN = ["I", "II", "III", "IV", "V", "VI"];
+const MAX_PARTY = 4;
+const LOG_LINES = 2;
+const PARTY_BOX = { x: 8, y: 8, w: 520, headerH: 28, rowH: 22, detailH: 20 };
+const MISSION_BOX = { x: 600, y: 8, w: 352, h: 70 };
 
-const PARTY_BOX = { x: 8, y: 8, w: 560, h: 158 };
-const LOG_LINES = 3;
+function partyBoxHeight(memberCount: number): number {
+  return PARTY_BOX.headerH + memberCount * PARTY_BOX.rowH + PARTY_BOX.detailH;
+}
 
 export class HudScene extends Phaser.Scene {
   private ctx!: GameContext;
   private dungeon!: DungeonScene;
-  private partyText!: Phaser.GameObjects.Text;
+  private chrome!: Phaser.GameObjects.Graphics;
+  private hpBars!: Phaser.GameObjects.Graphics;
+  private partyHeader!: Phaser.GameObjects.Text;
+  private partyNames: Phaser.GameObjects.Text[] = [];
+  private partyStats: Phaser.GameObjects.Text[] = [];
+  private hpLabels: Phaser.GameObjects.Text[] = [];
+  private leaderDetail!: Phaser.GameObjects.Text;
   private logTexts: Phaser.GameObjects.Text[] = [];
   private objectiveText!: Phaser.GameObjects.Text;
   private roomText!: Phaser.GameObjects.Text;
   private torchWarning!: Phaser.GameObjects.Text;
   private luckHint!: Phaser.GameObjects.Text;
   private overlay: Phaser.GameObjects.Container | null = null;
-  private hpBars!: Phaser.GameObjects.Graphics;
+  private lastPartySize = -1;
 
   constructor() {
     super("Hud");
@@ -43,80 +58,98 @@ export class HudScene extends Phaser.Scene {
     this.ctx = this.registry.get("ctx") as GameContext;
     if (!this.ctx) throw new Error("GameContext missing from registry");
     this.overlay = null;
+    this.lastPartySize = -1;
+    this.partyNames = [];
+    this.partyStats = [];
+    this.hpLabels = [];
     this.logTexts = [];
 
     const w = this.scale.width;
     const h = this.scale.height;
     const accent = this.dungeon.activeDungeon.theme.accent;
-    const chrome = this.add.graphics().setDepth(990);
-    chrome.fillStyle(0x05060a, 0.82);
-    chrome.fillRoundedRect(PARTY_BOX.x, PARTY_BOX.y, PARTY_BOX.w, PARTY_BOX.h, 5);
-    chrome.fillRoundedRect(w - 404, 8, 396, 96, 5);
-    chrome.fillRoundedRect(8, h - 78, 610, 70, 5);
-    chrome.fillRoundedRect(w - 332, h - 72, 324, 64, 5);
-    chrome.lineStyle(1, accent, 0.52);
-    chrome.strokeRoundedRect(PARTY_BOX.x, PARTY_BOX.y, PARTY_BOX.w, PARTY_BOX.h, 5);
-    chrome.strokeRoundedRect(w - 404, 8, 396, 96, 5);
-    chrome.strokeRoundedRect(8, h - 78, 610, 70, 5);
-    chrome.strokeRoundedRect(w - 332, h - 72, 324, 64, 5);
+    const titleColor = `#${accent.toString(16).padStart(6, "0")}`;
 
+    this.chrome = this.add.graphics().setDepth(990);
     this.hpBars = this.add.graphics().setDepth(995);
-    this.partyText = this.add.text(18, 15, "", { ...TEXT_STYLE, lineSpacing: 3 }).setDepth(1000);
+    this.partyHeader = this.add
+      .text(18, 14, "", { ...UI_STYLE, fontSize: "11px", color: titleColor, fontStyle: "bold" })
+      .setDepth(1000);
+
+    for (let i = 0; i < MAX_PARTY; i++) {
+      const y = PARTY_BOX.y + PARTY_BOX.headerH + i * PARTY_BOX.rowH;
+      this.partyNames.push(
+        this.add.text(18, y, "", { ...UI_STYLE, fontSize: "11px" }).setDepth(1000).setVisible(false),
+      );
+      this.hpLabels.push(
+        this.add
+          .text(240, y + 6, "", {
+            ...DATA_STYLE,
+            fontSize: "9px",
+            color: "#ffffff",
+            stroke: "#050508",
+            strokeThickness: 2,
+          })
+          .setOrigin(0.5)
+          .setDepth(1000)
+          .setVisible(false),
+      );
+      this.partyStats.push(
+        this.add
+          .text(282, y, "", { ...UI_STYLE, fontSize: "10px", color: "#d9dbe1" })
+          .setDepth(1000)
+          .setVisible(false),
+      );
+    }
+
+    this.leaderDetail = this.add
+      .text(18, 0, "", { ...DATA_STYLE, fontSize: "9px", color: "#d6bb72" })
+      .setDepth(1000);
+
+    this.add
+      .text(w - 18, 13, this.dungeon.activeDungeon.name.toUpperCase(), {
+        fontFamily: "Georgia, serif",
+        fontSize: "19px",
+        color: titleColor,
+        stroke: "#050508",
+        strokeThickness: 3,
+      })
+      .setOrigin(1, 0)
+      .setDepth(1000);
+    this.objectiveText = this.add
+      .text(w - 18, 38, "", { ...UI_STYLE, fontSize: "10px", color: "#e3c56d" })
+      .setOrigin(1, 0)
+      .setDepth(1000);
+    this.roomText = this.add
+      .text(w - 18, 55, "", { ...DATA_STYLE, fontSize: "9px", color: "#9fa5b1" })
+      .setOrigin(1, 0)
+      .setDepth(1000);
+
     for (let i = 0; i < LOG_LINES; i++) {
       this.logTexts.push(
         this.add
-          .text(18, h - 69 + i * 20, "", {
-            ...TEXT_STYLE,
-            fontSize: "12px",
-            wordWrap: { width: 590 },
+          .text(18, h - 66 + i * 19, "", {
+            ...UI_STYLE,
+            fontSize: "11px",
+            wordWrap: { width: 570 },
           })
           .setDepth(1000),
       );
     }
 
-    const titleColor = `#${accent.toString(16).padStart(6, "0")}`;
-    this.add
-      .text(w - 22, 16, this.dungeon.activeDungeon.name.toUpperCase(), {
-        fontFamily: "Georgia, serif",
-        fontSize: "22px",
-        color: titleColor,
-        stroke: "#050508",
-        strokeThickness: 4,
-      })
-      .setOrigin(1, 0)
-      .setDepth(1000);
-    this.add
-      .text(w - 22, 43, this.dungeon.activeDungeon.tagline, {
-        ...TEXT_STYLE,
-        fontFamily: "Georgia, serif",
-        fontSize: "12px",
-        color: "#aaa6a0",
-        fontStyle: "italic",
-      })
-      .setOrigin(1, 0)
-      .setDepth(1000);
-    this.objectiveText = this.add
-      .text(w - 22, 64, "", { ...TEXT_STYLE, fontSize: "11px", color: "#d8ba67" })
-      .setOrigin(1, 0)
-      .setDepth(1000);
-    this.roomText = this.add
-      .text(w - 22, 82, "", { ...TEXT_STYLE, fontSize: "11px", color: "#8e929c" })
-      .setOrigin(1, 0)
-      .setDepth(1000);
-
     this.add
       .text(
-        w - 322,
-        h - 64,
-        "MOVE A/D  JUMP W/Space  FIGHT J  CAST K/Q\nUSE E  TORCH T  LUCK L  PARTY Tab/1-4  HOLD H",
-        { ...TEXT_STYLE, fontSize: "10px", color: "#8e929c", lineSpacing: 4 },
+        w / 2,
+        h - 15,
+        "MOVE A/D   JUMP W/SPACE   ATTACK J   USE E   TORCH T   MAGIC K/Q   SWAP TAB/1-4   HOLD H   LUCK L",
+        { ...DATA_STYLE, fontSize: "9px", color: "#9da2ad" },
       )
+      .setOrigin(0.5)
       .setDepth(1000);
 
     this.torchWarning = this.add
-      .text(w / 2, 118, "THE TORCH IS GUTTERING", {
+      .text(w / 2, 102, "TORCH GUTTERING", {
         fontFamily: "Georgia, serif",
-        fontSize: "17px",
+        fontSize: "16px",
         color: "#ff9c4a",
         stroke: "#050508",
         strokeThickness: 4,
@@ -126,14 +159,18 @@ export class HudScene extends Phaser.Scene {
       .setVisible(false);
 
     this.luckHint = this.add
-      .text(w / 2, h - 104, "", {
-        ...TEXT_STYLE,
-        fontSize: "15px",
-        color: "#ffd040",
+      .text(w / 2, h - 92, "", {
+        ...UI_STYLE,
+        fontSize: "14px",
+        color: "#ffd45f",
+        stroke: "#050508",
+        strokeThickness: 3,
       })
       .setOrigin(0.5)
       .setDepth(1000)
       .setVisible(false);
+
+    this.drawChrome(this.dungeon.party.members.length);
 
     this.ctx.events.on("gameover", () => this.showOverlay("THE DARK CLAIMS YOU", "#ff6159"));
     this.ctx.events.on("won", () => this.showOverlay("THE CROWN IS YOURS", "#ffd45f"));
@@ -147,35 +184,61 @@ export class HudScene extends Phaser.Scene {
     });
   }
 
-  /** The slot-machine moment, actually staged: banner + talent, party-wide. */
+  private drawChrome(memberCount: number): void {
+    const w = this.scale.width;
+    const h = this.scale.height;
+    const accent = this.dungeon.activeDungeon.theme.accent;
+    const partyH = partyBoxHeight(memberCount);
+    this.lastPartySize = memberCount;
+    this.chrome.clear();
+
+    this.chrome.fillStyle(0x05060a, 0.76);
+    this.chrome.fillRoundedRect(PARTY_BOX.x, PARTY_BOX.y, PARTY_BOX.w, partyH, 5);
+    this.chrome.fillRoundedRect(MISSION_BOX.x, MISSION_BOX.y, MISSION_BOX.w, MISSION_BOX.h, 5);
+    this.chrome.fillRoundedRect(8, h - 72, 584, 44, 5);
+    this.chrome.fillRoundedRect(8, h - 24, w - 16, 18, 4);
+
+    this.chrome.fillStyle(accent, 0.8);
+    this.chrome.fillRect(PARTY_BOX.x + 5, PARTY_BOX.y, PARTY_BOX.w - 10, 2);
+    this.chrome.fillRect(MISSION_BOX.x + 5, MISSION_BOX.y, MISSION_BOX.w - 10, 2);
+
+    this.chrome.lineStyle(1, accent, 0.62);
+    this.chrome.strokeRoundedRect(PARTY_BOX.x, PARTY_BOX.y, PARTY_BOX.w, partyH, 5);
+    this.chrome.strokeRoundedRect(MISSION_BOX.x, MISSION_BOX.y, MISSION_BOX.w, MISSION_BOX.h, 5);
+    this.chrome.strokeRoundedRect(8, h - 72, 584, 44, 5);
+    this.chrome.lineStyle(1, 0x6d7280, 0.45);
+    this.chrome.strokeRoundedRect(8, h - 24, w - 16, 18, 4);
+
+    this.leaderDetail.setY(PARTY_BOX.y + PARTY_BOX.headerH + memberCount * PARTY_BOX.rowH + 2);
+    this.torchWarning.setY(Math.max(PARTY_BOX.y + partyH, MISSION_BOX.y + MISSION_BOX.h) + 16);
+  }
+
+  /** The talent roll gets a legible card instead of text floating over combat. */
   private levelUpCeremony(name: string, result: LevelUpResult): void {
     const w = this.scale.width;
+    const accent = this.dungeon.activeDungeon.theme.accent;
+    const panel = this.add.graphics();
+    panel.fillStyle(0x05060a, 0.94).fillRoundedRect(-320, -35, 640, 78, 7);
+    panel.lineStyle(2, accent, 0.9).strokeRoundedRect(-320, -35, 640, 78, 7);
     const banner = this.add.container(w / 2, 190, [
+      panel,
       this.add
-        .text(0, 0, `${name.toUpperCase()} — LEVEL ${result.newLevel}!`, {
+        .text(0, -17, `${name.toUpperCase()} - LEVEL ${result.newLevel}!`, {
           fontFamily: "Georgia, serif",
-          fontSize: "30px",
-          color: "#ffd040",
-          stroke: "#050508",
-          strokeThickness: 5,
+          fontSize: "28px",
+          color: "#ffd45f",
         })
         .setOrigin(0.5),
       this.add
-        .text(0, 30, `+${result.hpGained} HP   ·   ${result.talent.entry.text} (rolled ${result.talent.roll})`, {
-          ...TEXT_STYLE,
-          fontSize: "14px",
+        .text(0, 17, `+${result.hpGained} HP  |  ${result.talent.entry.text}  |  roll ${result.talent.roll}`, {
+          ...UI_STYLE,
+          fontSize: "13px",
           color: "#f0e6c8",
         })
         .setOrigin(0.5),
     ]);
     banner.setDepth(1500).setScale(0.4).setAlpha(0);
-    this.tweens.add({
-      targets: banner,
-      scale: 1,
-      alpha: 1,
-      duration: 260,
-      ease: "Back.out",
-    });
+    this.tweens.add({ targets: banner, scale: 1, alpha: 1, duration: 260, ease: "Back.out" });
     this.tweens.add({
       targets: banner,
       alpha: 0,
@@ -198,7 +261,7 @@ export class HudScene extends Phaser.Scene {
       }`;
     });
     const runIndex = this.registry.get("dungeonIndex");
-    const summary = `Coins banked ${this.ctx.totalCoins}   ·   Kills ${this.ctx.kills}   ·   Run seed ${runIndex}`;
+    const summary = `Coins ${this.ctx.totalCoins}  |  Kills ${this.ctx.kills}  |  Run seed ${runIndex}`;
     this.overlay = this.add.container(0, 0, [
       this.add.rectangle(w / 2, h / 2, w, h, 0x020205, 0.9),
       this.add
@@ -212,25 +275,21 @@ export class HudScene extends Phaser.Scene {
         .setOrigin(0.5),
       this.add
         .text(w / 2, h / 2 - 62, this.dungeon.activeDungeon.name, {
-          ...TEXT_STYLE,
+          ...UI_STYLE,
           fontFamily: "Georgia, serif",
           fontSize: "15px",
           color: "#aaa6a0",
         })
         .setOrigin(0.5),
       this.add
-        .text(w / 2, h / 2 + 6, parts.join("\n"), {
-          ...TEXT_STYLE,
-          align: "center",
-          lineSpacing: 5,
-        })
+        .text(w / 2, h / 2 + 6, parts.join("\n"), { ...DATA_STYLE, fontSize: "12px", align: "center", lineSpacing: 5 })
         .setOrigin(0.5),
       this.add
-        .text(w / 2, h / 2 + 78, summary, { ...TEXT_STYLE, fontSize: "12px", color: "#8e929c" })
+        .text(w / 2, h / 2 + 78, summary, { ...DATA_STYLE, fontSize: "11px", color: "#9fa5b1" })
         .setOrigin(0.5),
       this.add
         .text(w / 2, h / 2 + 112, "Press R to enter the next dungeon", {
-          ...TEXT_STYLE,
+          ...UI_STYLE,
           fontSize: "16px",
           color: "#d4b65f",
         })
@@ -242,71 +301,87 @@ export class HudScene extends Phaser.Scene {
   override update(time: number): void {
     if (!this.dungeon.party) return;
     const members = this.dungeon.party.members;
-    const lines: string[] = [];
+    if (members.length !== this.lastPartySize) this.drawChrome(members.length);
     this.hpBars.clear();
     let minTorchMs = Infinity;
 
-    members.forEach((member, i) => {
+    this.partyHeader.setText(`PARTY   COINS ${this.ctx.totalCoins}   KILLS ${this.ctx.kills}`);
+    for (let i = 0; i < MAX_PARTY; i++) {
+      const member = members[i];
+      const nameText = this.partyNames[i]!;
+      const statText = this.partyStats[i]!;
+      const hpText = this.hpLabels[i]!;
+      if (!member) {
+        nameText.setVisible(false);
+        statText.setVisible(false);
+        hpText.setVisible(false);
+        continue;
+      }
+
       const c = member.character;
       const isLeader = this.dungeon.party.leaderIndex === i;
-      const status = c.dead ? "DEAD" : c.dying ? `DYING ${c.dying.roundsRemaining}` : `HP ${c.hp}/${c.maxHp}`;
-      const xp = c.level >= MAX_LEVEL ? "XP MAX" : `XP ${c.xp}/${xpToNextLevel(c.level)}`;
-      const luck = c.luckToken ? "  ★" : "";
-      lines.push(
-        `${isLeader ? ">" : " "} ${i + 1} ${c.name.padEnd(7)} ${member.cls.displayName.padEnd(7)} L${c.level}  ${status.padEnd(11)} AC ${String(c.ac).padEnd(2)}${luck}`,
-      );
-
-      const details: string[] = [`    ${xp.padEnd(9)} GEAR ${c.inventory.slotsUsed()}/${c.inventory.capacity}`];
+      const xp = c.level >= MAX_LEVEL ? "MAX" : `${c.xp}/${xpToNextLevel(c.level)}`;
+      const y = PARTY_BOX.y + PARTY_BOX.headerH + i * PARTY_BOX.rowH;
+      const ratio = c.dead ? 0 : Phaser.Math.Clamp(c.hp / c.maxHp, 0, 1);
+      const hpColor = ratio > 0.5 ? 0x4fb878 : ratio > 0.25 ? 0xe0a34b : 0xda5555;
+      let torch = "";
       if (member.torchLit && member.torchTimerId) {
         const remaining = this.ctx.engine.clock.timerRemaining(member.torchTimerId);
         minTorchMs = Math.min(minTorchMs, remaining);
-        details.push(`TORCH ${Math.ceil(remaining / 1000)}s`);
+        torch = ` T${Math.ceil(remaining / 1000)}s`;
       }
-      if (c.knownSpells.length > 0 && !c.dead) {
-        const slot = c.knownSpells[member.spellIndex % c.knownSpells.length]!;
-        details.push(`${spell(slot.spellId).name}${slot.status === "lost" ? " [LOST]" : ""}`);
-      }
-      lines.push(details.join("  "));
 
-      const ratio = c.dead ? 0 : Phaser.Math.Clamp(c.hp / c.maxHp, 0, 1);
-      const barX = PARTY_BOX.x + PARTY_BOX.w - 122;
-      const barY = 21 + i * 33;
-      this.hpBars.fillStyle(0x22242b, 0.95).fillRect(barX, barY, 106, 6);
-      this.hpBars
-        .fillStyle(ratio > 0.5 ? 0x4aa36b : ratio > 0.25 ? 0xd19a45 : 0xc94e4e, 1)
-        .fillRect(barX, barY, 106 * ratio, 6);
-    });
-    lines.push(`  COINS ${String(this.ctx.totalCoins).padStart(4)}`);
-    this.partyText.setText(lines.join("\n"));
+      nameText
+        .setVisible(true)
+        .setText(`${isLeader ? ">" : " "} ${i + 1} ${c.name} - ${member.cls.displayName} L${c.level}`)
+        .setColor(c.dead ? "#7e7e86" : isLeader ? "#ffffff" : "#c6c8ce");
+      statText
+        .setVisible(true)
+        .setText(`AC${c.ac}  XP${xp}  G${c.inventory.slotsUsed()}/${c.inventory.capacity}${torch}`)
+        .setColor(c.dead ? "#70727a" : "#d9dbe1");
+      hpText.setVisible(true).setText(c.dead ? "DEAD" : c.dying ? `DOWN ${c.dying.roundsRemaining}` : `${c.hp}/${c.maxHp}`);
+
+      this.hpBars.fillStyle(0x1f2128, 1).fillRoundedRect(203, y + 3, 74, 12, 3);
+      this.hpBars.fillStyle(hpColor, 1).fillRoundedRect(205, y + 5, 70 * ratio, 8, 2);
+      if (isLeader && !c.dead) {
+        this.hpBars.lineStyle(1, this.dungeon.activeDungeon.theme.accent, 0.9);
+        this.hpBars.strokeRoundedRect(202, y + 2, 76, 14, 3);
+      }
+    }
+
+    const leader = this.dungeon.party.leader;
+    const leaderDetails: string[] = [];
+    if (leader.character.knownSpells.length > 0 && !leader.character.dead) {
+      const slot = leader.character.knownSpells[leader.spellIndex % leader.character.knownSpells.length]!;
+      leaderDetails.push(`K CAST ${spell(slot.spellId).name}${slot.status === "lost" ? " [LOST]" : ""}`);
+    }
+    if (leader.character.luckToken) leaderDetails.push("L LUCK READY");
+    if (leader.mode === "hold") leaderDetails.push("HOLDING");
+    this.leaderDetail.setText(leaderDetails.length > 0 ? leaderDetails.join("   |   ") : "Leader ready");
 
     this.objectiveText.setText(
       this.dungeon.hasCrown ? "CROWN SECURED - REACH THE EXIT" : this.dungeon.activeDungeon.objective.toUpperCase(),
     );
-    this.objectiveText.setColor(this.dungeon.hasCrown ? "#72d887" : "#d8ba67");
+    this.objectiveText.setColor(this.dungeon.hasCrown ? "#72d887" : "#e3c56d");
 
-    // Which room is the leader in?
-    const leaderX = this.dungeon.party.leader.x / TILE;
-    const band = ROOM_BANDS.find((b) => leaderX >= b.x1 && leaderX <= b.x2 + 1);
-    if (band) {
-      this.roomText.setText(`ROOM ${ROMAN[band.room - 1]} — ${ROOM_LABELS[band.room - 1]}`);
-    }
+    const leaderX = leader.x / TILE;
+    const band = ROOM_BANDS.find((roomBand) => leaderX >= roomBand.x1 && leaderX <= roomBand.x2 + 1);
+    if (band) this.roomText.setText(`ROOM ${ROMAN[band.room - 1]}  |  ${ROOM_LABELS[band.room - 1]}`);
 
-    // Low-torch alarm: the core resource deserves drama.
     if (minTorchMs < 30_000) {
-      this.torchWarning.setVisible(true).setAlpha(0.55 + 0.45 * Math.sin(time / 120));
+      this.torchWarning.setVisible(true).setAlpha(0.6 + 0.4 * Math.sin(time / 120));
       this.torchWarning.setColor(minTorchMs < 12_000 ? "#ff5a45" : "#ff9c4a");
     } else {
       this.torchWarning.setVisible(false);
     }
 
-    // Luck reroll hint.
     const luckWindow = this.dungeon.luckWindow;
     if (luckWindow) {
       const secondsLeft = Math.max(0, (luckWindow.expiresAt - time) / 1000);
       this.luckHint
         .setVisible(true)
-        .setText(`L — spend luck: ${luckWindow.label} (${secondsLeft.toFixed(1)}s)`)
-        .setAlpha(0.6 + 0.4 * Math.sin(time / 90));
+        .setText(`L - SPEND LUCK: ${luckWindow.label.toUpperCase()}  ${secondsLeft.toFixed(1)}s`)
+        .setAlpha(0.65 + 0.35 * Math.sin(time / 90));
     } else {
       this.luckHint.setVisible(false);
     }
@@ -314,7 +389,7 @@ export class HudScene extends Phaser.Scene {
     const msgs = this.ctx.messages.slice(-LOG_LINES);
     this.logTexts.forEach((text, i) => {
       const msg = msgs[i];
-      if (msg) text.setText(`- ${msg.text}`).setColor(msg.color);
+      if (msg) text.setText(msg.text).setColor(msg.color);
       else text.setText("");
     });
   }

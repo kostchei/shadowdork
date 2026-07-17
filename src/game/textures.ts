@@ -412,6 +412,8 @@ function environmentTextures(scene: Phaser.Scene): void {
     g.fillEllipse(228, 80, 130, 40);
   });
 
+  backdropTextures(scene);
+
   texture(scene, "deco-mushrooms", 30, 24, (g) => {
     g.fillStyle(0xbed5bf, 0.9);
     g.fillRect(6, 11, 3, 12);
@@ -446,6 +448,160 @@ function environmentTextures(scene: Phaser.Scene): void {
     g.fillTriangle(1, 0, 11, 0, 7, 31);
     g.fillTriangle(10, 0, 21, 0, 16, 22);
     g.fillTriangle(19, 0, 29, 0, 25, 34);
+  });
+}
+
+/** Circle that wraps across the tile's vertical edges so tileSprites seam cleanly. */
+function wrapCircle(
+  g: Phaser.GameObjects.Graphics,
+  x: number,
+  y: number,
+  r: number,
+  tileW: number,
+): void {
+  const wx = ((x % tileW) + tileW) % tileW;
+  g.fillCircle(wx, y, r);
+  if (wx < r) g.fillCircle(wx + tileW, y, r);
+  if (wx > tileW - r) g.fillCircle(wx - tileW, y, r);
+}
+
+/**
+ * Math-built parallax backdrops, one per dungeon theme. All are drawn in
+ * neutral grey-blues so the theme's stoneTint colours them at render time.
+ */
+function backdropTextures(scene: Phaser.Scene): void {
+  const W = 320;
+  const H = 180;
+
+  // Endless corridor of columns receding to a one-point vanishing band.
+  texture(scene, "bg-columns", W, H, (g) => {
+    const rows = 6;
+    const counts = [16, 10, 8, 5, 4, 2]; // each divides 320 → seamless tiling
+    const midY = 86;
+    for (let k = 0; k < rows; k++) {
+      const t = k / (rows - 1); // 0 = deepest, 1 = nearest
+      const count = counts[rows - 1 - k]!;
+      const spacing = W / count;
+      const halfH = 12 + t * t * 74;
+      const width = 2 + t * t * 13;
+      const shade = Phaser.Display.Color.Interpolate.ColorWithColor(
+        new Phaser.Display.Color(58, 63, 82),
+        new Phaser.Display.Color(150, 158, 186),
+        1,
+        t,
+      );
+      const color = Phaser.Display.Color.GetColor(shade.r, shade.g, shade.b);
+      const alpha = 0.16 + t * 0.4;
+      for (let i = 0; i < count; i++) {
+        const jitter = ((k * 31 + i * 17) % 7) - 3;
+        const cx = i * spacing + (k % 2 === 0 ? spacing / 2 : 0);
+        const top = midY - halfH + jitter;
+        g.fillStyle(color, alpha);
+        g.fillRect(cx - width / 2, top, width, halfH * 2);
+        // Capital and base read only on the near rows.
+        if (t > 0.4) {
+          g.fillRect(cx - width / 2 - 2, top, width + 4, 3);
+          g.fillRect(cx - width / 2 - 2, top + halfH * 2 - 3, width + 4, 3);
+          // Fluting shadow line
+          g.fillStyle(0x1c2030, alpha * 0.8);
+          g.fillRect(cx + width / 2 - 2, top + 3, 1, halfH * 2 - 6);
+        }
+      }
+    }
+    // Faint glow at the vanishing band — the corridor never quite ends.
+    g.fillStyle(0xaab4d0, 0.06);
+    g.fillEllipse(W / 2, midY, W * 0.9, 26);
+    g.fillEllipse(W / 2, midY, W * 0.5, 14);
+  });
+
+  // Fractal stepped pyramids and a nested-square frieze.
+  texture(scene, "bg-aztec", W, H, (g) => {
+    const pyramid = (cx: number, baseY: number, baseW: number, tiers: number, alpha: number) => {
+      const tierH = Math.max(3, Math.round(baseW / (tiers * 3)));
+      for (let s = 0; s < tiers; s++) {
+        const w = baseW * (1 - s / tiers);
+        g.fillStyle(s % 2 === 0 ? 0x8a92ac : 0x6a7290, alpha);
+        g.fillRect(cx - w / 2, baseY - (s + 1) * tierH, w, tierH);
+      }
+      // Doorway
+      g.fillStyle(0x14161e, alpha);
+      g.fillRect(cx - baseW * 0.04, baseY - tierH * 1.6, baseW * 0.08, tierH * 1.6);
+    };
+    // Three fractal generations; the outermost pair sits at x=0 AND x=320 so
+    // the silhouette wraps seamlessly.
+    pyramid(W / 2, H, 230, 7, 0.34);
+    pyramid(W * 0.14, H, 120, 5, 0.24);
+    pyramid(W * 0.86, H, 120, 5, 0.24);
+    pyramid(0, H, 70, 4, 0.18);
+    pyramid(W, H, 70, 4, 0.18);
+    pyramid(W * 0.34, H, 46, 3, 0.14);
+    pyramid(W * 0.66, H, 46, 3, 0.14);
+
+    // Nested-square frieze band across the top (spacing divides 320).
+    const nested = (cx: number, cy: number, size: number, depth: number, alpha: number) => {
+      g.lineStyle(1, 0x9aa2bc, alpha);
+      g.strokeRect(cx - size / 2, cy - size / 2, size, size);
+      if (depth > 0) {
+        g.strokeRect(cx - size / 4, cy - size / 4, size / 2, size / 2);
+        for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) {
+          nested(cx + (dx * size) / 2, cy + (dy * size) / 2, size / 3, depth - 1, alpha * 0.7);
+        }
+      }
+    };
+    for (let i = 0; i < 8; i++) nested(i * 40 + 20, 26, 15, 1, 0.3);
+  });
+
+  // Tentacle swirls: logarithmic spirals plus sine-wave feelers from below.
+  texture(scene, "bg-tentacles", W, H, (g) => {
+    const spiral = (cx: number, cy: number, R: number, phase: number, alpha: number) => {
+      const maxTheta = Math.PI * 4.5;
+      for (let theta = 0; theta < maxTheta; theta += 0.07) {
+        const t = theta / maxTheta;
+        const r = R * (1 - t);
+        const px = cx + Math.cos(theta + phase) * r;
+        const py = cy + Math.sin(theta + phase) * r * 0.78;
+        g.fillStyle(0x8894b0, alpha * (0.35 + 0.65 * t));
+        wrapCircle(g, px, py, 0.8 + (1 - t) * 3, W);
+      }
+    };
+    spiral(64, 58, 44, 0.4, 0.3);
+    spiral(208, 96, 58, 2.1, 0.26);
+    spiral(300, 40, 34, 4.0, 0.3);
+    spiral(140, 150, 30, 1.2, 0.22);
+
+    // Feelers rising off the tile's bottom edge, swaying with height.
+    for (let i = 0; i < 6; i++) {
+      const baseX = i * (W / 6) + 26;
+      const tipY = 34 + ((i * 37) % 48);
+      for (let y = H; y > tipY; y -= 2) {
+        const t = (H - y) / (H - tipY); // 0 at base, 1 at tip
+        const sway = Math.sin(y * 0.045 + i * 1.7) * (10 + 22 * t);
+        g.fillStyle(0x7e8aa6, 0.24 * (1 - t * 0.55));
+        wrapCircle(g, baseX + sway, y, 1 + (1 - t) * 5, W);
+      }
+    }
+  });
+
+  // Hash-noise bump grain layered over any backdrop for surface texture.
+  texture(scene, "bg-bumps", 160, 90, (g) => {
+    for (let i = 0; i < 150; i++) {
+      const x = (i * 97 + i * i * 31) % 160;
+      const y = (i * 57 + i * i * 13) % 90;
+      const v = (i * 41) % 100;
+      if (v < 45) {
+        g.fillStyle(0xffffff, 0.1 + (v % 3) * 0.05);
+        g.fillRect(x, y, 1 + (v % 2), 1);
+      } else if (v < 72) {
+        g.fillStyle(0x05060a, 0.22);
+        g.fillRect(x, y, 1, 1 + (v % 2));
+      } else {
+        // Soft bump: lit crest offset from its own shadow.
+        g.fillStyle(0x05060a, 0.14);
+        wrapCircle(g, x + 1, y + 1, 2.4, 160);
+        g.fillStyle(0xd8deee, 0.1);
+        wrapCircle(g, x, y, 2, 160);
+      }
+    }
   });
 }
 
@@ -597,6 +753,12 @@ function effectTextures(scene: Phaser.Scene): void {
   texture(scene, "entity-shadow", 30, 8, (g) => {
     g.fillStyle(0x000000, 0.48);
     g.fillEllipse(15, 4, 30, 8);
+  });
+  texture(scene, "leader-marker", 16, 10, (g) => {
+    g.fillStyle(0x11131a, 0.9);
+    g.fillTriangle(0, 1, 16, 1, 8, 10);
+    g.fillStyle(0xffffff, 1);
+    g.fillTriangle(3, 2, 13, 2, 8, 7);
   });
 }
 

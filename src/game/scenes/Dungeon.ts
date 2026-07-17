@@ -35,6 +35,13 @@ import {
 } from "../level/dungeons";
 import { TILE } from "../textures";
 
+/**
+ * How long after being hit a character keeps swinging back. Monsters attack
+ * every 1.5s, so an ongoing fight refreshes this; once the aggressor stops
+ * or leaves reach, retaliation lapses.
+ */
+const RETALIATE_WINDOW_MS = 4000;
+
 interface RescuableNpc {
   sprite: Phaser.GameObjects.Image;
   prop?: Phaser.GameObjects.Image;
@@ -571,7 +578,7 @@ export class DungeonScene extends Phaser.Scene {
     this.updatePickups();
     this.updateSpikes(time);
     this.updateDying();
-    this.updateFollowerCombat();
+    this.updatePartyCombat(time);
     for (const m of this.party.members) m.tick(delta);
     this.light.update();
     this.updateLeaderMarker(time);
@@ -1103,12 +1110,34 @@ export class DungeonScene extends Phaser.Scene {
     }
   }
 
-  private updateFollowerCombat(): void {
+  private updatePartyCombat(time: number): void {
     for (const m of this.party.members) {
-      if (m === this.party.leader || !m.alive || m.mode === "hold") continue;
-      const foe = this.monsters.find(
-        (mon) => mon.aliveInFight && Phaser.Math.Distance.Between(m.x, m.y, mon.x, mon.y) <= CLOSE_PX,
-      );
+      if (!m.alive) continue;
+      const reach = m.weaponReachPx;
+
+      // Followers on FOLLOW pick fights with whatever wanders into reach.
+      let foe: MonsterSprite | undefined;
+      if (m !== this.party.leader && m.mode === "follow") {
+        foe = this.monsters.find(
+          (mon) => mon.aliveInFight && Phaser.Math.Distance.Between(m.x, m.y, mon.x, mon.y) <= reach,
+        );
+      }
+
+      // Everyone — leader and held followers included — swings back at whoever
+      // hit them last, trading blows until the aggressor dies or leaves reach.
+      if (!foe) {
+        const aggressor = m.lastAttackedBy;
+        if (
+          aggressor &&
+          aggressor.active &&
+          aggressor.aliveInFight &&
+          time - m.lastAttackedAt <= RETALIATE_WINDOW_MS &&
+          Phaser.Math.Distance.Between(m.x, m.y, aggressor.x, aggressor.y) <= reach
+        ) {
+          foe = aggressor;
+        }
+      }
+
       if (foe) {
         m.facing = foe.x >= m.x ? 1 : -1;
         m.setFlipX(m.facing === -1);

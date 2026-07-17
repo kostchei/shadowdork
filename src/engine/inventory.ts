@@ -14,6 +14,8 @@ export interface ItemDef {
   xpValue?: number;
   /** Damage dice for weapons, e.g. "1d8". */
   damage?: string;
+  /** Melee reach in tiles — required for weapons. Monsters strike at 1.6. */
+  reachTiles?: number;
   twoHanded?: boolean;
   /** Finesse weapons attack with the better of STR or DEX. */
   finesse?: boolean;

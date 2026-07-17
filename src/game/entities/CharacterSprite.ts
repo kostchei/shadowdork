@@ -8,6 +8,7 @@ import Phaser from "phaser";
 import type { Character } from "../../engine";
 import { classDef, item, type ClassDef } from "../../data";
 import type { GameContext } from "../context";
+import type { MonsterSprite } from "./MonsterSprite";
 import { floatText } from "../systems/combat";
 import { flameFollowing } from "../fx/vfx";
 import type { LightSystem } from "../systems/light";
@@ -40,6 +41,10 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
   swingCooldown = 0;
   mode: FollowerMode = "follow";
   climbing = false;
+
+  /** Last monster that swung at this character — fuels retaliation. */
+  lastAttackedBy: MonsterSprite | null = null;
+  lastAttackedAt = 0;
 
   /** Active torch timer id, if this character is carrying a lit torch. */
   torchTimerId: string | null = null;
@@ -91,6 +96,13 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
     const weapon = item(this.cls.weaponId);
     if (!weapon.damage) throw new Error(`${weapon.name} has no damage dice`);
     return weapon.damage;
+  }
+
+  /** How far this character's melee swing lands, in pixels. */
+  get weaponReachPx(): number {
+    const weapon = item(this.cls.weaponId);
+    if (weapon.reachTiles === undefined) throw new Error(`${weapon.name} has no reach`);
+    return weapon.reachTiles * TILE;
   }
 
   get torchLit(): boolean {

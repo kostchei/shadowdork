@@ -62,6 +62,10 @@ Vite and opens the game directly in Chrome.
   with advantage; you act in darkness at disadvantage.
 - **Advantage/disadvantage is positional**: attack from above = advantage,
   thief backstab vs unaware = advantage, airborne or in darkness = disadvantage.
+- **Fights are exchanges.** Anyone a monster strikes swings back automatically
+  and keeps trading blows until the aggressor dies or leaves reach — retreat is
+  a choice you make with your feet. Weapons have reach: the spear and staff
+  strike from beyond a monster's claws.
 - **Spells have no slots.** Casting is a spell check vs DC 10 + tier. Failure loses
   the spell until rest. Natural 1: wizards roll the live mishap table; priests are
   cut off pending atonement. Natural 20 doubles the effect.

@@ -13,7 +13,6 @@ import type { CharacterSprite } from "../entities/CharacterSprite";
 import type { MonsterSprite } from "../entities/MonsterSprite";
 import { hitBurst } from "../fx/vfx";
 import type { LightSystem } from "./light";
-import { CLOSE_PX } from "./position";
 
 export function floatText(
   scene: Phaser.Scene,
@@ -154,8 +153,9 @@ export function meleeSwing(deps: MeleeDeps, attacker: CharacterSprite): SwingOut
   attacker.startSwingCooldown();
 
   const { scene, ctx, light } = deps;
+  const reach = attacker.weaponReachPx;
   const slash = scene.add
-    .image(attacker.x + attacker.facing * 18, attacker.y, "slash")
+    .image(attacker.x + attacker.facing * reach * 0.4, attacker.y, "slash")
     .setDepth(20)
     .setFlipX(attacker.facing === -1);
   scene.tweens.add({ targets: slash, alpha: 0, duration: 200, onComplete: () => slash.destroy() });
@@ -165,7 +165,7 @@ export function meleeSwing(deps: MeleeDeps, attacker: CharacterSprite): SwingOut
     .filter(
       (m) =>
         m.aliveInFight &&
-        Phaser.Math.Distance.Between(attacker.x, attacker.y, m.x, m.y) <= CLOSE_PX &&
+        Phaser.Math.Distance.Between(attacker.x, attacker.y, m.x, m.y) <= reach &&
         (m.x - attacker.x) * attacker.facing > -12,
     )
     .sort(
@@ -228,6 +228,9 @@ export function monsterSwing(
   target: CharacterSprite,
 ): void {
   monster.attackCooldown = 1500;
+  // Being attacked marks the aggressor so the character swings back.
+  target.lastAttackedBy = monster;
+  target.lastAttackedAt = scene.time.now;
   const inDark = light.levelAt(target.x, target.y) === "dark";
   const result = monsterAttackRoll(
     ctx.engine.dice,

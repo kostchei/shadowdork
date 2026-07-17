@@ -9,6 +9,7 @@ const game = new Phaser.Game({
   width: 960,
   height: 540,
   pixelArt: true,
+  resolution: window.devicePixelRatio || 1,
   render: { preserveDrawingBuffer: true },
   backgroundColor: "#0a0a0f",
   physics: {
@@ -23,7 +24,7 @@ const game = new Phaser.Game({
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
   scene: [BootScene, DungeonScene, HudScene],
-});
+} as any);
 
 declare global {
   interface Window {

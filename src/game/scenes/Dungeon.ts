@@ -207,7 +207,7 @@ export class DungeonScene extends Phaser.Scene {
     });
 
     this.ctx.say(
-      `${this.activeDungeon.name}. ${this.activeDungeon.objective}. Watch your torch.`,
+      `${this.activeDungeon.name}. ${this.activeDungeon.objective}. Watch your torch. ESC shows controls.`,
       "#f0e090",
     );
     this.cameras.main.fadeIn(450, 0, 0, 0);

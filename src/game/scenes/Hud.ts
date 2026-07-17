@@ -137,10 +137,12 @@ export class HudScene extends Phaser.Scene {
       .setOrigin(1, 0)
       .setDepth(1000);
 
+    // Positioned by drawChrome: the log rides under the party panel so the
+    // bottom of the screen — where the party actually fights — stays visible.
     for (let i = 0; i < LOG_LINES; i++) {
       this.logTexts.push(
         this.add
-          .text(18, h - 66 + i * 19, "", {
+          .text(18, 0, "", {
             ...UI_STYLE,
             fontSize: "11px",
             wordWrap: { width: 570 },
@@ -148,16 +150,6 @@ export class HudScene extends Phaser.Scene {
           .setDepth(1000),
       );
     }
-
-    this.add
-      .text(
-        w / 2,
-        h - 15,
-        "MOVE A/D   JUMP W/SPACE   ATTACK J/X/CTRL   USE E   TORCH T   MAGIC K/Q   SWAP TAB/1-4   HOLD H   LUCK L   STATS C   GEAR I   PAUSE ESC",
-        { ...DATA_STYLE, fontSize: "9px", color: "#9da2ad" },
-      )
-      .setOrigin(0.5)
-      .setDepth(1000);
 
     this.torchWarning = this.add
       .text(w / 2, 102, "TORCH GUTTERING", {
@@ -173,7 +165,7 @@ export class HudScene extends Phaser.Scene {
       .setVisible(false);
 
     this.luckHint = this.add
-      .text(w / 2, h - 92, "", {
+      .text(w / 2, 0, "", {
         ...UI_STYLE,
         fontSize: "14px",
         color: "#ffd45f",
@@ -199,18 +191,16 @@ export class HudScene extends Phaser.Scene {
   }
 
   private drawChrome(memberCount: number): void {
-    const w = GAME_W;
-    const h = GAME_H;
     const accent = this.dungeon.activeDungeon.theme.accent;
     const partyH = partyBoxHeight(memberCount);
+    const logY = PARTY_BOX.y + partyH + 6;
     this.lastPartySize = memberCount;
     this.chrome.clear();
 
     this.chrome.fillStyle(0x05060a, 0.76);
     this.chrome.fillRoundedRect(PARTY_BOX.x, PARTY_BOX.y, PARTY_BOX.w, partyH, 5);
     this.chrome.fillRoundedRect(MISSION_BOX.x, MISSION_BOX.y, MISSION_BOX.w, MISSION_BOX.h, 5);
-    this.chrome.fillRoundedRect(8, h - 72, 584, 44, 5);
-    this.chrome.fillRoundedRect(8, h - 24, w - 16, 18, 4);
+    this.chrome.fillRoundedRect(8, logY, 584, 44, 5);
 
     this.chrome.fillStyle(accent, 0.8);
     this.chrome.fillRect(PARTY_BOX.x + 5, PARTY_BOX.y, PARTY_BOX.w - 10, 2);
@@ -219,12 +209,12 @@ export class HudScene extends Phaser.Scene {
     this.chrome.lineStyle(1, accent, 0.62);
     this.chrome.strokeRoundedRect(PARTY_BOX.x, PARTY_BOX.y, PARTY_BOX.w, partyH, 5);
     this.chrome.strokeRoundedRect(MISSION_BOX.x, MISSION_BOX.y, MISSION_BOX.w, MISSION_BOX.h, 5);
-    this.chrome.strokeRoundedRect(8, h - 72, 584, 44, 5);
-    this.chrome.lineStyle(1, 0x6d7280, 0.45);
-    this.chrome.strokeRoundedRect(8, h - 24, w - 16, 18, 4);
+    this.chrome.strokeRoundedRect(8, logY, 584, 44, 5);
 
     this.leaderDetail.setY(PARTY_BOX.y + PARTY_BOX.headerH + memberCount * PARTY_BOX.rowH + 2);
-    this.torchWarning.setY(Math.max(PARTY_BOX.y + partyH, MISSION_BOX.y + MISSION_BOX.h) + 16);
+    this.logTexts.forEach((text, i) => text.setY(logY + 4 + i * 19));
+    this.torchWarning.setY(Math.max(logY + 44, MISSION_BOX.y + MISSION_BOX.h) + 16);
+    this.luckHint.setY(this.torchWarning.y + 26);
   }
 
   /** The talent roll gets a legible card instead of text floating over combat. */

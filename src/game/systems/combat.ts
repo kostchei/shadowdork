@@ -8,7 +8,7 @@ import Phaser from "phaser";
 import { monsterAttackRoll, moraleCheck, type CheckResult } from "../../engine";
 import { item } from "../../data";
 import type { GameContext } from "../context";
-import { DPR } from "../display";
+import { RENDER_SCALE } from "../display";
 import type { CharacterSprite } from "../entities/CharacterSprite";
 import type { MonsterSprite } from "../entities/MonsterSprite";
 import { hitBurst } from "../fx/vfx";
@@ -32,7 +32,7 @@ export function floatText(
       color,
       stroke: "#000000",
       strokeThickness: 3,
-      resolution: DPR,
+      resolution: RENDER_SCALE,
     })
     .setOrigin(0.5, 1)
     .setDepth(950);

@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { DPR, GAME_H, GAME_W } from "./display";
+import { RENDER_SCALE, GAME_H, GAME_W } from "./display";
 import { BootScene } from "./scenes/Boot";
 import { DungeonScene } from "./scenes/Dungeon";
 import { HudScene } from "./scenes/Hud";
@@ -7,8 +7,8 @@ import { HudScene } from "./scenes/Hud";
 const game = new Phaser.Game({
   type: Phaser.AUTO,
   parent: "game",
-  width: GAME_W * DPR,
-  height: GAME_H * DPR,
+  width: GAME_W * RENDER_SCALE,
+  height: GAME_H * RENDER_SCALE,
   pixelArt: true,
   render: { preserveDrawingBuffer: true },
   backgroundColor: "#0a0a0f",

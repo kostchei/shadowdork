@@ -2,7 +2,7 @@
 
 import Phaser from "phaser";
 import { spell } from "../../data";
-import { DPR, GAME_H, GAME_W } from "../display";
+import { RENDER_SCALE, GAME_H, GAME_W } from "../display";
 import { MAX_LEVEL, xpToNextLevel, type LevelUpResult } from "../../engine";
 import type { GameContext } from "../context";
 import { ROOM_BANDS } from "../level/dungeons";
@@ -13,14 +13,14 @@ const UI_STYLE = {
   fontFamily: '"Trebuchet MS", Arial, sans-serif',
   fontSize: "12px",
   color: "#f0eee9",
-  resolution: DPR,
+  resolution: RENDER_SCALE,
 } as const;
 
 const DATA_STYLE = {
   fontFamily: "Consolas, monospace",
   fontSize: "10px",
   color: "#c9cbd1",
-  resolution: DPR,
+  resolution: RENDER_SCALE,
 } as const;
 
 const ROOM_LABELS = ["THE GATE", "THE TEST", "THE SETBACK", "THE CLIMAX", "THE REWARD", "SANCTUARY"];
@@ -73,8 +73,8 @@ export class HudScene extends Phaser.Scene {
     this.hpLabels = [];
     this.logTexts = [];
 
-    // The canvas is DPR-scaled; zoom the HUD camera so layout stays in 960x540.
-    this.cameras.main.setZoom(DPR).centerOn(GAME_W / 2, GAME_H / 2);
+    // The canvas is render-scaled; zoom the HUD camera so layout stays in 960x540.
+    this.cameras.main.setZoom(RENDER_SCALE).centerOn(GAME_W / 2, GAME_H / 2);
 
     const w = GAME_W;
     const h = GAME_H;
@@ -124,7 +124,7 @@ export class HudScene extends Phaser.Scene {
         color: titleColor,
         stroke: "#050508",
         strokeThickness: 3,
-        resolution: DPR,
+        resolution: RENDER_SCALE,
       })
       .setOrigin(1, 0)
       .setDepth(1000);
@@ -166,7 +166,7 @@ export class HudScene extends Phaser.Scene {
         color: "#ff9c4a",
         stroke: "#050508",
         strokeThickness: 4,
-        resolution: DPR,
+        resolution: RENDER_SCALE,
       })
       .setOrigin(0.5)
       .setDepth(1000)
@@ -241,7 +241,7 @@ export class HudScene extends Phaser.Scene {
           fontFamily: "Georgia, serif",
           fontSize: "28px",
           color: "#ffd45f",
-          resolution: DPR,
+          resolution: RENDER_SCALE,
         })
         .setOrigin(0.5),
       this.add
@@ -285,7 +285,7 @@ export class HudScene extends Phaser.Scene {
       color: "#ffd45f",
       stroke: "#000000",
       strokeThickness: 3,
-      resolution: DPR,
+      resolution: RENDER_SCALE,
     }).setOrigin(0.5);
 
     const sub = this.add.text(w / 2, h / 2 - 40, "Press ESC to resume", {
@@ -346,7 +346,7 @@ export class HudScene extends Phaser.Scene {
       color: "#ffd45f",
       stroke: "#000000",
       strokeThickness: 3,
-      resolution: DPR,
+      resolution: RENDER_SCALE,
     }).setOrigin(0.5);
 
     const sub = this.add.text(w / 2, h / 2 - 120, `Level ${c.level} ${c.ancestry.toUpperCase()} ${c.className.toUpperCase()}`, {
@@ -443,7 +443,7 @@ export class HudScene extends Phaser.Scene {
       color: "#ffd45f",
       stroke: "#000000",
       strokeThickness: 3,
-      resolution: DPR,
+      resolution: RENDER_SCALE,
     }).setOrigin(0.5);
 
     const sub = this.add.text(w / 2, h / 2 - 120, `Capacity: ${c.inventory.slotsUsed()} / ${c.inventory.capacity} Slots Used`, {
@@ -530,7 +530,7 @@ export class HudScene extends Phaser.Scene {
           color,
           stroke: "#000000",
           strokeThickness: 5,
-          resolution: DPR,
+          resolution: RENDER_SCALE,
         })
         .setOrigin(0.5),
       this.add

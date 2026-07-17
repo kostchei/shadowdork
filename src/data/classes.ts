@@ -20,17 +20,18 @@ const CLASS_LIST: readonly ClassDef[] = [
     name: "fighter",
     displayName: "Fighter",
     hitDie: "1d8",
-    weaponId: "longsword",
+    weaponId: "spear",
     armorId: "chainmail",
-    startsWithShield: true,
+    startsWithShield: false,
     talentTableId: "fighter-talents",
     startingSpellIds: [],
     features: [
       {
         id: "feat-fighter-weapon-mastery",
-        name: "Weapon Mastery: +1 to attack and damage, +half level damage",
+        name: "Weapon Mastery: +1 to attack and damage, +half level to attack and damage",
         hooks: [
           { kind: "checkBonus", applies: "attack", bonus: 1 },
+          { kind: "checkBonusHalfLevel", applies: "attack" },
           { kind: "damageBonus", bonus: 1 },
           { kind: "damageBonusHalfLevel" },
         ],

@@ -69,9 +69,9 @@ export class Inventory {
     return newSlots <= this.capacity;
   }
 
-  add(def: ItemDef, qty = 1): void {
+  add(def: ItemDef, qty = 1, force = false): void {
     if (qty < 1) throw new Error(`Quantity must be >= 1, got ${qty}`);
-    if (!this.canAdd(def, qty)) {
+    if (!force && !this.canAdd(def, qty)) {
       throw new Error(
         `Cannot carry ${qty}x ${def.name}: ${this.slotsUsed()}/${this.capacity} slots used`,
       );

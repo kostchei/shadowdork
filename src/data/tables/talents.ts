@@ -13,7 +13,7 @@ export const FIGHTER_TALENTS: RollableTable = {
     {
       min: 2,
       max: 2,
-      text: "Weapon mastery: +1 to attacks and damage",
+      text: "Gain Weapon Mastery with one additional weapon type: +1 to attack and damage",
       effects: [
         { kind: "checkBonus", applies: "attack", bonus: 1 },
         { kind: "damageBonus", bonus: 1 },
@@ -22,29 +22,26 @@ export const FIGHTER_TALENTS: RollableTable = {
     {
       min: 3,
       max: 6,
-      text: "Drilled strikes: +1 to attack rolls",
+      text: "+1 to melee and ranged attacks",
       effects: [{ kind: "checkBonus", applies: "attack", bonus: 1 }],
     },
     {
       min: 7,
       max: 9,
-      text: "Iron thews: +2 Strength",
-      effects: [{ kind: "statBonus", stat: "STR", bonus: 2 }],
+      text: "+2 to Strength, Dexterity, or Constitution stat",
+      effects: [{ kind: "statBonusChoice", stats: ["STR", "DEX", "CON"], bonus: 2 }],
     },
     {
       min: 10,
       max: 11,
-      text: "Armored instinct: +1 AC",
-      effects: [{ kind: "acBonus", bonus: 1 }],
+      text: "Choose one kind of armor. You get +1 AC from that armor",
+      effects: [{ kind: "armorAcBonusChoice", bonus: 1 }],
     },
     {
       min: 12,
       max: 12,
-      text: "Veteran of a hundred fights: +1 to attacks and +1 AC",
-      effects: [
-        { kind: "checkBonus", applies: "attack", bonus: 1 },
-        { kind: "acBonus", bonus: 1 },
-      ],
+      text: "Choose a talent or +2 points to distribute to stats",
+      effects: [{ kind: "statBonusChoice", stats: ["STR", "DEX", "CON"], bonus: 2 }],
     },
   ],
 };

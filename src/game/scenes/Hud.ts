@@ -47,6 +47,9 @@ export class HudScene extends Phaser.Scene {
   private torchWarning!: Phaser.GameObjects.Text;
   private luckHint!: Phaser.GameObjects.Text;
   private overlay: Phaser.GameObjects.Container | null = null;
+  private pauseOverlay: Phaser.GameObjects.Container | null = null;
+  private statsOverlay: Phaser.GameObjects.Container | null = null;
+  private gearOverlay: Phaser.GameObjects.Container | null = null;
   private lastPartySize = -1;
 
   constructor() {
@@ -58,6 +61,9 @@ export class HudScene extends Phaser.Scene {
     this.ctx = this.registry.get("ctx") as GameContext;
     if (!this.ctx) throw new Error("GameContext missing from registry");
     this.overlay = null;
+    this.pauseOverlay = null;
+    this.statsOverlay = null;
+    this.gearOverlay = null;
     this.lastPartySize = -1;
     this.partyNames = [];
     this.partyStats = [];
@@ -248,6 +254,246 @@ export class HudScene extends Phaser.Scene {
       onComplete: () => banner.destroy(),
     });
     this.dungeon.cameras.main.flash(220, 255, 214, 64);
+  }
+
+  showPauseOverlay(): void {
+    if (this.pauseOverlay) return;
+    const w = this.scale.width;
+    const h = this.scale.height;
+    const accent = this.dungeon.activeDungeon.theme.accent;
+    const titleColor = `#${accent.toString(16).padStart(6, "0")}`;
+
+    const bg = this.add.rectangle(w / 2, h / 2, w, h, 0x020205, 0.7);
+    const box = this.add.graphics();
+    box.fillStyle(0x05060a, 0.94);
+    box.fillRoundedRect(w / 2 - 200, h / 2 - 120, 400, 240, 8);
+    box.lineStyle(2, accent, 0.9);
+    box.strokeRoundedRect(w / 2 - 200, h / 2 - 120, 400, 240, 8);
+
+    const title = this.add.text(w / 2, h / 2 - 80, "GAME PAUSED", {
+      fontFamily: "Georgia, serif",
+      fontSize: "28px",
+      color: "#ffd45f",
+      stroke: "#000000",
+      strokeThickness: 3
+    }).setOrigin(0.5);
+
+    const sub = this.add.text(w / 2, h / 2 - 40, "Press ESC to resume", {
+      ...UI_STYLE,
+      fontSize: "13px",
+      color: "#a0a4b0"
+    }).setOrigin(0.5);
+
+    const helpTitle = this.add.text(w / 2, h / 2, "CONTROLS QUICK REFERENCE", {
+      ...UI_STYLE,
+      fontSize: "12px",
+      color: titleColor,
+      fontStyle: "bold"
+    }).setOrigin(0.5);
+
+    const helpText = this.add.text(w / 2, h / 2 + 50, 
+      "A/D or Arrows : Move Left/Right\n" +
+      "W/Space : Jump\n" +
+      "J or X : Melee Attack\n" +
+      "K : Cast Spell  |  Q : Cycle Spells\n" +
+      "E : Interact (Rescue / Rest / Exit)\n" +
+      "T : Light Torch  |  H : Toggle Hold/Follow\n" +
+      "C : Character Stats  |  I : Gear/Inventory", {
+      ...DATA_STYLE,
+      fontSize: "10px",
+      align: "center",
+      lineSpacing: 4
+    }).setOrigin(0.5);
+
+    this.pauseOverlay = this.add.container(0, 0, [bg, box as any, title, sub, helpTitle, helpText]).setDepth(2000);
+  }
+
+  hidePauseOverlay(): void {
+    if (this.pauseOverlay) {
+      this.pauseOverlay.destroy();
+      this.pauseOverlay = null;
+    }
+  }
+
+  showStatsOverlay(c: any): void {
+    if (this.statsOverlay) return;
+    const w = this.scale.width;
+    const h = this.scale.height;
+    const accent = this.dungeon.activeDungeon.theme.accent;
+    const titleColor = `#${accent.toString(16).padStart(6, "0")}`;
+
+    const bg = this.add.rectangle(w / 2, h / 2, w, h, 0x020205, 0.7);
+    const box = this.add.graphics();
+    box.fillStyle(0x05060a, 0.94);
+    box.fillRoundedRect(w / 2 - 220, h / 2 - 180, 440, 360, 8);
+    box.lineStyle(2, accent, 0.9);
+    box.strokeRoundedRect(w / 2 - 220, h / 2 - 180, 440, 360, 8);
+
+    const title = this.add.text(w / 2, h / 2 - 150, `${c.name.toUpperCase()} - STATS`, {
+      fontFamily: "Georgia, serif",
+      fontSize: "24px",
+      color: "#ffd45f",
+      stroke: "#000000",
+      strokeThickness: 3
+    }).setOrigin(0.5);
+
+    const sub = this.add.text(w / 2, h / 2 - 120, `Level ${c.level} ${c.ancestry.toUpperCase()} ${c.className.toUpperCase()}`, {
+      ...UI_STYLE,
+      fontSize: "12px",
+      color: "#a0a4b0"
+    }).setOrigin(0.5);
+
+    const statsList = ["STR", "DEX", "CON", "INT", "WIS", "CHA"];
+    const statLabels: string[] = [];
+    for (const stat of statsList) {
+      const val = c.stats[stat];
+      const modVal = c.mod(stat);
+      const modSign = modVal >= 0 ? `+${modVal}` : `${modVal}`;
+      statLabels.push(`${stat}: ${val.toString().padStart(2, " ")} (${modSign})`);
+    }
+
+    const col1 = statLabels.slice(0, 3).join("\n\n");
+    const col2 = statLabels.slice(3, 6).join("\n\n");
+
+    const statText1 = this.add.text(w / 2 - 140, h / 2 - 80, col1, {
+      ...DATA_STYLE,
+      fontSize: "14px",
+      lineSpacing: 8
+    });
+
+    const statText2 = this.add.text(w / 2 + 20, h / 2 - 80, col2, {
+      ...DATA_STYLE,
+      fontSize: "14px",
+      lineSpacing: 8
+    });
+
+    const xpVal = c.level >= MAX_LEVEL ? "MAX" : `${c.xp}/${xpToNextLevel(c.level)}`;
+    const secondaryDetails = 
+      `HP : ${c.hp} / ${c.maxHp}\n\n` +
+      `AC : ${c.ac}\n\n` +
+      `XP : ${xpVal}`;
+
+    const secondaryText = this.add.text(w / 2 - 140, h / 2 + 40, secondaryDetails, {
+      ...DATA_STYLE,
+      fontSize: "13px",
+      lineSpacing: 4
+    });
+
+    const featuresList = c.effects.map((e: any) => `* ${e.name}`).join("\n");
+    const featuresTitle = this.add.text(w / 2 + 20, h / 2 + 35, "FEATURES & TALENTS", {
+      ...UI_STYLE,
+      fontSize: "11px",
+      color: titleColor,
+      fontStyle: "bold"
+    });
+    const featuresText = this.add.text(w / 2 + 20, h / 2 + 55, featuresList || "None", {
+      ...DATA_STYLE,
+      fontSize: "9px",
+      wordWrap: { width: 180 },
+      lineSpacing: 3
+    });
+
+    const footer = this.add.text(w / 2, h / 2 + 150, "Press C to close", {
+      ...UI_STYLE,
+      fontSize: "11px",
+      color: "#808490"
+    }).setOrigin(0.5);
+
+    this.statsOverlay = this.add.container(0, 0, [
+      bg, box as any, title, sub, statText1, statText2, secondaryText, featuresTitle, featuresText, footer
+    ]).setDepth(2000);
+  }
+
+  hideStatsOverlay(): void {
+    if (this.statsOverlay) {
+      this.statsOverlay.destroy();
+      this.statsOverlay = null;
+    }
+  }
+
+  showGearOverlay(c: any): void {
+    if (this.gearOverlay) return;
+    const w = this.scale.width;
+    const h = this.scale.height;
+    const accent = this.dungeon.activeDungeon.theme.accent;
+    const titleColor = `#${accent.toString(16).padStart(6, "0")}`;
+
+    const bg = this.add.rectangle(w / 2, h / 2, w, h, 0x020205, 0.7);
+    const box = this.add.graphics();
+    box.fillStyle(0x05060a, 0.94);
+    box.fillRoundedRect(w / 2 - 220, h / 2 - 180, 440, 360, 8);
+    box.lineStyle(2, accent, 0.9);
+    box.strokeRoundedRect(w / 2 - 220, h / 2 - 180, 440, 360, 8);
+
+    const title = this.add.text(w / 2, h / 2 - 150, `${c.name.toUpperCase()} - GEAR`, {
+      fontFamily: "Georgia, serif",
+      fontSize: "24px",
+      color: "#ffd45f",
+      stroke: "#000000",
+      strokeThickness: 3
+    }).setOrigin(0.5);
+
+    const sub = this.add.text(w / 2, h / 2 - 120, `Capacity: ${c.inventory.slotsUsed()} / ${c.inventory.capacity} Slots Used`, {
+      ...UI_STYLE,
+      fontSize: "12px",
+      color: "#a0a4b0"
+    }).setOrigin(0.5);
+
+    const armorName = c.wornArmor ? c.wornArmor.name : "None (AC 10)";
+    const shieldName = c.carriedShield ? `${c.carriedShield.name}${c.shieldStowed ? " (Stowed)" : ""}` : "None";
+    const eqText = 
+      `ARMOR  : ${armorName}\n\n` +
+      `SHIELD : ${shieldName}`;
+
+    const equipmentText = this.add.text(w / 2 - 140, h / 2 - 80, eqText, {
+      ...DATA_STYLE,
+      fontSize: "13px",
+      lineSpacing: 4
+    });
+
+    const eqTitle = this.add.text(w / 2 - 140, h / 2 - 100, "EQUIPMENT", {
+      ...UI_STYLE,
+      fontSize: "11px",
+      color: titleColor,
+      fontStyle: "bold"
+    });
+
+    const stacks = c.inventory.all();
+    const gearList = stacks.map((s: any) => {
+      const slots = s.def.slotCost === 0 ? "free" : `${s.def.slotCost} slot${s.def.slotCost > 1 ? "s" : ""}`;
+      return `* ${s.qty}x ${s.def.name} (${slots})`;
+    }).join("\n");
+
+    const invTitle = this.add.text(w / 2 + 20, h / 2 - 100, "INVENTORY", {
+      ...UI_STYLE,
+      fontSize: "11px",
+      color: titleColor,
+      fontStyle: "bold"
+    });
+
+    const invText = this.add.text(w / 2 + 20, h / 2 - 80, gearList || "Empty", {
+      ...DATA_STYLE,
+      fontSize: "10px",
+      wordWrap: { width: 180 },
+      lineSpacing: 6
+    });
+
+    const footer = this.add.text(w / 2, h / 2 + 150, "Press I to close", {
+      ...UI_STYLE,
+      fontSize: "11px",
+      color: "#808490"
+    }).setOrigin(0.5);
+
+    this.gearOverlay = this.add.container(0, 0, [
+      bg, box as any, title, sub, eqTitle, equipmentText, invTitle, invText, footer
+    ]).setDepth(2000);
+  }
+
+  hideGearOverlay(): void {
+    if (this.gearOverlay) {
+      this.gearOverlay.destroy();
+      this.gearOverlay = null;
+    }
   }
 
   private showOverlay(title: string, color: string): void {

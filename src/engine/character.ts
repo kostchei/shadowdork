@@ -59,6 +59,7 @@ export interface CharacterInit {
   stats: Stats;
   maxHp: number;
   alignment?: Alignment;
+  ancestry?: string;
 }
 
 export class Character {
@@ -67,6 +68,7 @@ export class Character {
   readonly className: ClassName;
   readonly alignment: Alignment;
   readonly stats: Stats;
+  readonly ancestry: string;
 
   level = 1;
   xp = 0;
@@ -98,6 +100,7 @@ export class Character {
     this.className = init.className;
     this.alignment = init.alignment ?? "neutral";
     this.stats = { ...init.stats };
+    this.ancestry = init.ancestry ?? "human";
     for (const s of STAT_NAMES) statModifier(this.stats[s]); // validate
     this.baseMaxHp = init.maxHp;
     this.hp = this.maxHp;
@@ -117,13 +120,25 @@ export class Character {
     return this.baseMaxHp + sumHook(this.effects, "maxHpBonus");
   }
 
-  /** AC = armor base + DEX (capped by the armor) + readied shield + effect hooks. */
+  /** AC = armor base + DEX (capped by the armor) + readied shield + effect hooks + armor type hooks. */
   get ac(): number {
     const dex = this.mod("DEX");
     const armored = this.wornArmor?.armor;
     const base = armored ? armored.acBase + Math.min(dex, armored.dexCap) : 10 + dex;
     const shield = this.carriedShield && !this.shieldStowed ? 2 : 0;
-    return base + shield + sumHook(this.effects, "acBonus");
+    return base + shield + sumHook(this.effects, "acBonus") + this.armorAcBonus();
+  }
+
+  private armorAcBonus(): number {
+    let total = 0;
+    for (const e of this.effects) {
+      for (const h of e.hooks) {
+        if (h.kind === "armorAcBonus" && this.wornArmor?.id === h.armorId) {
+          total += h.bonus;
+        }
+      }
+    }
+    return total;
   }
 
   /** Wear armor. Class permissions are the armor's, and they are law. */
@@ -159,7 +174,26 @@ export class Character {
   }
 
   addEffect(effect: Effect): void {
-    this.effects.push(effect);
+    const resolvedHooks = effect.hooks.map((h) => {
+      if (h.kind === "statBonusChoice") {
+        let bestStat = h.stats[0]!;
+        let maxVal = -1;
+        for (const s of h.stats) {
+          const val = this.stats[s];
+          if (val > maxVal) {
+            maxVal = val;
+            bestStat = s;
+          }
+        }
+        return { kind: "statBonus" as const, stat: bestStat, bonus: h.bonus };
+      }
+      if (h.kind === "armorAcBonusChoice") {
+        const armorId = this.wornArmor ? this.wornArmor.id : (this.className === "thief" ? "leather-armor" : "chainmail");
+        return { kind: "armorAcBonus" as const, armorId, bonus: h.bonus };
+      }
+      return h;
+    });
+    this.effects.push({ ...effect, hooks: resolvedHooks });
   }
 
   removeEffect(id: string): void {

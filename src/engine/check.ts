@@ -56,6 +56,9 @@ export function resolveCheck(dice: Dice, input: CheckInput): CheckResult {
   const disReasons = [...(input.disadvantage ?? [])];
   if (grantsAdvantage(actor.effects, kind)) advReasons.push("talent");
   if (grantsDisadvantage(actor.effects, kind)) disReasons.push("condition");
+  if (kind === "stat" && actor.effects.some((e) => e.hooks.some((h) => h.kind === "advantageOnStat" && h.stat === stat))) {
+    advReasons.push("grit");
+  }
 
   // Any advantage + any disadvantage cancel to a normal roll.
   let mode: Advantage = "normal";
@@ -63,7 +66,7 @@ export function resolveCheck(dice: Dice, input: CheckInput): CheckResult {
   else if (disReasons.length > 0 && advReasons.length === 0) mode = "disadvantage";
 
   const roll = dice.d20(mode);
-  const modifier = actor.mod(stat) + sumCheckBonus(actor.effects, kind);
+  const modifier = actor.mod(stat) + sumCheckBonus(actor.effects, kind, actor.level);
   const total = roll.natural + modifier;
 
   const critAt = kind === "attack" ? (input.critThreshold ?? actor.critThreshold) : 20;

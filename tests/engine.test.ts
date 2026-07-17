@@ -4,6 +4,7 @@ import {
   DC,
   Dice,
   Engine,
+  Inventory,
   resolveCheck,
   rollStats,
   statModifier,
@@ -181,13 +182,14 @@ describe("inventory gear slots", () => {
     expect(wiz.inventory.capacity).toBe(Math.max(wiz.stats.STR, 10));
     // Starting gear: staff + 2 torches + ration = 4 slots (wizards wear no armor).
     expect(wiz.inventory.slotsUsed()).toBe(4);
-    wiz.inventory.add(item("ration"), wiz.inventory.slotsFree());
+    wiz.inventory.add(item("torch"), wiz.inventory.slotsFree());
     expect(() => wiz.inventory.add(item("torch"))).toThrow(/Cannot carry/);
   });
 
   it("first 100 coins are free, then 1 slot per 100", () => {
     const engine = makeEngine();
     const f = createCharacter(engine, "f", "Fighter", "fighter");
+    f.inventory = new Inventory(f.inventory.capacity);
     const before = f.inventory.slotsUsed();
     f.inventory.add(item("coins"), 100);
     expect(f.inventory.slotsUsed()).toBe(before); // free
@@ -241,6 +243,8 @@ describe("armor and AC", () => {
   it("computes AC from armor base + capped DEX + shield", () => {
     const engine = makeEngine();
     const f = createCharacter(engine, "f", "Fighter", "fighter"); // chainmail + shield
+    f.inventory.add(item("shield"), 1, true);
+    f.equipShield(item("shield"));
     const dex = statModifier(f.stats.DEX);
     expect(f.ac).toBe(13 + dex + 2);
     f.shieldStowed = true;
@@ -384,14 +388,14 @@ describe("rest", () => {
   it("requires a ration", () => {
     const engine = makeEngine();
     const f = createCharacter(engine, "f", "Fighter", "fighter");
-    f.inventory.remove("ration", 1);
+    f.inventory.remove("ration", f.inventory.count("ration"));
     expect(() => engine.rest(f, item("ration"))).toThrow(/no Ration/);
   });
 
   it("freeRest restores HP and spells without a ration", () => {
     const engine = makeEngine();
     const w = createCharacter(engine, "w", "Wizard", "wizard");
-    w.inventory.remove("ration", 1);
+    w.inventory.remove("ration", w.inventory.count("ration"));
     w.takeDamage(3);
     w.knownSpell("magic-missile").status = "lost";
     engine.freeRest(w);
@@ -432,5 +436,124 @@ describe("timers (torch semantics)", () => {
     engine.advance(600);
     expect(expired).toBe(true);
     expect(engine.clock.hasTimer("torch-1")).toBe(false);
+  });
+});
+
+describe("fighter class feature rules", () => {
+  it("rolls 2 starting talents for Humans", () => {
+    const engine = makeEngine();
+    const f = createCharacter(engine, "f", "Fighter", "fighter", "human");
+    // Starting features/talents effects: Weapon Mastery (1), Grit (1), plus 2 starting talent rolls = 4 total effects.
+    expect(f.effects.length).toBe(4);
+  });
+
+  it("applies Grit advantage to Strength or Dexterity checks but not attacks", () => {
+    const engine = makeEngine();
+    const f = createCharacter(engine, "f", "Fighter", "fighter");
+    // Ensure Grit is configured on f.
+    const grit = f.effects.find((e) => e.id === "feat-fighter-grit");
+    expect(grit).toBeDefined();
+    const hook = grit?.hooks[0];
+    expect(hook?.kind).toBe("advantageOnStat");
+    const stat = (hook as any).stat;
+
+    // Resolve an ability check of the Grit stat
+    const r1 = resolveCheck(new Dice(1), {
+      actor: f,
+      stat,
+      dc: DC.NORMAL,
+      kind: "stat",
+    });
+    expect(r1.advantageReasons).toContain("grit");
+    expect(r1.mode).toBe("advantage");
+
+    // Attack roll should NOT get Grit advantage
+    const r2 = resolveCheck(new Dice(1), {
+      actor: f,
+      stat,
+      dc: DC.NORMAL,
+      kind: "attack",
+    });
+    expect(r2.advantageReasons).not.toContain("grit");
+    expect(r2.mode).toBe("normal");
+  });
+
+  it("applies Weapon Mastery half level bonus to attacks", () => {
+    const engine = makeEngine();
+    const f = createCharacter(engine, "f", "Fighter", "fighter");
+    // Clear starting talents/features to test Weapon Mastery in isolation
+    f.effects = f.effects.filter((e) => e.id === "feat-fighter-weapon-mastery");
+    f.level = 4; // half level = 2
+    // Resolve an attack check
+    const r = resolveCheck(new Dice(1), {
+      actor: f,
+      stat: "STR",
+      dc: DC.NORMAL,
+      kind: "attack",
+    });
+    // Base modifier + Weapon Mastery checkBonus (1) + checkBonusHalfLevel (2)
+    const expectedMod = statModifier(f.stats.STR) + 1 + 2;
+    expect(r.modifier).toBe(expectedMod);
+  });
+
+  it("auto-resolves statBonusChoice and armorAcBonusChoice", () => {
+    const engine = makeEngine();
+    const f = createCharacter(engine, "f", "Fighter", "fighter");
+    
+    // Test statBonusChoice resolution
+    f.addEffect({
+      id: "test-stat-choice",
+      name: "Test Choice",
+      hooks: [{ kind: "statBonusChoice", stats: ["STR", "DEX"], bonus: 2 }],
+    });
+    const resolved = f.effects.find((e) => e.id === "test-stat-choice");
+    expect(resolved?.hooks[0].kind).toBe("statBonus");
+    // It should have picked the highest of STR and DEX
+    const expectedStat = f.stats.STR >= f.stats.DEX ? "STR" : "DEX";
+    expect((resolved?.hooks[0] as any).stat).toBe(expectedStat);
+
+    // Test armorAcBonusChoice resolution
+    f.addEffect({
+      id: "test-armor-choice",
+      name: "Test Armor Choice",
+      hooks: [{ kind: "armorAcBonusChoice", bonus: 1 }],
+    });
+    const resolvedArmor = f.effects.find((e) => e.id === "test-armor-choice");
+    expect(resolvedArmor?.hooks[0].kind).toBe("armorAcBonus");
+    expect((resolvedArmor?.hooks[0] as any).armorId).toBe("chainmail");
+  });
+
+  it("swaps stats for Fighter if neither STR nor DEX is heroic (>= 15)", () => {
+    const engine = makeEngine();
+    let foundSeed = -1;
+    let originalStats: any = null;
+    for (let seed = 0; seed < 1000; seed++) {
+      const d = new Dice(seed);
+      const rolled = rollStats(d);
+      if (rolled.STR < 15 && rolled.DEX < 15) {
+        foundSeed = seed;
+        originalStats = rolled;
+        break;
+      }
+    }
+    expect(foundSeed).toBeGreaterThanOrEqual(0);
+
+    const candidates: ("CON" | "INT" | "WIS" | "CHA")[] = ["CON", "INT", "WIS", "CHA"];
+    let bestStat: "CON" | "INT" | "WIS" | "CHA" | null = null;
+    let maxVal = -1;
+    for (const s of candidates) {
+      if (originalStats[s] >= 15 && originalStats[s] > maxVal) {
+        maxVal = originalStats[s];
+        bestStat = s;
+      }
+    }
+    expect(bestStat).not.toBeNull();
+
+    const seededEngine = new Engine({ seed: foundSeed });
+    registerTables(seededEngine);
+    const f = createCharacter(seededEngine, "f", "Fighter", "fighter");
+
+    expect(f.stats.STR).toBe(originalStats[bestStat!]);
+    expect(f.stats[bestStat!]).toBe(originalStats.STR);
   });
 });

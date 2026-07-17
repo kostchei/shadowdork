@@ -16,11 +16,15 @@ export type CheckKind =
 
 export type EffectHook =
   | { kind: "checkBonus"; applies: CheckKind; bonus: number }
+  | { kind: "checkBonusHalfLevel"; applies: CheckKind }
   | { kind: "advantageOn"; applies: CheckKind }
   | { kind: "disadvantageOn"; applies: CheckKind }
   | { kind: "critRange"; value: number } // attacks crit on natural >= value
   | { kind: "statBonus"; stat: StatName; bonus: number }
+  | { kind: "statBonusChoice"; stats: StatName[]; bonus: number }
   | { kind: "acBonus"; bonus: number }
+  | { kind: "armorAcBonusChoice"; bonus: number }
+  | { kind: "armorAcBonus"; armorId: string; bonus: number }
   | { kind: "damageBonus"; bonus: number }
   /** Weapon Mastery scaling: +floor(level / 2) damage. */
   | { kind: "damageBonusHalfLevel" }
@@ -43,12 +47,15 @@ export interface Effect {
   duration?: Duration;
 }
 
-export function sumCheckBonus(effects: readonly Effect[], kind: CheckKind): number {
+export function sumCheckBonus(effects: readonly Effect[], kind: CheckKind, level = 1): number {
   let total = 0;
   for (const e of effects) {
     for (const h of e.hooks) {
       if (h.kind === "checkBonus" && (h.applies === kind || h.applies === "any")) {
         total += h.bonus;
+      }
+      if (h.kind === "checkBonusHalfLevel" && (h.applies === kind || h.applies === "any")) {
+        total += Math.floor(level / 2);
       }
     }
   }

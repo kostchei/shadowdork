@@ -4,13 +4,20 @@ import type { ItemDef } from "../engine";
 const ITEM_LIST: readonly ItemDef[] = [
   // Gear
   { id: "torch", name: "Torch", slotCost: 1, bundleSize: 1, tags: ["light"] },
-  { id: "ration", name: "Ration", slotCost: 1, bundleSize: 1, tags: ["food"] },
+  { id: "ration", name: "Ration", slotCost: 1, bundleSize: 3, tags: ["food"] },
+  { id: "backpack", name: "Backpack", slotCost: 0, bundleSize: 1, tags: ["gear"] },
+  { id: "flint-and-steel", name: "Flint and Steel", slotCost: 1, bundleSize: 1, tags: ["gear"] },
+  { id: "iron-spikes", name: "Iron Spikes", slotCost: 1, bundleSize: 10, tags: ["gear"] },
+  { id: "grappling-hook", name: "Grappling Hook", slotCost: 1, bundleSize: 1, tags: ["gear"] },
+  { id: "rope", name: "Rope (60')", slotCost: 1, bundleSize: 1, tags: ["gear"] },
 
   // Weapons
   { id: "longsword", name: "Longsword", slotCost: 1, bundleSize: 1, tags: ["weapon"], damage: "1d8" },
   { id: "dagger", name: "Dagger", slotCost: 1, bundleSize: 1, tags: ["weapon"], damage: "1d4", finesse: true },
   { id: "mace", name: "Mace", slotCost: 1, bundleSize: 1, tags: ["weapon"], damage: "1d6" },
   { id: "staff", name: "Staff", slotCost: 1, bundleSize: 1, tags: ["weapon"], damage: "1d4", twoHanded: true },
+  { id: "spear", name: "Spear", slotCost: 1, bundleSize: 1, tags: ["weapon"], damage: "1d6", finesse: true },
+  { id: "javelin", name: "Javelin", slotCost: 1, bundleSize: 1, tags: ["weapon"], damage: "1d4", finesse: true },
 
   // Armor — AC = acBase + DEX (capped); class permissions are RAW.
   {

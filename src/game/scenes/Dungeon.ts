@@ -5,6 +5,7 @@
  */
 
 import Phaser from "phaser";
+import { HudScene } from "./Hud";
 import { classDef, createCharacter, item, monster, spell } from "../../data";
 import { DC } from "../../engine";
 import { GameContext } from "../context";
@@ -96,6 +97,10 @@ export class DungeonScene extends Phaser.Scene {
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
   private leftControlDown = false;
 
+  private gamePaused = false;
+  private statsOverlayOpen = false;
+  private gearOverlayOpen = false;
+
   constructor() {
     super("Dungeon");
   }
@@ -106,6 +111,9 @@ export class DungeonScene extends Phaser.Scene {
 
     this.gameOver = false;
     this.won = false;
+    this.gamePaused = false;
+    this.statsOverlayOpen = false;
+    this.gearOverlayOpen = false;
     this.monsters = [];
     this.pickups = [];
     this.npcs = [];
@@ -513,7 +521,7 @@ export class DungeonScene extends Phaser.Scene {
     const kb = this.input.keyboard;
     if (!kb) throw new Error("Keyboard input unavailable");
     this.keys = kb.addKeys(
-      "A,D,W,LEFT,RIGHT,UP,SPACE,J,X,K,C,Q,E,T,H,L,R,TAB,ONE,TWO,THREE,FOUR",
+      "A,D,W,LEFT,RIGHT,UP,SPACE,J,X,K,C,Q,E,T,H,L,R,TAB,ONE,TWO,THREE,FOUR,ESC,I",
     ) as Record<string, Phaser.Input.Keyboard.Key>;
     kb.on("keydown-TAB", (ev: KeyboardEvent) => ev.preventDefault());
     kb.on("keydown", (ev: KeyboardEvent) => {
@@ -525,6 +533,26 @@ export class DungeonScene extends Phaser.Scene {
   }
 
   override update(time: number, delta: number): void {
+    if (this.justDown("ESC")) {
+      this.togglePause();
+      return;
+    }
+
+    if (this.gamePaused) {
+      return;
+    }
+
+    if (this.justDown("C")) {
+      this.toggleStatsOverlay();
+    }
+    if (this.justDown("I")) {
+      this.toggleGearOverlay();
+    }
+
+    if (this.statsOverlayOpen || this.gearOverlayOpen) {
+      return;
+    }
+
     if (this.gameOver || this.won) {
       if (this.keys.R!.isDown) this.restartRun();
       return;
@@ -546,6 +574,60 @@ export class DungeonScene extends Phaser.Scene {
     this.updateLuckWindow(time);
     this.checkLevelUps();
     this.checkEndConditions();
+  }
+
+  private togglePause(): void {
+    this.gamePaused = !this.gamePaused;
+    this.physics.world.isPaused = this.gamePaused;
+    if (this.gamePaused) {
+      this.anims.pauseAll();
+    } else {
+      this.anims.resumeAll();
+    }
+    const hud = this.scene.get("Hud") as HudScene;
+    if (this.gamePaused) {
+      if (this.statsOverlayOpen) this.toggleStatsOverlay();
+      if (this.gearOverlayOpen) this.toggleGearOverlay();
+      hud.showPauseOverlay();
+    } else {
+      hud.hidePauseOverlay();
+    }
+  }
+
+  private toggleStatsOverlay(): void {
+    this.statsOverlayOpen = !this.statsOverlayOpen;
+    this.physics.world.isPaused = this.statsOverlayOpen;
+    if (this.statsOverlayOpen) {
+      this.anims.pauseAll();
+    } else {
+      this.anims.resumeAll();
+    }
+    const hud = this.scene.get("Hud") as HudScene;
+    if (this.statsOverlayOpen) {
+      if (this.gamePaused) this.togglePause();
+      if (this.gearOverlayOpen) this.toggleGearOverlay();
+      hud.showStatsOverlay(this.party.leader.character);
+    } else {
+      hud.hideStatsOverlay();
+    }
+  }
+
+  private toggleGearOverlay(): void {
+    this.gearOverlayOpen = !this.gearOverlayOpen;
+    this.physics.world.isPaused = this.gearOverlayOpen;
+    if (this.gearOverlayOpen) {
+      this.anims.pauseAll();
+    } else {
+      this.anims.resumeAll();
+    }
+    const hud = this.scene.get("Hud") as HudScene;
+    if (this.gearOverlayOpen) {
+      if (this.gamePaused) this.togglePause();
+      if (this.statsOverlayOpen) this.toggleStatsOverlay();
+      hud.showGearOverlay(this.party.leader.character);
+    } else {
+      hud.hideGearOverlay();
+    }
   }
 
   private updateLeaderMarker(time: number): void {
@@ -678,7 +760,7 @@ export class DungeonScene extends Phaser.Scene {
       const slot = leader.character.knownSpells[leader.spellIndex]!;
       this.ctx.say(`Prepared: ${spell(slot.spellId).name}${slot.status === "lost" ? " (LOST)" : ""}`);
     }
-    if ((this.justDown("K") || this.justDown("C")) && leader.character.knownSpells.length > 0) {
+    if (this.justDown("K") && leader.character.knownSpells.length > 0) {
       const result = castSelectedSpell(this.spellDeps(), leader);
       // Luck can save a plain failure; a nat-1 mishap already detonated — no take-backs.
       if (result?.outcome === "fail") {

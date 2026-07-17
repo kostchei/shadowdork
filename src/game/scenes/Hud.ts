@@ -146,7 +146,7 @@ export class HudScene extends Phaser.Scene {
       .text(
         w / 2,
         h - 15,
-        "MOVE A/D   JUMP W/SPACE   ATTACK J/CTRL   USE E   TORCH T   MAGIC K/Q   SWAP TAB/1-4   HOLD H   LUCK L   STATS C   GEAR I   PAUSE ESC",
+        "MOVE A/D   JUMP W/SPACE   ATTACK J/X/CTRL   USE E   TORCH T   MAGIC K/Q   SWAP TAB/1-4   HOLD H   LUCK L   STATS C   GEAR I   PAUSE ESC",
         { ...DATA_STYLE, fontSize: "9px", color: "#9da2ad" },
       )
       .setOrigin(0.5)
@@ -294,10 +294,11 @@ export class HudScene extends Phaser.Scene {
     const helpText = this.add.text(w / 2, h / 2 + 50, 
       "A/D or Arrows : Move Left/Right\n" +
       "W/Space : Jump\n" +
-      "J or X : Melee Attack\n" +
+      "J / X / Left Ctrl : Melee Attack\n" +
       "K : Cast Spell  |  Q : Cycle Spells\n" +
       "E : Interact (Rescue / Rest / Exit)\n" +
       "T : Light Torch  |  H : Toggle Hold/Follow\n" +
+      "L : Spend Luck (when prompted)  |  Tab/1-4 : Swap Leader\n" +
       "C : Character Stats  |  I : Gear/Inventory", {
       ...DATA_STYLE,
       fontSize: "10px",

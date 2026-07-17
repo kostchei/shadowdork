@@ -2,6 +2,7 @@
 
 import Phaser from "phaser";
 import { spell } from "../../data";
+import { DPR, GAME_H, GAME_W } from "../display";
 import { MAX_LEVEL, xpToNextLevel, type LevelUpResult } from "../../engine";
 import type { GameContext } from "../context";
 import { ROOM_BANDS } from "../level/dungeons";
@@ -12,12 +13,14 @@ const UI_STYLE = {
   fontFamily: '"Trebuchet MS", Arial, sans-serif',
   fontSize: "12px",
   color: "#f0eee9",
+  resolution: DPR,
 } as const;
 
 const DATA_STYLE = {
   fontFamily: "Consolas, monospace",
   fontSize: "10px",
   color: "#c9cbd1",
+  resolution: DPR,
 } as const;
 
 const ROOM_LABELS = ["THE GATE", "THE TEST", "THE SETBACK", "THE CLIMAX", "THE REWARD", "SANCTUARY"];
@@ -70,8 +73,11 @@ export class HudScene extends Phaser.Scene {
     this.hpLabels = [];
     this.logTexts = [];
 
-    const w = this.scale.width;
-    const h = this.scale.height;
+    // The canvas is DPR-scaled; zoom the HUD camera so layout stays in 960x540.
+    this.cameras.main.setZoom(DPR).centerOn(GAME_W / 2, GAME_H / 2);
+
+    const w = GAME_W;
+    const h = GAME_H;
     const accent = this.dungeon.activeDungeon.theme.accent;
     const titleColor = `#${accent.toString(16).padStart(6, "0")}`;
 
@@ -118,6 +124,7 @@ export class HudScene extends Phaser.Scene {
         color: titleColor,
         stroke: "#050508",
         strokeThickness: 3,
+        resolution: DPR,
       })
       .setOrigin(1, 0)
       .setDepth(1000);
@@ -159,6 +166,7 @@ export class HudScene extends Phaser.Scene {
         color: "#ff9c4a",
         stroke: "#050508",
         strokeThickness: 4,
+        resolution: DPR,
       })
       .setOrigin(0.5)
       .setDepth(1000)
@@ -191,8 +199,8 @@ export class HudScene extends Phaser.Scene {
   }
 
   private drawChrome(memberCount: number): void {
-    const w = this.scale.width;
-    const h = this.scale.height;
+    const w = GAME_W;
+    const h = GAME_H;
     const accent = this.dungeon.activeDungeon.theme.accent;
     const partyH = partyBoxHeight(memberCount);
     this.lastPartySize = memberCount;
@@ -221,7 +229,7 @@ export class HudScene extends Phaser.Scene {
 
   /** The talent roll gets a legible card instead of text floating over combat. */
   private levelUpCeremony(name: string, result: LevelUpResult): void {
-    const w = this.scale.width;
+    const w = GAME_W;
     const accent = this.dungeon.activeDungeon.theme.accent;
     const panel = this.add.graphics();
     panel.fillStyle(0x05060a, 0.94).fillRoundedRect(-320, -35, 640, 78, 7);
@@ -233,6 +241,7 @@ export class HudScene extends Phaser.Scene {
           fontFamily: "Georgia, serif",
           fontSize: "28px",
           color: "#ffd45f",
+          resolution: DPR,
         })
         .setOrigin(0.5),
       this.add
@@ -258,24 +267,25 @@ export class HudScene extends Phaser.Scene {
 
   showPauseOverlay(): void {
     if (this.pauseOverlay) return;
-    const w = this.scale.width;
-    const h = this.scale.height;
+    const w = GAME_W;
+    const h = GAME_H;
     const accent = this.dungeon.activeDungeon.theme.accent;
     const titleColor = `#${accent.toString(16).padStart(6, "0")}`;
 
     const bg = this.add.rectangle(w / 2, h / 2, w, h, 0x020205, 0.7);
     const box = this.add.graphics();
     box.fillStyle(0x05060a, 0.94);
-    box.fillRoundedRect(w / 2 - 200, h / 2 - 120, 400, 240, 8);
+    box.fillRoundedRect(w / 2 - 200, h / 2 - 120, 400, 250, 8);
     box.lineStyle(2, accent, 0.9);
-    box.strokeRoundedRect(w / 2 - 200, h / 2 - 120, 400, 240, 8);
+    box.strokeRoundedRect(w / 2 - 200, h / 2 - 120, 400, 250, 8);
 
     const title = this.add.text(w / 2, h / 2 - 80, "GAME PAUSED", {
       fontFamily: "Georgia, serif",
       fontSize: "28px",
       color: "#ffd45f",
       stroke: "#000000",
-      strokeThickness: 3
+      strokeThickness: 3,
+      resolution: DPR,
     }).setOrigin(0.5);
 
     const sub = this.add.text(w / 2, h / 2 - 40, "Press ESC to resume", {
@@ -291,7 +301,7 @@ export class HudScene extends Phaser.Scene {
       fontStyle: "bold"
     }).setOrigin(0.5);
 
-    const helpText = this.add.text(w / 2, h / 2 + 50, 
+    const helpText = this.add.text(w / 2, h / 2 + 62,
       "A/D or Arrows : Move Left/Right\n" +
       "W/Space : Jump\n" +
       "J / X / Left Ctrl : Melee Attack\n" +
@@ -318,8 +328,8 @@ export class HudScene extends Phaser.Scene {
 
   showStatsOverlay(c: any): void {
     if (this.statsOverlay) return;
-    const w = this.scale.width;
-    const h = this.scale.height;
+    const w = GAME_W;
+    const h = GAME_H;
     const accent = this.dungeon.activeDungeon.theme.accent;
     const titleColor = `#${accent.toString(16).padStart(6, "0")}`;
 
@@ -335,7 +345,8 @@ export class HudScene extends Phaser.Scene {
       fontSize: "24px",
       color: "#ffd45f",
       stroke: "#000000",
-      strokeThickness: 3
+      strokeThickness: 3,
+      resolution: DPR,
     }).setOrigin(0.5);
 
     const sub = this.add.text(w / 2, h / 2 - 120, `Level ${c.level} ${c.ancestry.toUpperCase()} ${c.className.toUpperCase()}`, {
@@ -414,8 +425,8 @@ export class HudScene extends Phaser.Scene {
 
   showGearOverlay(c: any): void {
     if (this.gearOverlay) return;
-    const w = this.scale.width;
-    const h = this.scale.height;
+    const w = GAME_W;
+    const h = GAME_H;
     const accent = this.dungeon.activeDungeon.theme.accent;
     const titleColor = `#${accent.toString(16).padStart(6, "0")}`;
 
@@ -431,7 +442,8 @@ export class HudScene extends Phaser.Scene {
       fontSize: "24px",
       color: "#ffd45f",
       stroke: "#000000",
-      strokeThickness: 3
+      strokeThickness: 3,
+      resolution: DPR,
     }).setOrigin(0.5);
 
     const sub = this.add.text(w / 2, h / 2 - 120, `Capacity: ${c.inventory.slotsUsed()} / ${c.inventory.capacity} Slots Used`, {
@@ -499,8 +511,8 @@ export class HudScene extends Phaser.Scene {
 
   private showOverlay(title: string, color: string): void {
     if (this.overlay) return;
-    const w = this.scale.width;
-    const h = this.scale.height;
+    const w = GAME_W;
+    const h = GAME_H;
     const parts = this.dungeon.party.members.map((member) => {
       const c = member.character;
       return `${c.name} the ${member.cls.displayName}  |  level ${c.level}  |  ${
@@ -518,6 +530,7 @@ export class HudScene extends Phaser.Scene {
           color,
           stroke: "#000000",
           strokeThickness: 5,
+          resolution: DPR,
         })
         .setOrigin(0.5),
       this.add

@@ -9,6 +9,7 @@ import { HudScene } from "./Hud";
 import { classDef, createCharacter, item, monster, spell } from "../../data";
 import { DC } from "../../engine";
 import { GameContext } from "../context";
+import { DPR } from "../display";
 import { CharacterSprite } from "../entities/CharacterSprite";
 import { MonsterSprite, MONSTER_ATTACK_COOLDOWN_MS } from "../entities/MonsterSprite";
 import { flameAt, sparkleBurst } from "../fx/vfx";
@@ -132,6 +133,8 @@ export class DungeonScene extends Phaser.Scene {
     this.activeDungeon = dungeonAt(dungeonIndex);
 
     this.physics.world.setBounds(0, 0, DUNGEON_W * TILE, DUNGEON_H * TILE);
+    // The framebuffer is DPR-scaled; zooming keeps the same 960x540 world view.
+    this.cameras.main.setZoom(DPR);
     this.cameras.main.setBounds(0, 0, DUNGEON_W * TILE, DUNGEON_H * TILE);
     this.cameras.main.setBackgroundColor(this.activeDungeon.theme.background);
     this.createAtmosphere(dungeonIndex);
@@ -182,6 +185,7 @@ export class DungeonScene extends Phaser.Scene {
         color: "#ffe9a0",
         stroke: "#050508",
         strokeThickness: 3,
+        resolution: DPR,
       })
       .setOrigin(0.5, 1)
       .setDepth(940)
@@ -313,6 +317,7 @@ export class DungeonScene extends Phaser.Scene {
           fontSize: "18px",
           color: `#${theme.accent.toString(16).padStart(6, "0")}`,
           letterSpacing: 3,
+          resolution: DPR,
         })
         .setOrigin(0.5)
         .setAlpha(0.22)
@@ -1205,6 +1210,7 @@ export class DungeonScene extends Phaser.Scene {
                 color: "#ff4040",
                 stroke: "#000",
                 strokeThickness: 3,
+                resolution: DPR,
               })
               .setOrigin(0.5, 1)
               .setDepth(950),

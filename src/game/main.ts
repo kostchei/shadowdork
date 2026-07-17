@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { DPR, GAME_H, GAME_W } from "./display";
 import { BootScene } from "./scenes/Boot";
 import { DungeonScene } from "./scenes/Dungeon";
 import { HudScene } from "./scenes/Hud";
@@ -6,10 +7,9 @@ import { HudScene } from "./scenes/Hud";
 const game = new Phaser.Game({
   type: Phaser.AUTO,
   parent: "game",
-  width: 960,
-  height: 540,
+  width: GAME_W * DPR,
+  height: GAME_H * DPR,
   pixelArt: true,
-  resolution: window.devicePixelRatio || 1,
   render: { preserveDrawingBuffer: true },
   backgroundColor: "#0a0a0f",
   physics: {
@@ -24,7 +24,7 @@ const game = new Phaser.Game({
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
   scene: [BootScene, DungeonScene, HudScene],
-} as any);
+});
 
 declare global {
   interface Window {

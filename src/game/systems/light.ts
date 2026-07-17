@@ -62,17 +62,23 @@ export class LightSystem {
     this.ctx = ctx;
     this.darknessColor = darknessColor;
     const cam = scene.cameras.main;
+    // The camera renders zoomed (high-DPI); both overlays are device-resolution
+    // textures counter-scaled and offset so the zoom maps them exactly onto the
+    // viewport. At zoom 1 the offset is 0 and the scale is 1.
+    const offX = (cam.width / 2) * (1 - 1 / cam.zoom);
+    const offY = (cam.height / 2) * (1 - 1 / cam.zoom);
     // Colour casts sit under the darkness overlay: fully visible where light
     // has erased it, faintly visible through a dim source's thinned dark.
-    this.tintRt = scene.add.renderTexture(0, 0, cam.width, cam.height);
+    this.tintRt = scene.add.renderTexture(offX, offY, cam.width, cam.height);
     this.tintRt
       .setOrigin(0, 0)
       .setScrollFactor(0)
+      .setScale(1 / cam.zoom)
       .setDepth(899)
       .setBlendMode(Phaser.BlendModes.ADD)
       .setAlpha(0.34);
-    this.rt = scene.add.renderTexture(0, 0, cam.width, cam.height);
-    this.rt.setOrigin(0, 0).setScrollFactor(0).setDepth(900);
+    this.rt = scene.add.renderTexture(offX, offY, cam.width, cam.height);
+    this.rt.setOrigin(0, 0).setScrollFactor(0).setScale(1 / cam.zoom).setDepth(900);
     this.brush = scene.make.image({ key: "light-radial", add: false });
     this.brush.setOrigin(0.5, 0.5);
   }
@@ -152,6 +158,11 @@ export class LightSystem {
 
   update(): void {
     const cam = this.scene.cameras.main;
+    // World-to-texture: the textures are drawn at device resolution, so
+    // positions and brush sizes scale by the camera zoom.
+    const z = cam.zoom;
+    const offX = (cam.width / 2) * (1 - 1 / z);
+    const offY = (cam.height / 2) * (1 - 1 / z);
     this.rt.clear();
     this.tintRt.clear();
     // Near-black preserves the mechanical danger while keeping silhouettes,
@@ -163,9 +174,9 @@ export class LightSystem {
         this.sources.delete(id);
         continue;
       }
-      const sx = pos.x - cam.scrollX;
-      const sy = pos.y - cam.scrollY;
-      this.brush.setScale((s.radius * 2) / 256);
+      const sx = (pos.x - cam.scrollX - offX) * z;
+      const sy = (pos.y - cam.scrollY - offY) * z;
+      this.brush.setScale((s.radius * 2 * z) / 256);
       if (s.dim === true) {
         // Thin the darkness rather than cut it: outlines, not visibility.
         this.brush.setAlpha(0.55);
@@ -174,10 +185,10 @@ export class LightSystem {
       } else {
         this.rt.erase(this.brush, sx, sy);
         // Second, tighter pass gives real flames a bright hot core.
-        this.brush.setScale((s.radius * 1.15) / 256);
+        this.brush.setScale((s.radius * 1.15 * z) / 256);
         this.rt.erase(this.brush, sx, sy);
       }
-      this.brush.setScale((s.radius * 2) / 256);
+      this.brush.setScale((s.radius * 2 * z) / 256);
       this.brush.setTint(s.tint).setAlpha(s.tintAlpha);
       this.tintRt.draw(this.brush, sx, sy);
       this.brush.setTint(0xffffff).setAlpha(1);

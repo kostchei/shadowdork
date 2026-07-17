@@ -27,6 +27,118 @@ export const ROOM_BANDS: readonly { room: number; x1: number; x2: number }[] = [
 /** Chance a run places one rescue late, in the climax room, as a reward. */
 export const REWARD_RESCUE_CHANCE = 0.22;
 
+/** Featured stateful traps are memorable punctuation, not mandatory wallpaper. */
+export const FEATURED_TRAP_CHANCE = 0.4;
+
+export interface TilePoint {
+  x: number;
+  y: number;
+}
+
+export interface PlateGateTrapSpec {
+  id: string;
+  kind: "plate-gate";
+  room: 3;
+  plate: TilePoint;
+  gateX: number;
+  latch: TilePoint;
+}
+
+export interface AlternatingSpikesTrapSpec {
+  id: string;
+  kind: "alternating-spikes";
+  room: 3;
+  bankA: readonly TilePoint[];
+  bankB: readonly TilePoint[];
+  mechanism: TilePoint;
+}
+
+export interface CrusherGalleryTrapSpec {
+  id: string;
+  kind: "crusher-gallery";
+  room: 3;
+  columns: readonly number[];
+  mechanism: TilePoint;
+}
+
+export interface DartGalleryTrapSpec {
+  id: string;
+  kind: "dart-gallery";
+  room: 3;
+  emitter: TilePoint;
+  endX: number;
+  switch: TilePoint;
+}
+
+export interface CounterweightedLiftTrapSpec {
+  id: string;
+  kind: "counterweighted-lift";
+  room: 3;
+  leftX: number;
+  rightX: number;
+  topY: number;
+  bottomY: number;
+}
+
+export interface LightRunesTrapSpec {
+  id: string;
+  kind: "light-runes";
+  room: 3;
+  x1: number;
+  x2: number;
+  y: number;
+  safeXs: readonly number[];
+}
+
+export interface UndeadBarrierTrapSpec {
+  id: string;
+  kind: "undead-barrier";
+  room: 3;
+  barrierX: number;
+  focus: TilePoint;
+}
+
+export interface FloodedChamberTrapSpec {
+  id: string;
+  kind: "flooded-chamber";
+  room: 3;
+  x1: number;
+  x2: number;
+  lowY: number;
+  highY: number;
+  lever: TilePoint;
+}
+
+export interface RollingStoneTrapSpec {
+  id: string;
+  kind: "rolling-stone";
+  room: 3;
+  start: TilePoint;
+  triggerX: number;
+  endX: number;
+}
+
+export interface CollapsingFloorTrapSpec {
+  id: string;
+  kind: "collapsing-floor";
+  room: 3;
+  tiles: readonly TilePoint[];
+}
+
+export type FeaturedTrapSpec =
+  | PlateGateTrapSpec
+  | AlternatingSpikesTrapSpec
+  | CrusherGalleryTrapSpec
+  | DartGalleryTrapSpec
+  | CounterweightedLiftTrapSpec
+  | LightRunesTrapSpec
+  | UndeadBarrierTrapSpec
+  | FloodedChamberTrapSpec
+  | RollingStoneTrapSpec
+  | CollapsingFloorTrapSpec;
+
+export type FeaturedTrapKind = FeaturedTrapSpec["kind"];
+
 const MONSTER_TILES = new Set(["g", "s", "r", "O"]);
 const RESCUE_TILES = new Set(["2", "3", "4"]);
 export const LEGAL_TILES = new Set([..."." , ..."#%=|^P234gsrOcGIKtnfFDb*qvh:"]);
@@ -59,10 +171,17 @@ export interface DungeonDefinition {
   grid: readonly string[];
   theme: DungeonTheme;
   pools: VariantPools;
+  traps: readonly FeaturedTrapSpec[];
+  trapKinds: readonly FeaturedTrapKind[];
   /** Crawling danger level: 1 deadly (check every crawl round), 2 risky, 3 unsafe. */
   danger: 1 | 2 | 3;
   /** Monster spawned by random encounters in this dungeon. */
   encounterMonsterId: string;
+}
+
+export interface DungeonLayout {
+  grid: readonly string[];
+  traps: readonly FeaturedTrapSpec[];
 }
 
 interface GridBuilder {
@@ -258,12 +377,9 @@ function buildRoom2(g: GridBuilder, variant: number, npc?: string): void {
 
 function buildRoom3(g: GridBuilder, variant: number, npc?: string): void {
   if (variant === 0) {
-    // Spike Bed Ambush
-    g.hline(46, 48, 15, ".");
-    g.hline(46, 48, 16, "^");
+    // Broken Gallery Ambush
+    g.hline(46, 49, 12, "=");
     g.put(50, 14, "c");
-    g.hline(52, 54, 15, ".");
-    g.hline(52, 54, 16, "^");
     g.put(57, 14, "s");
     g.put(59, 14, "s");
     g.put(62, 14, "g");
@@ -273,13 +389,10 @@ function buildRoom3(g: GridBuilder, variant: number, npc?: string): void {
     g.put(56, 14, "t");
     g.put(45, 14, ":");
   } else if (variant === 1) {
-    // Safe Shelves & Spike Trench
-    g.hline(45, 47, 15, ".");
-    g.hline(45, 47, 16, "^");
+    // Safe Shelves & Sealed Cache
     g.hline(48, 51, 12, "=");
     g.put(50, 11, "c");
-    g.hline(53, 55, 15, ".");
-    g.hline(53, 55, 16, "^");
+    g.vline(54, 12, 14, "%");
     if (npc) {
       g.put(57, 14, npc);
     }
@@ -288,22 +401,18 @@ function buildRoom3(g: GridBuilder, variant: number, npc?: string): void {
     g.put(63, 14, "t");
   } else if (variant === 2) {
     // Jagged Floor Warren
-    g.hline(44, 46, 15, ".");
-    g.hline(44, 46, 16, "^");
+    g.hline(44, 46, 13, "=");
     g.hline(48, 51, 11, "=");
     g.put(49, 10, "c");
-    g.hline(53, 56, 15, ".");
-    g.hline(53, 56, 16, "^");
+    g.hline(53, 56, 13, "=");
     if (npc) {
       g.put(58, 14, npc);
     }
     g.put(60, 14, "g");
     g.put(62, 14, "r");
   } else {
-    // Falling Floor Trap
+    // Split-Level Setback
     g.hline(45, 49, 12, "=");
-    g.hline(46, 48, 15, ".");
-    g.hline(46, 48, 16, "^");
     g.vline(51, 12, 14, "%");
     g.hline(53, 55, 12, "=");
     if (npc) {
@@ -314,6 +423,137 @@ function buildRoom3(g: GridBuilder, variant: number, npc?: string): void {
     g.put(62, 14, "t");
   }
   g.divider(64);
+}
+
+function buildFeaturedTrapRoom(g: GridBuilder, kind: FeaturedTrapKind, npc?: string): FeaturedTrapSpec {
+  g.put(45, 14, "b");
+  if (npc) g.put(47, 14, npc);
+
+  switch (kind) {
+    case "plate-gate":
+      g.put(61, 14, "G");
+      g.put(62, 14, "t");
+      g.divider(64);
+      return {
+        id: "room-3-counterweight",
+        kind,
+        room: 3,
+        plate: { x: 50, y: 14 },
+        gateX: 56,
+        latch: { x: 60, y: 14 },
+      };
+    case "alternating-spikes":
+      g.put(62, 14, "I");
+      g.divider(64);
+      return {
+        id: "room-3-twin-spikes",
+        kind,
+        room: 3,
+        bankA: [49, 50, 55, 56].map((x) => ({ x, y: 14 })),
+        bankB: [52, 53, 58, 59].map((x) => ({ x, y: 14 })),
+        mechanism: { x: 61, y: 14 },
+      };
+    case "crusher-gallery":
+      g.put(58, 14, "c");
+      g.put(57, 14, "G");
+      g.divider(64);
+      return {
+        id: "room-3-stone-press",
+        kind,
+        room: 3,
+        columns: [50, 55, 60],
+        mechanism: { x: 62, y: 14 },
+      };
+    case "dart-gallery":
+      g.hline(50, 52, 11, "=");
+      g.hline(56, 58, 9, "=");
+      g.put(58, 8, "G");
+      g.divider(64);
+      return {
+        id: "room-3-dart-gallery",
+        kind,
+        room: 3,
+        emitter: { x: 61, y: 14 },
+        endX: 48,
+        switch: { x: 61, y: 14 },
+      };
+    case "counterweighted-lift":
+      g.put(58, 8, "I");
+      g.hline(60, 62, 8, "=");
+      g.divider(64);
+      return {
+        id: "room-3-counterweighted-lift",
+        kind,
+        room: 3,
+        leftX: 51,
+        rightX: 57,
+        topY: 9,
+        bottomY: 13,
+      };
+    case "light-runes":
+      g.put(46, 14, "t");
+      g.put(62, 14, "G");
+      g.divider(64);
+      return {
+        id: "room-3-light-runes",
+        kind,
+        room: 3,
+        x1: 49,
+        x2: 60,
+        y: 14,
+        safeXs: [49, 52, 55, 58, 60],
+      };
+    case "undead-barrier":
+      g.put(60, 14, "I");
+      g.put(62, 14, "t");
+      g.divider(64);
+      return {
+        id: "room-3-undead-barrier",
+        kind,
+        room: 3,
+        barrierX: 55,
+        focus: { x: 55, y: 14 },
+      };
+    case "flooded-chamber":
+      g.hline(49, 52, 11, "=");
+      g.hline(56, 59, 8, "=");
+      g.put(58, 7, "G");
+      g.divider(64);
+      return {
+        id: "room-3-flooded-chamber",
+        kind,
+        room: 3,
+        x1: 48,
+        x2: 60,
+        lowY: 15,
+        highY: 9,
+        lever: { x: 61, y: 14 },
+      };
+    case "rolling-stone":
+      g.hline(52, 54, 10, "=");
+      g.hline(58, 60, 8, "=");
+      g.put(59, 7, "G");
+      g.divider(64);
+      return {
+        id: "room-3-rolling-stone",
+        kind,
+        room: 3,
+        start: { x: 48, y: 14 },
+        triggerX: 51,
+        endX: 61,
+      };
+    case "collapsing-floor":
+      g.put(57, 10, "I");
+      g.vline(61, 13, 14, "%");
+      g.put(62, 14, "t");
+      g.divider(64);
+      return {
+        id: "room-3-collapsing-floor",
+        kind,
+        room: 3,
+        tiles: Array.from({ length: 12 }, (_, index) => ({ x: 49 + index, y: 12 })),
+      };
+  }
 }
 
 /**
@@ -520,23 +760,91 @@ export function validateGrid(grid: readonly string[]): void {
   }
 }
 
-/** Build one validated grid for a dungeon's variant pools and a run seed. */
-export function generateGrid(pools: VariantPools, seed: number): readonly string[] {
+/** Build one validated layout for a dungeon's variant pools and a run seed. */
+export function generateLayout(
+  pools: VariantPools,
+  seed: number,
+  trapKinds: readonly FeaturedTrapKind[] = [],
+): DungeonLayout {
   const g = gridBuilder();
   const rng = seededRng(seed);
   const rescues = placeRescues(rng);
   const easierClimax = rescues.before4 < 3;
+  const featuredTrap = trapKinds.length > 0 && rng.next() < FEATURED_TRAP_CHANCE
+    ? rng.pick(trapKinds)
+    : null;
 
   buildRoom1(g, rng.pick(pools.room1), rescues.byRoom.get(1));
   buildRoom2(g, rng.pick(pools.room2), rescues.byRoom.get(2));
-  buildRoom3(g, rng.pick(pools.room3), rescues.byRoom.get(3));
+  const traps = featuredTrap
+    ? [buildFeaturedTrapRoom(g, featuredTrap, rescues.byRoom.get(3))]
+    : [];
+  if (!featuredTrap) buildRoom3(g, rng.pick(pools.room3), rescues.byRoom.get(3));
   buildRoom4(g, rng.pick(pools.room4), rescues.byRoom.get(4), easierClimax);
   buildRoom5(g, rng.pick(pools.room5));
   buildSanctuary(g, rng.pick(pools.sanctuary));
 
   const grid = g.finish();
   validateGrid(grid);
-  return grid;
+  validateTraps(traps);
+  return { grid, traps };
+}
+
+/** Compatibility helper for grid-only callers and tests. */
+export function generateGrid(
+  pools: VariantPools,
+  seed: number,
+  trapKinds: readonly FeaturedTrapKind[] = [],
+): readonly string[] {
+  return generateLayout(pools, seed, trapKinds).grid;
+}
+
+export function validateTraps(traps: readonly FeaturedTrapSpec[]): void {
+  if (traps.length > 1) throw new Error(`Expected at most one featured trap, found ${traps.length}`);
+  for (const trap of traps) {
+    if (trap.room !== 3) throw new Error(`Featured trap ${trap.id} must be in room 3`);
+    const band = ROOM_BANDS[2]!;
+    const points = trapPoints(trap);
+    if (points.some((point) => point.x < band.x1 || point.x > band.x2)) {
+      throw new Error(`Featured trap ${trap.id} escapes room 3`);
+    }
+  }
+}
+
+function trapPoints(trap: FeaturedTrapSpec): TilePoint[] {
+  switch (trap.kind) {
+    case "plate-gate":
+      return [trap.plate, trap.latch, { x: trap.gateX, y: 14 }];
+    case "alternating-spikes":
+      return [...trap.bankA, ...trap.bankB, trap.mechanism];
+    case "crusher-gallery":
+      return [...trap.columns.map((x) => ({ x, y: 14 })), trap.mechanism];
+    case "dart-gallery":
+      return [trap.emitter, { x: trap.endX, y: trap.emitter.y }, trap.switch];
+    case "counterweighted-lift":
+      return [
+        { x: trap.leftX, y: trap.bottomY },
+        { x: trap.rightX, y: trap.topY },
+      ];
+    case "light-runes":
+      return [
+        { x: trap.x1, y: trap.y },
+        { x: trap.x2, y: trap.y },
+        ...trap.safeXs.map((x) => ({ x, y: trap.y })),
+      ];
+    case "undead-barrier":
+      return [{ x: trap.barrierX, y: 14 }, trap.focus];
+    case "flooded-chamber":
+      return [
+        { x: trap.x1, y: trap.lowY },
+        { x: trap.x2, y: trap.highY },
+        trap.lever,
+      ];
+    case "rolling-stone":
+      return [trap.start, { x: trap.triggerX, y: trap.start.y }, { x: trap.endX, y: trap.start.y }];
+    case "collapsing-floor":
+      return [...trap.tiles];
+  }
 }
 
 const ALL_SANCTUARIES = [0, 1, 2] as const;
@@ -547,7 +855,7 @@ const ALL_SANCTUARIES = [0, 1, 2] as const;
  * (The Crystal Chasm and Sunken Bastion recolors were removed: they return
  * when they have at least one mechanic of their own — see the scope doc.)
  */
-const DUNGEON_BASES: readonly Omit<DungeonDefinition, "grid">[] = [
+const DUNGEON_BASES: readonly Omit<DungeonDefinition, "grid" | "traps">[] = [
   {
     id: "gloom-below",
     name: "The Gloom Below",
@@ -555,6 +863,7 @@ const DUNGEON_BASES: readonly Omit<DungeonDefinition, "grid">[] = [
     objective: "Recover the Crown of the Deep",
     danger: 2,
     encounterMonsterId: "goblin",
+    trapKinds: ["plate-gate", "counterweighted-lift", "rolling-stone", "collapsing-floor"],
     pools: {
       room1: [0, 3],
       room2: [0, 3],
@@ -579,6 +888,7 @@ const DUNGEON_BASES: readonly Omit<DungeonDefinition, "grid">[] = [
     objective: "Climb the reliquary and seize its crown",
     danger: 3,
     encounterMonsterId: "skeleton",
+    trapKinds: ["alternating-spikes", "dart-gallery", "undead-barrier"],
     pools: {
       room1: [1, 3],
       room2: [1, 3],
@@ -603,6 +913,7 @@ const DUNGEON_BASES: readonly Omit<DungeonDefinition, "grid">[] = [
     objective: "Cross the warrens and rob the fungal shrine",
     danger: 1,
     encounterMonsterId: "giant-rat",
+    trapKinds: ["crusher-gallery", "light-runes", "flooded-chamber"],
     pools: {
       room1: [2, 3],
       room2: [2, 3],
@@ -622,10 +933,10 @@ const DUNGEON_BASES: readonly Omit<DungeonDefinition, "grid">[] = [
   },
 ];
 
-export const DUNGEONS: readonly DungeonDefinition[] = DUNGEON_BASES.map((base, i) => ({
-  ...base,
-  grid: generateGrid(base.pools, i),
-}));
+export const DUNGEONS: readonly DungeonDefinition[] = DUNGEON_BASES.map((base, i) => {
+  const layout = generateLayout(base.pools, i, base.trapKinds);
+  return { ...base, ...layout };
+});
 
 /**
  * The dungeon for a given run index. Pure: never mutates the library — the
@@ -636,5 +947,5 @@ export function dungeonAt(index: number): DungeonDefinition {
   if (!Number.isInteger(index)) throw new Error(`Dungeon index must be an integer, got ${index}`);
   const wrapped = ((index % DUNGEONS.length) + DUNGEONS.length) % DUNGEONS.length;
   const base = DUNGEONS[wrapped]!;
-  return { ...base, grid: generateGrid(base.pools, index) };
+  return { ...base, ...generateLayout(base.pools, index, base.trapKinds) };
 }

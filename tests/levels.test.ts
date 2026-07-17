@@ -3,11 +3,13 @@ import {
   DUNGEONS,
   DUNGEON_H,
   DUNGEON_W,
+  FEATURED_TRAP_CHANCE,
   LEGAL_TILES,
   ROOM_BANDS,
   dungeonAt,
   generateGrid,
   validateGrid,
+  validateTraps,
 } from "../src/game/level/dungeons";
 
 describe("dungeon library", () => {
@@ -99,6 +101,38 @@ describe("seeded run grids (property tests)", () => {
       expect(monsters).toBeGreaterThan(0);
       if (rescue) expect(monsters, `run ${index}`).toBeLessThanOrEqual(3);
     }
+  });
+
+  it("uses featured traps as occasional single-room events", () => {
+    const SAMPLE = 600;
+    let trappedRuns = 0;
+    const kinds = new Set<string>();
+    for (let index = 0; index < SAMPLE; index++) {
+      const dungeon = dungeonAt(index);
+      expect(dungeon.traps.length).toBeLessThanOrEqual(1);
+      expect(() => validateTraps(dungeon.traps)).not.toThrow();
+      if (dungeon.traps[0]) {
+        trappedRuns++;
+        kinds.add(dungeon.traps[0].kind);
+      }
+    }
+    const observedRate = trappedRuns / SAMPLE;
+    expect(observedRate).toBeGreaterThan(FEATURED_TRAP_CHANCE - 0.1);
+    expect(observedRate).toBeLessThan(FEATURED_TRAP_CHANCE + 0.1);
+    expect(kinds).toEqual(
+      new Set([
+        "plate-gate",
+        "alternating-spikes",
+        "crusher-gallery",
+        "dart-gallery",
+        "counterweighted-lift",
+        "light-runes",
+        "undead-barrier",
+        "flooded-chamber",
+        "rolling-stone",
+        "collapsing-floor",
+      ]),
+    );
   });
 
   it("rejects malformed grids", () => {

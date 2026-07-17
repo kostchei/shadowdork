@@ -21,10 +21,14 @@ strong dungeon identity or make the current objective obvious.
 6. Add entity shadows and a framed HUD with HP bars, run identity, objective
    state, controls, event log, and crown-to-exit feedback.
 
-## Phase 2 — room-system variance (next)
+## Phase 2 — room-system variance (in progress)
 
 Extract authored rooms into composable builders and add the highest-leverage
 primitives from the Five Room design bible:
+
+Implemented foundation: declarative per-run trap metadata, pressure plates and
+gates, linked lifts, cyclic hazards, moving projectiles, light-sensitive
+floors, water states, class interactions, and persistent collapsing terrain.
 
 - levers, plates, gates, and multi-state interactables;
 - water and no-light zones;

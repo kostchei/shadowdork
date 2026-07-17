@@ -51,6 +51,7 @@ export class LightSystem {
   private tintRt: Phaser.GameObjects.RenderTexture;
   private brush: Phaser.GameObjects.Image;
   private sources = new Map<string, LightSource>();
+  private torchSources = new Map<string, string>();
   private nextId = 0;
   private ctx: GameContext;
   private scene: Phaser.Scene;
@@ -105,9 +106,11 @@ export class LightSystem {
       torch: true,
     });
     const timerId = `torch-${sourceId}-${carrierId}`;
+    this.torchSources.set(timerId, sourceId);
     this.ctx.engine.clock.addTimer(timerId, this.ctx.engine.config.torchMs, () => {
       // A mishap may have snuffed this source before the timer ran out.
       if (this.sources.has(sourceId)) this.removeSource(sourceId);
+      this.torchSources.delete(timerId);
       onExpire();
     });
     return timerId;
@@ -123,9 +126,15 @@ export class LightSystem {
 
   /** Extinguish every carried torch flame (wizard mishap). */
   snuffAll(): void {
-    for (const [id, s] of [...this.sources.entries()]) {
-      if (s.torch === true) this.sources.delete(id);
-    }
+    for (const timerId of [...this.torchSources.keys()]) this.snuffTorch(timerId);
+  }
+
+  snuffTorch(timerId: string): void {
+    const sourceId = this.torchSources.get(timerId);
+    if (!sourceId) return;
+    this.sources.delete(sourceId);
+    if (this.ctx.engine.clock.hasTimer(timerId)) this.ctx.engine.clock.cancelTimer(timerId);
+    this.torchSources.delete(timerId);
   }
 
   levelAt(x: number, y: number): LightLevel {

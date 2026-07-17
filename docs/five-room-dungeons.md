@@ -258,16 +258,21 @@ pool; rescues follow a designed distribution with a tuned reward-rescue chance
 in the climax (budget-trimmed for beatability); `validateGrid` gates every
 generated grid at runtime and a 200-seed property sweep runs in tests.
 
-Highest-leverage new primitives (each unlocks several variants above):
-1. **Interactables** — levers, pressure plates, offering bowls, winches,
-   multi-state statues; one generic "use with E, has states" object.
-2. **Gates/portcullises** — walls that open, close, and drop on triggers.
-3. **Water volumes** — swim physics, damage-over-time, torch-dousing.
-4. **Throwables** — coins/rocks/torches as projectiles with noise + light.
-5. **Zone effects** — no-light zones, explosive gas, ambient moss light.
-6. **AI flags** — noise-based aggro, pursue-through-rooms, target-the-light,
-   leader-morale groups.
-7. **Heavy/placeable objects** — the 6-slot chest, planted standing torches.
+Featured puzzle traps appear in roughly 40% of runs, with at most one per run.
+The ten implemented families are pressure gates, linked counterweight lifts,
+action-stepped rolling stones, collapsing floors, alternating spike banks,
+shield-blockable dart galleries, sanctifiable undead barriers, telegraphed
+stone presses, light-readable rune paths, and two-state flooded chambers.
+Class solutions include Fighter weighting/bracing, Wizard ranged switches,
+Thief disarming, and Priest sanctification. Other runs use combat, terrain,
+or weak-wall setbacks so machinery remains surprising.
+
+Highest-leverage next primitives (each unlocks several variants above):
+1. **Broader interactables** — offering bowls, winches, and multi-state statues.
+2. **Throwables** — coins/rocks/torches as projectiles with noise + light.
+3. **Zone effects** — no-light zones, explosive gas, and ambient moss light.
+4. **AI flags** — noise aggro, pursuit, and target-the-light behavior.
+5. **General placeable objects** — weighted gear, corpses, chests, and torches.
 
 Next target: extract each authored room into a builder function
 (`roomGuardian.blindSentinels(grid, x0) → width`) so a dungeon can be a seeded

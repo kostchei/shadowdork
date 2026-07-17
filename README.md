@@ -27,6 +27,11 @@ npm run build    # static production build in dist/ — serve from any webserver
 npm test         # rules-engine unit tests (vitest)
 ```
 
+On Windows, run `install-shadowdork.bat` once. It installs Node.js/npm and
+Google Chrome through winget when missing, installs project dependencies, and
+creates a desktop shortcut using `assets/shadowdork.ico`. The shortcut starts
+Vite and opens the game directly in Chrome.
+
 ## Controls
 
 | Key | Action |
@@ -90,6 +95,10 @@ tests/        Engine unit tests.
 - Three complete dungeon layouts share the Five Room structure but vary room
   geometry, hazards, platform routes, monster composition, rescue positions,
   light placement, and reward approach.
+- Featured puzzle traps occur in roughly 40% of runs, never more than one per
+  run. Ten families range from counterweight machinery, darts, spikes, and
+  crushers to light runes, undead barriers, floods, rolling stones, and
+  collapsing floors.
 - A dungeon definition owns its palette, title, objective, atmosphere, and grid;
   adding another does not require changing the scene renderer.
 - Pixel art is generated at boot with no external asset pipeline: themed stone

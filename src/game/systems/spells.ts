@@ -227,7 +227,12 @@ function applyMishap(deps: SpellDeps, caster: CharacterSprite, result: CastResul
   }
   if (data.snuffLights === true) {
     deps.light.snuffAll();
-    for (const p of deps.party()) p.torchTimerId = null;
+    for (const p of deps.party()) {
+      p.torchTimerId = null;
+      if (p.character.carriedShield && p.character.shieldStowed) {
+        p.character.shieldStowed = false;
+      }
+    }
     ctx.say("Every flame in the party is snuffed out. The dark rushes in.", "#ff4060");
   }
   if (data.launch === true) {

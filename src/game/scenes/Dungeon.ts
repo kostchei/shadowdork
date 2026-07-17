@@ -23,6 +23,7 @@ import { CAMPFIRE_RADIUS, LightSystem } from "../systems/light";
 import { PartyManager } from "../systems/party";
 import { CLOSE_PX, zoneBetween } from "../systems/position";
 import { castSelectedSpell, type SpellDeps } from "../systems/spells";
+import { TrapSystem } from "../systems/traps";
 import {
   DUNGEON_H,
   DUNGEON_W,
@@ -74,6 +75,8 @@ export class DungeonScene extends Phaser.Scene {
   private spikes: Phaser.Physics.Arcade.Image[] = [];
   private monsters: MonsterSprite[] = [];
   private monsterGroup!: Phaser.GameObjects.Group;
+  private partyGroup!: Phaser.GameObjects.Group;
+  private trapSystem!: TrapSystem;
   private pickups: Pickup[] = [];
   private npcs: RescuableNpc[] = [];
   private campfires: { x: number; y: number; free: boolean }[] = [];
@@ -91,6 +94,7 @@ export class DungeonScene extends Phaser.Scene {
   luckWindow: LuckWindow | null = null;
 
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
+  private leftControlDown = false;
 
   constructor() {
     super("Dungeon");
@@ -112,6 +116,7 @@ export class DungeonScene extends Phaser.Scene {
     this.dyingLabels = new Map();
     this.morale = new MoraleTracker();
     this.luckWindow = null;
+    this.leftControlDown = false;
     this.encounterWaves = 0;
 
     const storedIndex = this.registry.get("dungeonIndex");
@@ -129,15 +134,36 @@ export class DungeonScene extends Phaser.Scene {
     this.light = new LightSystem(this, this.ctx, this.activeDungeon.theme.darkness);
 
     this.buildLevel();
+    this.lightTorch(this.party.leader, "You light a torch.");
+    this.trapSystem = new TrapSystem(
+      this,
+      this.ctx,
+      this.activeDungeon.traps,
+      () => this.party.aliveMembers(),
+      () => this.party.leader,
+      () => [
+        ...this.party.aliveMembers().map((member) => ({ x: member.x, y: member.y })),
+        ...this.pickups.filter((pickup) => pickup.sprite.active).map((pickup) => ({
+          x: pickup.sprite.x,
+          y: pickup.sprite.y,
+        })),
+      ],
+      (x, y) => this.light.levelAt(x, y),
+      (member) => this.snuffTorch(member),
+      this.activeDungeon.theme.accent,
+    );
     this.setupInput();
 
     // Colliders
-    const partyGroup = this.add.group(this.party.members);
+    this.partyGroup = this.add.group(this.party.members);
     this.monsterGroup = this.add.group(this.monsters);
-    this.physics.add.collider(partyGroup, this.walls);
-    this.physics.add.collider(partyGroup, this.weakWalls);
+    this.physics.add.collider(this.partyGroup, this.walls);
+    this.physics.add.collider(this.partyGroup, this.weakWalls);
     this.physics.add.collider(this.monsterGroup, this.walls);
     this.physics.add.collider(this.monsterGroup, this.weakWalls);
+    for (const member of this.party.members) this.trapSystem.registerActor(member);
+    for (const monster of this.monsters) this.trapSystem.registerActor(monster);
+    for (const pickup of this.pickups) this.trapSystem.registerActor(pickup.sprite);
 
     this.cameras.main.startFollow(this.party.leader, true, 0.12, 0.12);
 
@@ -195,6 +221,7 @@ export class DungeonScene extends Phaser.Scene {
       this.morale.register(m);
       this.monsters.push(m);
       this.monsterGroup.add(m);
+      this.trapSystem.registerActor(m);
     }
   }
 
@@ -479,6 +506,7 @@ export class DungeonScene extends Phaser.Scene {
     });
     this.physics.add.collider(sprite, this.walls);
     this.pickups.push({ sprite, itemId, qty });
+    if (this.trapSystem) this.trapSystem.registerActor(sprite);
   }
 
   private setupInput(): void {
@@ -488,6 +516,12 @@ export class DungeonScene extends Phaser.Scene {
       "A,D,W,LEFT,RIGHT,UP,SPACE,J,X,K,C,Q,E,T,H,L,R,TAB,ONE,TWO,THREE,FOUR",
     ) as Record<string, Phaser.Input.Keyboard.Key>;
     kb.on("keydown-TAB", (ev: KeyboardEvent) => ev.preventDefault());
+    kb.on("keydown", (ev: KeyboardEvent) => {
+      if (ev.code === "ControlLeft") this.leftControlDown = true;
+    });
+    kb.on("keyup", (ev: KeyboardEvent) => {
+      if (ev.code === "ControlLeft") this.leftControlDown = false;
+    });
   }
 
   override update(time: number, delta: number): void {
@@ -499,6 +533,7 @@ export class DungeonScene extends Phaser.Scene {
     this.ctx.engine.advance(delta);
     this.updateLeaderInput(time, delta);
     this.party.updateFollowers(time);
+    this.trapSystem.update(time);
     this.updateMonsters(time, delta);
     this.updatePickups();
     this.updateSpikes(time);
@@ -626,7 +661,7 @@ export class DungeonScene extends Phaser.Scene {
     }
 
     // Attack
-    if (this.keys.J!.isDown || this.keys.X!.isDown) {
+    if (this.keys.J!.isDown || this.keys.X!.isDown || this.leftControlDown) {
       const outcome = meleeSwing(this.meleeDeps(), leader);
       if (outcome.swung && leader.character.className === "fighter") this.breakWeakWalls(leader);
       if (outcome.check && !outcome.check.success) {
@@ -696,7 +731,7 @@ export class DungeonScene extends Phaser.Scene {
     }
   }
 
-  private lightTorch(leader: CharacterSprite): void {
+  private lightTorch(leader: CharacterSprite, message?: string): void {
     if (leader.torchLit) {
       this.ctx.say(`${leader.character.name} already carries a lit torch.`);
       return;
@@ -733,13 +768,23 @@ export class DungeonScene extends Phaser.Scene {
       },
     );
     this.ctx.say(
-      `${c.name} lights a torch (${c.inventory.count("torch")} left). It burns in real time.`,
+      message ?? `${c.name} lights a torch (${c.inventory.count("torch")} left). It burns in real time.`,
       "#f0c060",
     );
   }
 
   private torchStillHeld(sprite: CharacterSprite): boolean {
     return sprite.torchTimerId !== null;
+  }
+
+  private snuffTorch(member: CharacterSprite): void {
+    if (!member.torchTimerId) return;
+    this.light.snuffTorch(member.torchTimerId);
+    member.torchTimerId = null;
+    if (member.character.carriedShield && member.character.shieldStowed) {
+      member.character.shieldStowed = false;
+    }
+    this.ctx.say(`${member.character.name}'s torch hisses out in the water.`, "#70b8d0");
   }
 
   private interact(leader: CharacterSprite): void {
@@ -774,8 +819,8 @@ export class DungeonScene extends Phaser.Scene {
           npc.prop?.destroy();
           const recruit = this.spawnCharacter(`pc-${npc.className}`, npc.name, npc.className, npc.x, npc.y);
           this.party.add(recruit);
-          this.physics.add.collider(recruit, this.walls);
-          this.physics.add.collider(recruit, this.weakWalls);
+          this.partyGroup.add(recruit);
+          this.trapSystem.registerActor(recruit);
           this.ctx.say(
             `${npc.name} the ${classDef(npc.className).displayName} joins the party! (${this.party.size}/4)`,
             "#60e080",
@@ -783,6 +828,9 @@ export class DungeonScene extends Phaser.Scene {
         },
       };
     }
+
+    const trapInteraction = this.trapSystem.findInteraction(leader);
+    if (trapInteraction) return trapInteraction;
 
     // 3. Disarm spikes (thief)
     if (leader.character.className === "thief") {

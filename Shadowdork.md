@@ -28,8 +28,9 @@ spot:
 2. **Puzzle / Roleplay** — a challenge steel can't solve alone: a sheer barrier
    crossed by the Thief climbing its vine face *or* the Fighter smashing its
    cracked base. The Priest's shrine sits on a high ledge.
-3. **Trick / Setback** — a spike-trap gauntlet with bait treasure sitting
-   between the pits, a skeleton ambush, and the Wizard found mid-losing-battle.
+3. **Trick / Setback** — usually terrain, weak walls, or an ambush; roughly
+   40% of runs instead draw one featured stateful trap from the dungeon's
+   themed pool. A run never receives more than one featured trap.
 4. **Climax** — the Gloom Ogre and its minions.
 5. **Reward / Revelation** — the vault: the Crown of the Deep, with one last
    guardian in the treasure.
@@ -51,6 +52,12 @@ short-handed party can still win. Every generated grid passes a hard
 validation gate (`validateGrid`) at runtime and in a seeded property-test
 sweep. The full level-design bible is in
 [docs/five-room-dungeons.md](docs/five-room-dungeons.md).
+
+Featured traps cover ten families: pressure gates, counterweighted lifts,
+rolling stones that advance with player movement, collapsing floors,
+alternating spikes, dart galleries, undead barriers, stone crushers,
+light-readable rune paths, and lever-controlled flooded chambers. Their cheap
+solutions expose class identity; every room retains a costly general route.
 
 ## The core tension: light
 

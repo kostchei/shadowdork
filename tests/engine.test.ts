@@ -507,10 +507,11 @@ describe("fighter class feature rules", () => {
       hooks: [{ kind: "statBonusChoice", stats: ["STR", "DEX"], bonus: 2 }],
     });
     const resolved = f.effects.find((e) => e.id === "test-stat-choice");
-    expect(resolved?.hooks[0].kind).toBe("statBonus");
+    expect(resolved).toBeDefined();
+    expect(resolved!.hooks[0]!.kind).toBe("statBonus");
     // It should have picked the highest of STR and DEX
     const expectedStat = f.stats.STR >= f.stats.DEX ? "STR" : "DEX";
-    expect((resolved?.hooks[0] as any).stat).toBe(expectedStat);
+    expect((resolved!.hooks[0]! as any).stat).toBe(expectedStat);
 
     // Test armorAcBonusChoice resolution
     f.addEffect({
@@ -519,8 +520,9 @@ describe("fighter class feature rules", () => {
       hooks: [{ kind: "armorAcBonusChoice", bonus: 1 }],
     });
     const resolvedArmor = f.effects.find((e) => e.id === "test-armor-choice");
-    expect(resolvedArmor?.hooks[0].kind).toBe("armorAcBonus");
-    expect((resolvedArmor?.hooks[0] as any).armorId).toBe("chainmail");
+    expect(resolvedArmor).toBeDefined();
+    expect(resolvedArmor!.hooks[0]!.kind).toBe("armorAcBonus");
+    expect((resolvedArmor!.hooks[0]! as any).armorId).toBe("chainmail");
   });
 
   it("swaps stats for Fighter if neither STR nor DEX is heroic (>= 15)", () => {

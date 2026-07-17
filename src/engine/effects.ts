@@ -18,6 +18,7 @@ export type EffectHook =
   | { kind: "checkBonus"; applies: CheckKind; bonus: number }
   | { kind: "checkBonusHalfLevel"; applies: CheckKind }
   | { kind: "advantageOn"; applies: CheckKind }
+  | { kind: "advantageOnStat"; stat: StatName }
   | { kind: "disadvantageOn"; applies: CheckKind }
   | { kind: "critRange"; value: number } // attacks crit on natural >= value
   | { kind: "statBonus"; stat: StatName; bonus: number }

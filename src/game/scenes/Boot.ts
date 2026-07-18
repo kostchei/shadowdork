@@ -102,7 +102,12 @@ export class BootScene extends Phaser.Scene {
           if (slotData) {
             const leader = slotData.party.find((p: any) => !p.dead) || slotData.party[0];
             const leaderName = leader ? `${leader.name} (Lvl ${leader.level})` : "Party";
-            btnText = `[ Load ${label}: ${leaderName} | Room ${slotData.currentRoom} ]`;
+            const room = slotData.roomId
+              ? slotData.roomId.replace(/^room-/, "Room ").replace(/^sanctuary$/, "Sanctuary")
+              : slotData.currentRoom != null
+                ? `Room ${slotData.currentRoom}`
+                : "In progress";
+            btnText = `[ Load ${label}: ${leaderName} | ${room} ]`;
           } else {
             btnText = `[ Load ${label}: empty ]`;
           }

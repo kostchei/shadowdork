@@ -11,7 +11,7 @@ import {
   type LevelUpResult,
 } from "../../engine";
 import type { GameContext } from "../context";
-import { ROOM_BANDS } from "../level/dungeons";
+import { roomAtTolerant } from "../level/geometry";
 import { TILE } from "../textures";
 import type { DungeonScene } from "./Dungeon";
 import { SaveRepository } from "../SaveRepository";
@@ -30,8 +30,6 @@ const DATA_STYLE = {
   resolution: RENDER_SCALE,
 } as const;
 
-const ROOM_LABELS = ["THE GATE", "THE TEST", "THE SETBACK", "THE CLIMAX", "THE REWARD", "SANCTUARY"];
-const ROMAN = ["I", "II", "III", "IV", "V", "VI"];
 const MAX_PARTY = 4;
 const LOG_LINES = 2;
 const PARTY_BOX = { x: 8, y: 8, w: 520, headerH: 28, rowH: 22, detailH: 20 };
@@ -897,9 +895,12 @@ export class HudScene extends Phaser.Scene {
     );
     this.objectiveText.setColor(this.dungeon.hasCrown ? "#72d887" : "#e3c56d");
 
-    const leaderX = leader.x / TILE;
-    const band = ROOM_BANDS.find((roomBand) => leaderX >= roomBand.x1 && leaderX <= roomBand.x2 + 1);
-    if (band) this.roomText.setText(`ROOM ${ROMAN[band.room - 1]}  |  ${ROOM_LABELS[band.room - 1]}`);
+    const region = roomAtTolerant(
+      this.dungeon.activeDungeon.regions,
+      Math.floor(leader.x / TILE),
+      Math.floor(leader.y / TILE),
+    );
+    if (region) this.roomText.setText(region.hud);
 
     if (minTorchMs < 30_000) {
       this.torchWarning.setVisible(true).setAlpha(0.6 + 0.4 * Math.sin(time / 120));

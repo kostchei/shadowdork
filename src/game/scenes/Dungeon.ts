@@ -40,13 +40,12 @@ import { PartyManager } from "../systems/party";
 import { CLOSE_PX, FAR_PX, zoneBetween } from "../systems/position";
 import { castSelectedSpell, type SpellDeps } from "../systems/spells";
 import { TrapSystem } from "../systems/traps";
-import {
-  DUNGEON_H,
-  DUNGEON_W,
-  ROOM_BANDS,
-  dungeonAt,
-  type DungeonDefinition,
-} from "../level/dungeons";
+import { dungeonAt, type DungeonDefinition } from "../level/dungeons";
+import { expandDungeon } from "../level/expand";
+import { generateAbstractDungeon, type GenerateOptions } from "../level/generate";
+import type { TopologyId } from "../level/topology";
+import type { Orientation } from "../level/embedding";
+import { roomAt, roomAtTolerant } from "../level/geometry";
 import { TILE } from "../textures";
 import { serializeCharacter, deserializeCharacter, type SaveSlot } from "../state";
 import { SaveRepository } from "../SaveRepository";
@@ -128,7 +127,7 @@ export class DungeonScene extends Phaser.Scene {
   private encounterWaves = 0;
   private interactPrompt!: Phaser.GameObjects.Text;
   loadedState: SaveSlot | null = null;
-  private lastRoomIndex = 1;
+  private lastRoomId = "room-1";
   private leaderMarker!: Phaser.GameObjects.Image;
   /** Read by the HUD to show the reroll hint. */
   luckWindow: LuckWindow | null = null;
@@ -190,7 +189,6 @@ export class DungeonScene extends Phaser.Scene {
     this.encounterWaves = 0;
     this.rewardMarker = null;
     this.rewardClaimed = this.loadedState?.hasCrown ?? false;
-    this.lastRoomIndex = this.loadedState ? this.loadedState.currentRoom : 1;
     this.usedCharacterNames = new Set(this.loadedState?.party.map((member) => member.name) ?? []);
     this.startingFighterName = this.loadedState ? "" : this.nextPlebName();
 
@@ -199,7 +197,8 @@ export class DungeonScene extends Phaser.Scene {
     const storedSeed = this.registry.get("runSeed");
     const runSeed = typeof storedSeed === "number" ? storedSeed : 0;
     const layoutSeed = (runSeed + dungeonIndex) >>> 0;
-    this.activeDungeon = dungeonAt(layoutSeed);
+    this.activeDungeon = this.resolveActiveDungeon(layoutSeed);
+    this.lastRoomId = this.resolveLoadedRoomId();
     this.currentReward = chooseDungeonReward(
       dungeonIndex,
       this.loadedState
@@ -216,10 +215,12 @@ export class DungeonScene extends Phaser.Scene {
       for (const e of this.fireEmitters) e.destroy();
     });
 
-    this.physics.world.setBounds(0, 0, DUNGEON_W * TILE, DUNGEON_H * TILE);
+    const worldW = this.activeDungeon.width * TILE;
+    const worldH = this.activeDungeon.height * TILE;
+    this.physics.world.setBounds(0, 0, worldW, worldH);
     // The framebuffer is render-scaled; zooming keeps the same 960x540 world view.
     this.cameras.main.setZoom(RENDER_SCALE);
-    this.cameras.main.setBounds(0, 0, DUNGEON_W * TILE, DUNGEON_H * TILE);
+    this.cameras.main.setBounds(0, 0, worldW, worldH);
     this.cameras.main.setBackgroundColor(this.activeDungeon.theme.background);
     this.createAtmosphere(layoutSeed);
 
@@ -336,7 +337,7 @@ export class DungeonScene extends Phaser.Scene {
   /** Spawn an encounter wave off-screen, already hunting the party. */
   private spawnEncounterWave(monsterId: string, count: number, x: number): void {
     if (this.gameOver || this.won) return;
-    const clampedX = Phaser.Math.Clamp(x, TILE * 1.5, (DUNGEON_W - 2) * TILE);
+    const clampedX = Phaser.Math.Clamp(x, TILE * 1.5, (this.activeDungeon.width - 2) * TILE);
     const groupId = `encounter-${this.encounterWaves++}`;
     for (let i = 0; i < count; i++) {
       const m = new MonsterSprite(
@@ -364,8 +365,8 @@ export class DungeonScene extends Phaser.Scene {
   }
 
   private createAtmosphere(dungeonIndex: number): void {
-    const worldW = DUNGEON_W * TILE;
-    const worldH = DUNGEON_H * TILE;
+    const worldW = this.activeDungeon.width * TILE;
+    const worldH = this.activeDungeon.height * TILE;
     const theme = this.activeDungeon.theme;
 
     this.add
@@ -401,7 +402,7 @@ export class DungeonScene extends Phaser.Scene {
 
     // Deterministic motes make each theme feel alive without affecting play.
     for (let i = 0; i < 36; i++) {
-      const x = ((i * 173 + dungeonIndex * 97) % (DUNGEON_W * TILE - 80)) + 40;
+      const x = ((i * 173 + dungeonIndex * 97) % (worldW - 80)) + 40;
       const y = ((i * 71 + dungeonIndex * 43) % 330) + 90;
       const mote = this.add
         .image(x, y, "pixel")
@@ -421,18 +422,14 @@ export class DungeonScene extends Phaser.Scene {
       });
     }
 
-    const roomLabels = [
-      "I  THE GATE",
-      "II  THE TEST",
-      "III  THE SETBACK",
-      "IV  THE CLIMAX",
-      "V  THE REWARD",
-      "SANCTUARY",
-    ];
-    const roomCenters = [11, 31, 53, 74, 91, 108];
-    roomLabels.forEach((label, i) => {
+    // Room labels are drawn from the active dungeon's regions, so the backdrop
+    // annotates whatever layout was generated rather than a fixed room band.
+    for (const region of this.activeDungeon.regions) {
+      // Anchor near the top of the region (56px into the first row for the legacy
+      // layout), so tall vertical rooms still read their label from above.
+      const labelY = region.y1 * TILE + 24;
       this.add
-        .text(roomCenters[i]! * TILE, 56, label, {
+        .text(region.labelX * TILE, labelY, region.title, {
           fontFamily: "Georgia, serif",
           fontSize: "18px",
           color: `#${theme.accent.toString(16).padStart(6, "0")}`,
@@ -442,14 +439,14 @@ export class DungeonScene extends Phaser.Scene {
         .setOrigin(0.5)
         .setAlpha(0.22)
         .setDepth(-5);
-    });
+    }
   }
 
   private buildLevel(): void {
     const theme = this.activeDungeon.theme;
-    for (let y = 0; y < DUNGEON_H; y++) {
+    for (let y = 0; y < this.activeDungeon.height; y++) {
       const row = this.activeDungeon.grid[y]!;
-      for (let x = 0; x < DUNGEON_W; x++) {
+      for (let x = 0; x < this.activeDungeon.width; x++) {
         const ch = row[x]!;
         const px = x * TILE + TILE / 2;
         const py = y * TILE + TILE / 2;
@@ -523,9 +520,9 @@ export class DungeonScene extends Phaser.Scene {
           case "O": {
             const defId = { g: "goblin", s: "skeleton", r: "giant-rat", O: "gloom-ogre" }[ch];
             // One morale group per room: a leader in the room commands all of it.
-            const band = ROOM_BANDS.find((b) => x >= b.x1 && x <= b.x2);
-            if (!band) throw new Error(`Monster at x=${x} sits on a room divider`);
-            const m = new MonsterSprite(this, px, py, monster(defId), `room-${band.room}`, this.ctx.engine.dice);
+            const region = roomAt(this.activeDungeon.regions, x, y);
+            if (!region) throw new Error(`Monster at (${x},${y}) sits outside every room region`);
+            const m = new MonsterSprite(this, px, py, monster(defId), region.id, this.ctx.engine.dice);
             this.morale.register(m);
             this.monsters.push(m);
             break;
@@ -633,7 +630,7 @@ export class DungeonScene extends Phaser.Scene {
     }
 
     if (this.loadedState) {
-      const spawnPos = this.getRoomEntrancePos(this.loadedState.currentRoom);
+      const spawnPos = this.getRoomEntrancePos(this.lastRoomId);
       // The backward-compatible hasCrown flag now means the vault reward was claimed.
 
       this.loadedState.party.forEach((savedChar, idx) => {
@@ -781,9 +778,9 @@ export class DungeonScene extends Phaser.Scene {
     this.ctx.engine.advance(delta);
 
     // Auto-save on room transition
-    const currentRoom = this.currentRoomIndex;
-    if (currentRoom !== this.lastRoomIndex) {
-      this.lastRoomIndex = currentRoom;
+    const currentRoom = this.currentRoomId;
+    if (currentRoom !== this.lastRoomId) {
+      this.lastRoomId = currentRoom;
       this.saveToSlot(0);
     }
     this.updateLeaderInput(time, delta);
@@ -1480,7 +1477,7 @@ export class DungeonScene extends Phaser.Scene {
       if (!m.active) continue;
       if (m.aiState === "fleeing") {
         m.updateAi(delta, this.party.leader);
-        if (m.x < TILE || m.x > (DUNGEON_W - 2) * TILE) m.destroy();
+        if (m.x < TILE || m.x > (this.activeDungeon.width - 2) * TILE) m.destroy();
         continue;
       }
       if (m.isSleeping) {
@@ -1860,24 +1857,59 @@ export class DungeonScene extends Phaser.Scene {
     }
   }
 
-  get currentRoomIndex(): number {
+  /** The region the leader currently occupies (falls back to the last one). */
+  get currentRoomId(): string {
     const leaderX = Math.floor(this.party.leader.x / TILE);
-    const band = ROOM_BANDS.find((b) => leaderX >= b.x1 && leaderX <= b.x2 + 1);
-    return band ? band.room : 1;
+    const leaderY = Math.floor(this.party.leader.y / TILE);
+    const region = roomAtTolerant(this.activeDungeon.regions, leaderX, leaderY);
+    return region ? region.id : this.lastRoomId;
   }
 
-  private getRoomEntrancePos(roomIndex: number): { x: number; y: number } {
-    const band = ROOM_BANDS[roomIndex - 1];
-    if (!band) return { x: TILE * 1.5, y: TILE * 12.5 };
-    const startX = band.x1 + 1;
-    for (let y = 0; y < DUNGEON_H - 1; y++) {
+  /**
+   * The layout to render. `?nl=<seed>` renders a non-linear dungeon expanded from
+   * the abstract generator instead of a hand-authored one; `?nltopo` / `?nlorient`
+   * force a specific form/orientation for demonstration. Without the flag (or when
+   * resuming a save), the campaign's hand-authored dungeon is used.
+   */
+  private resolveActiveDungeon(layoutSeed: number): DungeonDefinition {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has("nl") || this.loadedState) return dungeonAt(layoutSeed);
+
+    const parsed = parseInt(params.get("nl") ?? "", 10);
+    const nlSeed = (Number.isFinite(parsed) ? parsed : layoutSeed) >>> 0;
+    const opts: GenerateOptions = {};
+    const topo = params.get("nltopo");
+    const orient = params.get("nlorient");
+    if (topo) opts.topology = topo as TopologyId;
+    if (orient) opts.orientation = orient as Orientation;
+    return expandDungeon(generateAbstractDungeon(nlSeed, opts));
+  }
+
+  /** Resolve which room to spawn into on load, migrating pre-roomId saves. */
+  private resolveLoadedRoomId(): string {
+    const state = this.loadedState;
+    if (!state) return this.activeDungeon.regions[0]?.id ?? "room-1";
+    if (state.roomId) return state.roomId;
+    if (typeof state.currentRoom === "number") {
+      return this.activeDungeon.regions[state.currentRoom - 1]?.id ?? this.activeDungeon.regions[0]!.id;
+    }
+    return this.activeDungeon.regions[0]?.id ?? "room-1";
+  }
+
+  private getRoomEntrancePos(roomId: string): { x: number; y: number } {
+    const region = this.activeDungeon.regions.find((r) => r.id === roomId) ?? this.activeDungeon.regions[0];
+    if (!region) return { x: TILE * 1.5, y: TILE * 12.5 };
+    const startX = region.x1 + 1;
+    // Prefer a floor landing: an open cell sitting on solid ground.
+    for (let y = region.y1; y <= region.y2; y++) {
       const cell = this.activeDungeon.grid[y]?.[startX];
-      const cellUnder = this.activeDungeon.grid[y+1]?.[startX];
+      const cellUnder = this.activeDungeon.grid[y + 1]?.[startX];
       if (cell === "." && cellUnder === "#") {
         return { x: startX * TILE + TILE / 2, y: y * TILE + TILE / 2 };
       }
     }
-    for (let y = DUNGEON_H - 2; y >= 0; y--) {
+    // Otherwise the lowest open cell in the region.
+    for (let y = region.y2; y >= region.y1; y--) {
       const cell = this.activeDungeon.grid[y]?.[startX];
       if (cell === ".") {
         return { x: startX * TILE + TILE / 2, y: y * TILE + TILE / 2 };
@@ -1892,7 +1924,7 @@ export class DungeonScene extends Phaser.Scene {
       timestamp: Date.now(),
       dungeonIndex: this.registry.get("dungeonIndex") ?? 0,
       runSeed: this.registry.get("runSeed") ?? 0,
-      currentRoom: this.currentRoomIndex,
+      roomId: this.currentRoomId,
       hasCrown: this.hasCrown,
       kills: this.ctx.kills,
       coinsBanked: this.ctx.totalCoins,

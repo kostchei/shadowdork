@@ -45,7 +45,10 @@ export interface SaveSlot {
   dungeonIndex: number;
   /** Stable layout seed for this expedition; absent in saves from before procedural runs. */
   runSeed?: number;
-  currentRoom: number; // 1-based index (1-6)
+  /** Region id of the room last occupied, e.g. "room-3" or "sanctuary". */
+  roomId?: string;
+  /** @deprecated Legacy 1-based room index (1-6); read only to migrate old saves. */
+  currentRoom?: number;
   hasCrown: boolean;
   kills: number;
   coinsBanked: number;

@@ -77,6 +77,17 @@ describe("SaveRepository", () => {
     expect((loaded as any).schemaVersion).toBe(SAVE_SCHEMA_VERSION);
   });
 
+  it("saves and loads a room-id save without the legacy currentRoom field", () => {
+    const roomIdSave = { ...validSaveSlot, roomId: "room-3" };
+    delete (roomIdSave as Partial<SaveSlot>).currentRoom;
+
+    SaveRepository.save(1, roomIdSave);
+    const loaded = SaveRepository.load(1);
+
+    expect(loaded?.roomId).toBe("room-3");
+    expect(loaded?.currentRoom).toBeUndefined();
+  });
+
   it("validates structural integrity of save slots correctly", () => {
     expect(SaveRepository.validateSaveSlot(validSaveSlot)).toBe(true);
     expect(SaveRepository.validateSaveSlot(null)).toBe(false);

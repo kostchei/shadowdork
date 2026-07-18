@@ -41,6 +41,7 @@ import {
 } from "../level/dungeons";
 import { TILE } from "../textures";
 import { serializeCharacter, deserializeCharacter, type SaveSlot } from "../state";
+import { SaveRepository } from "../SaveRepository";
 
 /**
  * How long after being hit a character keeps swinging back. Monsters attack
@@ -1695,21 +1696,27 @@ export class DungeonScene extends Phaser.Scene {
       rescuedIds: this.party.members.map((m) => m.character.className),
       messages: [...this.ctx.messages],
     };
-    const key = slotId === 0 ? "shadowdork_autosave" : `shadowdork_slot_${slotId}`;
-    localStorage.setItem(key, JSON.stringify(state));
-    this.ctx.say(slotId === 0 ? "Checkpoint auto-saved." : `Game saved to Slot ${slotId}.`, "#60e080");
+    try {
+      SaveRepository.save(slotId, state);
+      this.ctx.say(slotId === 0 ? "Checkpoint auto-saved." : `Game saved to Slot ${slotId}.`, "#60e080");
+    } catch (e: any) {
+      this.ctx.say(`Failed to save: ${e.message}`, "#d07070");
+    }
   }
 
   loadFromSlot(slotId: number): void {
-    const key = slotId === 0 ? "shadowdork_autosave" : `shadowdork_slot_${slotId}`;
-    const data = localStorage.getItem(key);
-    if (!data) {
-      this.ctx.say(`No saved game found in Slot ${slotId}.`, "#d07070");
-      return;
+    try {
+      const state = SaveRepository.load(slotId);
+      if (!state) {
+        this.ctx.say(`No saved game found in Slot ${slotId}.`, "#d07070");
+        return;
+      }
+      this.registry.set("loadState", state);
+      this.scene.stop("Hud");
+      this.scene.restart();
+    } catch (e: any) {
+      this.ctx.say(`Failed to load: ${e.message}`, "#d07070");
     }
-    this.registry.set("loadState", data);
-    this.scene.stop("Hud");
-    this.scene.restart();
   }
 
   private restartRun(): void {

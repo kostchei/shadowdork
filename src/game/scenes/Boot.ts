@@ -5,6 +5,7 @@ import { GameContext } from "../context";
 import { DUNGEONS } from "../level/dungeons";
 import { generateTextures } from "../textures";
 import { RENDER_SCALE, GAME_W, GAME_H } from "../display";
+import { SaveRepository } from "../SaveRepository";
 
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -44,6 +45,13 @@ export class BootScene extends Phaser.Scene {
       resolution: RENDER_SCALE,
     }).setOrigin(0.5);
 
+    this.add.text(w / 2, h / 2 - 55, "Desktop Keyboard Recommended", {
+      fontFamily: 'Consolas, monospace',
+      fontSize: "10px",
+      color: "#ffd45f",
+      resolution: RENDER_SCALE,
+    }).setOrigin(0.5);
+
     // New Game Button
     const newGameBtn = this.add.text(w / 2, h / 2 - 20, "[ Start New Game ]", {
       fontFamily: 'Consolas, monospace',
@@ -57,6 +65,11 @@ export class BootScene extends Phaser.Scene {
     .on("pointerover", () => newGameBtn.setColor("#ffffff"))
     .on("pointerout", () => newGameBtn.setColor("#ffd45f"))
     .on("pointerdown", () => {
+      if (SaveRepository.exists(0) || SaveRepository.exists(1) || SaveRepository.exists(2) || SaveRepository.exists(3)) {
+        if (!confirm("Starting a new game will eventually overwrite your autosave and progress. Proceed?")) {
+          return;
+        }
+      }
       this.registry.set("dungeonIndex", Math.floor(Math.random() * DUNGEONS.length));
       this.registry.set("ctx", new GameContext());
       this.scene.start("Dungeon");
@@ -71,17 +84,21 @@ export class BootScene extends Phaser.Scene {
       resolution: RENDER_SCALE,
     }).setOrigin(0.5);
 
-    const makeLoadBtn = (y: number, key: string, label: string, slotId: number) => {
-      const data = localStorage.getItem(key);
-      const hasSaved = data !== null;
+    const makeLoadBtn = (y: number, label: string, slotId: number) => {
+      const hasSaved = SaveRepository.exists(slotId);
       let btnText = `[ ${label}: empty ]`;
+      let slotData: any = null;
       if (hasSaved) {
         try {
-          const slot = JSON.parse(data);
-          const leader = slot.party.find((p: any) => !p.dead) || slot.party[0];
-          const leaderName = leader ? `${leader.name} (Lvl ${leader.level})` : "Party";
-          btnText = `[ Load ${label}: ${leaderName} | Room ${slot.currentRoom} ]`;
-        } catch (e) {
+          slotData = SaveRepository.load(slotId);
+          if (slotData) {
+            const leader = slotData.party.find((p: any) => !p.dead) || slotData.party[0];
+            const leaderName = leader ? `${leader.name} (Lvl ${leader.level})` : "Party";
+            btnText = `[ Load ${label}: ${leaderName} | Room ${slotData.currentRoom} ]`;
+          } else {
+            btnText = `[ Load ${label}: empty ]`;
+          }
+        } catch (e: any) {
           btnText = `[ Load ${label}: corrupt ]`;
         }
       }
@@ -94,22 +111,86 @@ export class BootScene extends Phaser.Scene {
         resolution: RENDER_SCALE,
       }).setOrigin(0.5);
 
-      if (hasSaved) {
+      if (hasSaved && slotData) {
         btn.setInteractive({ useHandCursor: true })
         .on("pointerover", () => btn.setColor("#ffffff"))
         .on("pointerout", () => btn.setColor("#ffd45f"))
         .on("pointerdown", () => {
-          this.registry.set("loadState", data);
+          this.registry.set("loadState", slotData);
           this.scene.start("Dungeon");
         });
       }
       return btn;
     };
 
-    makeLoadBtn(h / 2 + 65, "shadowdork_slot_1", "Slot 1", 1);
-    makeLoadBtn(h / 2 + 95, "shadowdork_slot_2", "Slot 2", 2);
-    makeLoadBtn(h / 2 + 125, "shadowdork_slot_3", "Slot 3", 3);
-    makeLoadBtn(h / 2 + 155, "shadowdork_autosave", "Auto-Save", 0);
+    makeLoadBtn(h / 2 + 65, "Slot 1", 1);
+    makeLoadBtn(h / 2 + 95, "Slot 2", 2);
+    makeLoadBtn(h / 2 + 125, "Slot 3", 3);
+    makeLoadBtn(h / 2 + 155, "Auto-Save", 0);
+
+    // Export/Import
+    const exportBtn = this.add.text(w / 2 - 80, h / 2 + 195, "[ Export Saves ]", {
+      fontFamily: 'Consolas, monospace',
+      fontSize: "11px",
+      color: "#a0a4b0",
+      padding: { x: 5, y: 3 },
+      resolution: RENDER_SCALE,
+    }).setOrigin(0.5);
+
+    const importBtn = this.add.text(w / 2 + 80, h / 2 + 195, "[ Import Saves ]", {
+      fontFamily: 'Consolas, monospace',
+      fontSize: "11px",
+      color: "#a0a4b0",
+      padding: { x: 5, y: 3 },
+      resolution: RENDER_SCALE,
+    }).setOrigin(0.5);
+
+    exportBtn.setInteractive({ useHandCursor: true })
+      .on("pointerover", () => exportBtn.setColor("#ffffff"))
+      .on("pointerout", () => exportBtn.setColor("#a0a4b0"))
+      .on("pointerdown", () => {
+        try {
+          const json = SaveRepository.exportAll();
+          const blob = new Blob([json], { type: "application/json" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `shadowdork_saves_${Date.now()}.json`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        } catch (e: any) {
+          alert(`Failed to export saves: ${e.message}`);
+        }
+      });
+
+    importBtn.setInteractive({ useHandCursor: true })
+      .on("pointerover", () => importBtn.setColor("#ffffff"))
+      .on("pointerout", () => importBtn.setColor("#a0a4b0"))
+      .on("pointerdown", () => {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = ".json";
+        input.onchange = (e: any) => {
+          const file = e.target.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = (evt) => {
+            const contents = evt.target?.result as string;
+            const res = SaveRepository.importAll(contents);
+            if (res.success) {
+              alert(`Successfully imported ${res.count} save slot(s)!`);
+              this.scene.restart();
+            } else {
+              alert(`Import failed: ${res.error}`);
+            }
+          };
+          reader.readAsText(file);
+        };
+        input.click();
+      });
+
   }
 
   private createAnimations(): void {

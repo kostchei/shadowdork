@@ -8,6 +8,7 @@ import type { GameContext } from "../context";
 import { ROOM_BANDS } from "../level/dungeons";
 import { TILE } from "../textures";
 import type { DungeonScene } from "./Dungeon";
+import { SaveRepository } from "../SaveRepository";
 
 const UI_STYLE = {
   fontFamily: '"Trebuchet MS", Arial, sans-serif',
@@ -319,8 +320,7 @@ export class HudScene extends Phaser.Scene {
     };
 
     const makeLoadButton = (x: number, y: number, slotId: number, name: string) => {
-      const key = slotId === 0 ? "shadowdork_autosave" : `shadowdork_slot_${slotId}`;
-      const hasSaved = localStorage.getItem(key) !== null;
+      const hasSaved = SaveRepository.exists(slotId);
       const btnText = hasSaved ? `[ Load ${name} ]` : "[ empty ]";
       const btn = this.add.text(x, y, btnText, {
         ...UI_STYLE,
@@ -343,24 +343,113 @@ export class HudScene extends Phaser.Scene {
       return btn;
     };
 
+    const makeDeleteButton = (x: number, y: number, slotId: number) => {
+      const hasSaved = SaveRepository.exists(slotId);
+      if (!hasSaved) return null;
+      const btn = this.add.text(x, y, "[x]", {
+        ...UI_STYLE,
+        fontSize: "12px",
+        color: "#d07070",
+        padding: { x: 4, y: 4 },
+      })
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true })
+      .on("pointerover", () => btn.setColor("#ff8888"))
+      .on("pointerout", () => btn.setColor("#d07070"))
+      .on("pointerdown", () => {
+        if (confirm(`Delete Slot ${slotId === 0 ? "Auto-Save" : slotId}? This cannot be undone.`)) {
+          SaveRepository.delete(slotId);
+          this.hidePauseOverlay();
+          this.showPauseOverlay();
+        }
+      });
+      return btn;
+    };
+
     const save1 = makeSaveButton(w / 2 - 110, h / 2 - 50, 1);
     const save2 = makeSaveButton(w / 2 - 110, h / 2 - 20, 2);
     const save3 = makeSaveButton(w / 2 - 110, h / 2 + 10, 3);
 
-    const load1 = makeLoadButton(w / 2 + 110, h / 2 - 50, 1, "Slot 1");
-    const load2 = makeLoadButton(w / 2 + 110, h / 2 - 20, 2, "Slot 2");
-    const load3 = makeLoadButton(w / 2 + 110, h / 2 + 10, 3, "Slot 3");
-    const loadAuto = makeLoadButton(w / 2 + 110, h / 2 + 40, 0, "Auto-Save");
+    const load1 = makeLoadButton(w / 2 + 90, h / 2 - 50, 1, "Slot 1");
+    const load2 = makeLoadButton(w / 2 + 90, h / 2 - 20, 2, "Slot 2");
+    const load3 = makeLoadButton(w / 2 + 90, h / 2 + 10, 3, "Slot 3");
+    const loadAuto = makeLoadButton(w / 2 + 90, h / 2 + 40, 0, "Auto-Save");
+
+    const del1 = makeDeleteButton(w / 2 + 185, h / 2 - 50, 1);
+    const del2 = makeDeleteButton(w / 2 + 185, h / 2 - 20, 2);
+    const del3 = makeDeleteButton(w / 2 + 185, h / 2 + 10, 3);
+    const delAuto = makeDeleteButton(w / 2 + 185, h / 2 + 40, 0);
+
+    const exportBtn = this.add.text(w / 2 - 80, h / 2 + 65, "[ Export Saves ]", {
+      ...UI_STYLE,
+      fontSize: "11px",
+      color: "#a0a4b0",
+      padding: { x: 5, y: 3 },
+    })
+    .setOrigin(0.5)
+    .setInteractive({ useHandCursor: true })
+    .on("pointerover", () => exportBtn.setColor("#ffffff"))
+    .on("pointerout", () => exportBtn.setColor("#a0a4b0"))
+    .on("pointerdown", () => {
+      try {
+        const json = SaveRepository.exportAll();
+        const blob = new Blob([json], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `shadowdork_saves_${Date.now()}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch (e: any) {
+        alert(`Failed to export saves: ${e.message}`);
+      }
+    });
+
+    const importBtn = this.add.text(w / 2 + 80, h / 2 + 65, "[ Import Saves ]", {
+      ...UI_STYLE,
+      fontSize: "11px",
+      color: "#a0a4b0",
+      padding: { x: 5, y: 3 },
+    })
+    .setOrigin(0.5)
+    .setInteractive({ useHandCursor: true })
+    .on("pointerover", () => importBtn.setColor("#ffffff"))
+    .on("pointerout", () => importBtn.setColor("#a0a4b0"))
+    .on("pointerdown", () => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = ".json";
+      input.onchange = (e: any) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          const contents = evt.target?.result as string;
+          const res = SaveRepository.importAll(contents);
+          if (res.success) {
+            alert(`Successfully imported ${res.count} save slot(s)!`);
+            this.hidePauseOverlay();
+            this.showPauseOverlay();
+          } else {
+            alert(`Import failed: ${res.error}`);
+          }
+        };
+        reader.readAsText(file);
+      };
+      input.click();
+    });
 
     // Controls
-    const helpTitle = this.add.text(w / 2, h / 2 + 80, "CONTROLS QUICK REFERENCE", {
+    const helpTitle = this.add.text(w / 2, h / 2 + 100, "CONTROLS QUICK REFERENCE", {
       ...UI_STYLE,
       fontSize: "11px",
       color: titleColor,
       fontStyle: "bold"
     }).setOrigin(0.5);
 
-    const helpText = this.add.text(w / 2, h / 2 + 128,
+    const helpText = this.add.text(w / 2, h / 2 + 140,
       "A/D or Arrows : Move Left/Right  |  W/Space : Jump\n" +
       "J / X / Left Ctrl : Melee Attack  |  K : Cast Spell\n" +
       "E : Interact  |  T : Light Torch  |  H : Toggle Hold/Follow\n" +
@@ -371,13 +460,20 @@ export class HudScene extends Phaser.Scene {
       lineSpacing: 3
     }).setOrigin(0.5);
 
-    this.pauseOverlay = this.add.container(0, 0, [
+    const containerChildren: any[] = [
       bg, box as any, title, sub,
       saveHeader, loadHeader,
       save1, save2, save3,
       load1, load2, load3, loadAuto,
+      exportBtn, importBtn,
       helpTitle, helpText
-    ]).setDepth(2000);
+    ];
+    if (del1) containerChildren.push(del1);
+    if (del2) containerChildren.push(del2);
+    if (del3) containerChildren.push(del3);
+    if (delAuto) containerChildren.push(delAuto);
+
+    this.pauseOverlay = this.add.container(0, 0, containerChildren).setDepth(2000);
   }
 
   hidePauseOverlay(): void {

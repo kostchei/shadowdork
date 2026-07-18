@@ -13,6 +13,10 @@ export class BootScene extends Phaser.Scene {
   }
 
   create(): void {
+    // The framebuffer is render-scaled; keep the title screen in the same
+    // logical 960x540 view used by the dungeon, HUD, and showroom scenes.
+    this.cameras.main.setZoom(RENDER_SCALE).centerOn(GAME_W / 2, GAME_H / 2);
+
     if (!this.textures.exists("tile-wall-0")) {
       generateTextures(this);
       this.createAnimations();

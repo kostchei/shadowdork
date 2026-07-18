@@ -45,7 +45,16 @@ export interface SaveSlot {
   dungeonIndex: number;
   /** Stable layout seed for this expedition; absent in saves from before procedural runs. */
   runSeed?: number;
-  currentRoom: number; // 1-based index (1-6)
+  /** Region id of the room last occupied, e.g. "room-3" or "sanctuary". */
+  roomId?: string;
+  /** @deprecated Legacy 1-based room index (1-6); read only to migrate old saves. */
+  currentRoom?: number;
+  /** Requirements acquired or switches activated in the current non-linear layout. */
+  activatedRequirementIds?: string[];
+  /** Non-linear connector ids opened, revealed, or broken during this run. */
+  openedConnectorIds?: string[];
+  /** Deterministic talkable-NPC conversation progress keyed by NPC id. */
+  npcInteractionStates?: Record<string, "unmet" | "heard" | "resolved">;
   hasCrown: boolean;
   kills: number;
   coinsBanked: number;

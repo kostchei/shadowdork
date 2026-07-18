@@ -21,6 +21,7 @@ export class MonsterSprite extends Phaser.Physics.Arcade.Sprite {
   hp: number;
   aiState: MonsterAiState = "patrol";
   private asleepUntil = 0;
+  private alertedUntil = 0;
   attackCooldown = 0;
   patrolDir: 1 | -1 = 1;
   private patrolOriginX: number;
@@ -89,7 +90,11 @@ export class MonsterSprite extends Phaser.Physics.Arcade.Sprite {
     if (target) {
       const dist = Phaser.Math.Distance.Between(this.x, this.y, target.x, target.y);
       if (this.aiState === "patrol" && dist <= AGGRO_RANGE) this.aiState = "aggro";
-      if (this.aiState === "aggro" && dist > AGGRO_RANGE * 2) this.aiState = "patrol";
+      if (
+        this.aiState === "aggro" &&
+        dist > AGGRO_RANGE * 2 &&
+        this.scene.time.now >= this.alertedUntil
+      ) this.aiState = "patrol";
     } else if (this.aiState === "aggro") {
       this.aiState = "patrol";
     }
@@ -135,6 +140,13 @@ export class MonsterSprite extends Phaser.Physics.Arcade.Sprite {
     this.asleepUntil = 0;
     if (this.aiState !== "fleeing") this.aiState = "aggro";
     this.clearTint();
+  }
+
+  /** Noise keeps a monster investigating even while the party is beyond sight range. */
+  alert(durationMs = 6000): void {
+    if (this.aiState === "fleeing") return;
+    this.alertedUntil = Math.max(this.alertedUntil, this.scene.time.now + durationMs);
+    this.aiState = "aggro";
   }
 
   override destroy(fromScene?: boolean): void {

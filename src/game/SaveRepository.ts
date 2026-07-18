@@ -183,7 +183,15 @@ export class SaveRepository {
     if (typeof obj.timestamp !== "number") return false;
       if (typeof obj.dungeonIndex !== "number") return false;
       if (obj.runSeed !== undefined && typeof obj.runSeed !== "number") return false;
-    if (typeof obj.currentRoom !== "number") return false;
+    // New saves identify the current room by stable region id. Keep accepting
+    // the legacy numeric field so pre-roomId saves remain loadable.
+    if (typeof obj.roomId !== "string" && typeof obj.currentRoom !== "number") return false;
+    if (obj.activatedRequirementIds !== undefined && (!Array.isArray(obj.activatedRequirementIds) || !obj.activatedRequirementIds.every((id: unknown) => typeof id === "string"))) return false;
+    if (obj.openedConnectorIds !== undefined && (!Array.isArray(obj.openedConnectorIds) || !obj.openedConnectorIds.every((id: unknown) => typeof id === "string"))) return false;
+    if (obj.npcInteractionStates !== undefined) {
+      if (!obj.npcInteractionStates || typeof obj.npcInteractionStates !== "object" || Array.isArray(obj.npcInteractionStates)) return false;
+      if (!Object.values(obj.npcInteractionStates).every((state) => state === "unmet" || state === "heard" || state === "resolved")) return false;
+    }
     if (typeof obj.hasCrown !== "boolean") return false;
     if (typeof obj.kills !== "number") return false;
     if (typeof obj.coinsBanked !== "number") return false;

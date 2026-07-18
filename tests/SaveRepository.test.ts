@@ -77,6 +77,34 @@ describe("SaveRepository", () => {
     expect((loaded as any).schemaVersion).toBe(SAVE_SCHEMA_VERSION);
   });
 
+  it("saves and loads a room-id save without the legacy currentRoom field", () => {
+    const roomIdSave = { ...validSaveSlot, roomId: "room-3" };
+    delete (roomIdSave as Partial<SaveSlot>).currentRoom;
+
+    SaveRepository.save(1, roomIdSave);
+    const loaded = SaveRepository.load(1);
+
+    expect(loaded?.roomId).toBe("room-3");
+    expect(loaded?.currentRoom).toBeUndefined();
+  });
+
+  it("persists non-linear connector and requirement state", () => {
+    const nonlinearSave: SaveSlot = {
+      ...validSaveSlot,
+      roomId: "room-2",
+      activatedRequirementIds: ["req-1-2"],
+      openedConnectorIds: ["conn-1-2", "conn-2-4"],
+      npcInteractionStates: { "npc-2": "heard", "npc-4": "resolved" },
+    };
+    delete (nonlinearSave as Partial<SaveSlot>).currentRoom;
+
+    SaveRepository.save(1, nonlinearSave);
+    const resumed = SaveRepository.load(1);
+    expect(resumed?.activatedRequirementIds).toEqual(["req-1-2"]);
+    expect(resumed?.openedConnectorIds).toEqual(["conn-1-2", "conn-2-4"]);
+    expect(resumed?.npcInteractionStates).toEqual({ "npc-2": "heard", "npc-4": "resolved" });
+  });
+
   it("validates structural integrity of save slots correctly", () => {
     expect(SaveRepository.validateSaveSlot(validSaveSlot)).toBe(true);
     expect(SaveRepository.validateSaveSlot(null)).toBe(false);

@@ -41,12 +41,21 @@ import { CLOSE_PX, FAR_PX, zoneBetween } from "../systems/position";
 import { castSelectedSpell, type SpellDeps } from "../systems/spells";
 import { TrapSystem } from "../systems/traps";
 import {
-  DUNGEON_H,
-  DUNGEON_W,
-  ROOM_BANDS,
   dungeonAt,
   type DungeonDefinition,
+  type ExpandedConnector,
+  type TalkableNpcSpec,
 } from "../level/dungeons";
+import { expandDungeon } from "../level/expand";
+import { generateAbstractDungeon, type GenerateOptions } from "../level/generate";
+import type { TopologyId } from "../level/topology";
+import type { Orientation } from "../level/embedding";
+import { roomAt, roomAtTolerant } from "../level/geometry";
+import {
+  canTraverseConnector,
+  openConnector,
+  roomsAlertedByNoise,
+} from "../level/connectors";
 import { TILE } from "../textures";
 import { serializeCharacter, deserializeCharacter, type SaveSlot } from "../state";
 import { SaveRepository } from "../SaveRepository";
@@ -72,6 +81,12 @@ interface RescuableNpc {
   x: number;
   y: number;
   rescued: boolean;
+}
+
+interface TalkableNpc {
+  spec: TalkableNpcSpec;
+  sprite: Phaser.GameObjects.Image;
+  marker: Phaser.GameObjects.Text;
 }
 
 interface Pickup {
@@ -103,6 +118,15 @@ export class DungeonScene extends Phaser.Scene {
   private walls!: Phaser.Physics.Arcade.StaticGroup;
   private weakWalls!: Phaser.Physics.Arcade.StaticGroup;
   private portcullises!: Phaser.Physics.Arcade.StaticGroup;
+  private connectorGates = new Map<Phaser.Physics.Arcade.Image, ExpandedConnector>();
+  private connectorWeakWalls = new Map<Phaser.Physics.Arcade.Image, ExpandedConnector>();
+  private activatedRequirements = new Set<string>();
+  private openedConnectors = new Set<string>();
+  private connectorActorState = new WeakMap<Phaser.GameObjects.Components.Transform, {
+    roomId: string;
+    x: number;
+    y: number;
+  }>();
   private climbTiles: Phaser.GameObjects.Rectangle[] = [];
   private spikes: Phaser.Physics.Arcade.Image[] = [];
   private monsters: MonsterSprite[] = [];
@@ -112,6 +136,8 @@ export class DungeonScene extends Phaser.Scene {
   private fireEmitters: SpatialEmitter[] = [];
   private pickups: Pickup[] = [];
   private npcs: RescuableNpc[] = [];
+  private talkableNpcs: TalkableNpc[] = [];
+  private npcInteractionStates = new Map<string, "unmet" | "heard" | "resolved">();
   private campfires: { x: number; y: number; free: boolean }[] = [];
   private shrines: { x: number; y: number }[] = [];
   private door!: { x: number; y: number };
@@ -128,7 +154,7 @@ export class DungeonScene extends Phaser.Scene {
   private encounterWaves = 0;
   private interactPrompt!: Phaser.GameObjects.Text;
   loadedState: SaveSlot | null = null;
-  private lastRoomIndex = 1;
+  private lastRoomId = "room-1";
   private leaderMarker!: Phaser.GameObjects.Image;
   /** Read by the HUD to show the reroll hint. */
   luckWindow: LuckWindow | null = null;
@@ -178,6 +204,10 @@ export class DungeonScene extends Phaser.Scene {
     this.monsters = [];
     this.pickups = [];
     this.npcs = [];
+    this.talkableNpcs = [];
+    this.npcInteractionStates = new Map(
+      Object.entries(this.loadedState?.npcInteractionStates ?? {}) as [string, "unmet" | "heard" | "resolved"][],
+    );
     this.campfires = [];
     this.shrines = [];
     this.climbTiles = [];
@@ -189,8 +219,12 @@ export class DungeonScene extends Phaser.Scene {
     this.leftControlDown = false;
     this.encounterWaves = 0;
     this.rewardMarker = null;
+    this.connectorGates = new Map();
+    this.connectorWeakWalls = new Map();
+    this.activatedRequirements = new Set(this.loadedState?.activatedRequirementIds ?? []);
+    this.openedConnectors = new Set(this.loadedState?.openedConnectorIds ?? []);
+    this.connectorActorState = new WeakMap();
     this.rewardClaimed = this.loadedState?.hasCrown ?? false;
-    this.lastRoomIndex = this.loadedState ? this.loadedState.currentRoom : 1;
     this.usedCharacterNames = new Set(this.loadedState?.party.map((member) => member.name) ?? []);
     this.startingFighterName = this.loadedState ? "" : this.nextPlebName();
 
@@ -199,7 +233,8 @@ export class DungeonScene extends Phaser.Scene {
     const storedSeed = this.registry.get("runSeed");
     const runSeed = typeof storedSeed === "number" ? storedSeed : 0;
     const layoutSeed = (runSeed + dungeonIndex) >>> 0;
-    this.activeDungeon = dungeonAt(layoutSeed);
+    this.activeDungeon = this.resolveActiveDungeon(layoutSeed);
+    this.lastRoomId = this.resolveLoadedRoomId();
     this.currentReward = chooseDungeonReward(
       dungeonIndex,
       this.loadedState
@@ -216,10 +251,12 @@ export class DungeonScene extends Phaser.Scene {
       for (const e of this.fireEmitters) e.destroy();
     });
 
-    this.physics.world.setBounds(0, 0, DUNGEON_W * TILE, DUNGEON_H * TILE);
+    const worldW = this.activeDungeon.width * TILE;
+    const worldH = this.activeDungeon.height * TILE;
+    this.physics.world.setBounds(0, 0, worldW, worldH);
     // The framebuffer is render-scaled; zooming keeps the same 960x540 world view.
     this.cameras.main.setZoom(RENDER_SCALE);
-    this.cameras.main.setBounds(0, 0, DUNGEON_W * TILE, DUNGEON_H * TILE);
+    this.cameras.main.setBounds(0, 0, worldW, worldH);
     this.cameras.main.setBackgroundColor(this.activeDungeon.theme.background);
     this.createAtmosphere(layoutSeed);
 
@@ -230,6 +267,8 @@ export class DungeonScene extends Phaser.Scene {
     this.light = new LightSystem(this, this.ctx, this.activeDungeon.theme.darkness);
 
     this.buildLevel();
+    this.createConnectorTelegraphs();
+    this.activateRoomRequirements(this.lastRoomId, false);
     this.lightTorch(this.party.leader, "You light a torch.");
     this.trapSystem = new TrapSystem(
       this,
@@ -336,7 +375,7 @@ export class DungeonScene extends Phaser.Scene {
   /** Spawn an encounter wave off-screen, already hunting the party. */
   private spawnEncounterWave(monsterId: string, count: number, x: number): void {
     if (this.gameOver || this.won) return;
-    const clampedX = Phaser.Math.Clamp(x, TILE * 1.5, (DUNGEON_W - 2) * TILE);
+    const clampedX = Phaser.Math.Clamp(x, TILE * 1.5, (this.activeDungeon.width - 2) * TILE);
     const groupId = `encounter-${this.encounterWaves++}`;
     for (let i = 0; i < count; i++) {
       const m = new MonsterSprite(
@@ -364,8 +403,8 @@ export class DungeonScene extends Phaser.Scene {
   }
 
   private createAtmosphere(dungeonIndex: number): void {
-    const worldW = DUNGEON_W * TILE;
-    const worldH = DUNGEON_H * TILE;
+    const worldW = this.activeDungeon.width * TILE;
+    const worldH = this.activeDungeon.height * TILE;
     const theme = this.activeDungeon.theme;
 
     this.add
@@ -401,7 +440,7 @@ export class DungeonScene extends Phaser.Scene {
 
     // Deterministic motes make each theme feel alive without affecting play.
     for (let i = 0; i < 36; i++) {
-      const x = ((i * 173 + dungeonIndex * 97) % (DUNGEON_W * TILE - 80)) + 40;
+      const x = ((i * 173 + dungeonIndex * 97) % (worldW - 80)) + 40;
       const y = ((i * 71 + dungeonIndex * 43) % 330) + 90;
       const mote = this.add
         .image(x, y, "pixel")
@@ -421,18 +460,14 @@ export class DungeonScene extends Phaser.Scene {
       });
     }
 
-    const roomLabels = [
-      "I  THE GATE",
-      "II  THE TEST",
-      "III  THE SETBACK",
-      "IV  THE CLIMAX",
-      "V  THE REWARD",
-      "SANCTUARY",
-    ];
-    const roomCenters = [11, 31, 53, 74, 91, 108];
-    roomLabels.forEach((label, i) => {
+    // Room labels are drawn from the active dungeon's regions, so the backdrop
+    // annotates whatever layout was generated rather than a fixed room band.
+    for (const region of this.activeDungeon.regions) {
+      // Anchor near the top of the region (56px into the first row for the legacy
+      // layout), so tall vertical rooms still read their label from above.
+      const labelY = region.y1 * TILE + 24;
       this.add
-        .text(roomCenters[i]! * TILE, 56, label, {
+        .text(region.labelX * TILE, labelY, region.title, {
           fontFamily: "Georgia, serif",
           fontSize: "18px",
           color: `#${theme.accent.toString(16).padStart(6, "0")}`,
@@ -442,14 +477,14 @@ export class DungeonScene extends Phaser.Scene {
         .setOrigin(0.5)
         .setAlpha(0.22)
         .setDepth(-5);
-    });
+    }
   }
 
   private buildLevel(): void {
     const theme = this.activeDungeon.theme;
-    for (let y = 0; y < DUNGEON_H; y++) {
+    for (let y = 0; y < this.activeDungeon.height; y++) {
       const row = this.activeDungeon.grid[y]!;
-      for (let x = 0; x < DUNGEON_W; x++) {
+      for (let x = 0; x < this.activeDungeon.width; x++) {
         const ch = row[x]!;
         const px = x * TILE + TILE / 2;
         const py = y * TILE + TILE / 2;
@@ -461,7 +496,14 @@ export class DungeonScene extends Phaser.Scene {
               .setDepth(1);
             break;
           case "%":
-            this.weakWalls.create(px, py, "tile-weak").setTint(theme.stoneTint).setDepth(2);
+            {
+              const wall = this.weakWalls.create(px, py, "tile-weak").setTint(theme.stoneTint).setDepth(2);
+              const connector = this.activeDungeon.connectors?.find(
+                (entry) => entry.blocker?.x === x && entry.blocker?.y === y,
+              );
+              if (connector && this.openedConnectors.has(connector.id)) wall.destroy();
+              else if (connector) this.connectorWeakWalls.set(wall, connector);
+            }
             break;
           case "=": {
             // One-way platform: solid on top only, jump up through it.
@@ -482,6 +524,11 @@ export class DungeonScene extends Phaser.Scene {
           case "+": {
             const gate = this.portcullises.create(px, py, "tile-portcullis");
             gate.setTint(theme.stoneTint).setDepth(6);
+            const connector = this.activeDungeon.connectors?.find(
+              (entry) => entry.blocker?.x === x && entry.blocker?.y === y,
+            );
+            if (connector && this.openedConnectors.has(connector.id)) gate.destroy();
+            else if (connector) this.connectorGates.set(gate, connector);
             break;
           }
           case "^": {
@@ -517,15 +564,23 @@ export class DungeonScene extends Phaser.Scene {
               this.addNpc("wizard", this.nextPlebName(), px, py);
             }
             break;
+          case "N": {
+            const spec = this.activeDungeon.talkableNpcs?.find(
+              (candidate) => candidate.tile.x === x && candidate.tile.y === y,
+            );
+            if (!spec) throw new Error(`Talkable NPC at (${x},${y}) has no deterministic spec`);
+            this.addTalkableNpc(spec, px, py);
+            break;
+          }
           case "g":
           case "s":
           case "r":
           case "O": {
             const defId = { g: "goblin", s: "skeleton", r: "giant-rat", O: "gloom-ogre" }[ch];
             // One morale group per room: a leader in the room commands all of it.
-            const band = ROOM_BANDS.find((b) => x >= b.x1 && x <= b.x2);
-            if (!band) throw new Error(`Monster at x=${x} sits on a room divider`);
-            const m = new MonsterSprite(this, px, py, monster(defId), `room-${band.room}`, this.ctx.engine.dice);
+            const region = roomAt(this.activeDungeon.regions, x, y);
+            if (!region) throw new Error(`Monster at (${x},${y}) sits outside every room region`);
+            const m = new MonsterSprite(this, px, py, monster(defId), region.id, this.ctx.engine.dice);
             this.morale.register(m);
             this.monsters.push(m);
             break;
@@ -633,7 +688,7 @@ export class DungeonScene extends Phaser.Scene {
     }
 
     if (this.loadedState) {
-      const spawnPos = this.getRoomEntrancePos(this.loadedState.currentRoom);
+      const spawnPos = this.getRoomEntrancePos(this.lastRoomId);
       // The backward-compatible hasCrown flag now means the vault reward was claimed.
 
       this.loadedState.party.forEach((savedChar, idx) => {
@@ -654,6 +709,36 @@ export class DungeonScene extends Phaser.Scene {
       if (savedLeaderIndex !== -1) {
         this.party.selectLeader(savedLeaderIndex);
       }
+    }
+  }
+
+  /** Direction/state cues are authored from connector metadata, not tile guesses. */
+  private createConnectorTelegraphs(): void {
+    for (const connector of this.activeDungeon.connectors ?? []) {
+      if (connector.direction === "two-way") continue;
+      const forward = connector.direction === "from-to";
+      const points = forward ? connector.waypoints : [...connector.waypoints].reverse();
+      const origin = points[0]!;
+      const next = points[1] ?? origin;
+      const dx = Math.sign(next.x - origin.x);
+      const dy = Math.sign(next.y - origin.y);
+      const arrow = Math.abs(dy) > Math.abs(dx) ? (dy > 0 ? "↓" : "↑") : (dx > 0 ? "→" : "←");
+      const kind = connector.kind === "controlled-drop"
+        ? "CONTROLLED DROP"
+        : connector.kind === "slide" ? "SLIDE" : "ONE WAY";
+      this.add.text(
+        (origin.x + dx * 2) * TILE + TILE / 2,
+        (origin.y + dy * 2) * TILE - TILE * 0.75,
+        `${arrow} ${kind}`,
+        {
+          fontFamily: "Consolas, monospace",
+          fontSize: "10px",
+          color: "#e8b85c",
+          stroke: "#050508",
+          strokeThickness: 3,
+          resolution: RENDER_SCALE,
+        },
+      ).setOrigin(0.5).setAlpha(0.78).setDepth(5);
     }
   }
 
@@ -679,6 +764,20 @@ export class DungeonScene extends Phaser.Scene {
     const sprite = this.add.image(x, y, `char-${className}`).setDepth(8).setTint(0x777788);
     const prop = propKey ? this.add.image(x, y + (propKey === "shrine" ? 14 : 0), propKey).setDepth(9) : undefined;
     this.npcs.push({ sprite, prop, className, name, x, y, rescued: false });
+  }
+
+  private addTalkableNpc(spec: TalkableNpcSpec, x: number, y: number): void {
+    const state = this.npcInteractionStates.get(spec.id) ?? "unmet";
+    const sprite = this.add.image(x, y, "char-wizard").setDepth(8).setTint(0xd6b36a);
+    const marker = this.add.text(x, y - 30, state === "resolved" ? "·" : "!", {
+      fontFamily: "Georgia, serif",
+      fontSize: "18px",
+      color: state === "resolved" ? "#8a8068" : "#ffe090",
+      stroke: "#050508",
+      strokeThickness: 3,
+      resolution: RENDER_SCALE,
+    }).setOrigin(0.5).setDepth(10);
+    this.talkableNpcs.push({ spec, sprite, marker });
   }
 
   private addPickup(x: number, y: number, itemId: string, qty: number): void {
@@ -780,14 +879,20 @@ export class DungeonScene extends Phaser.Scene {
     // Keep all rules time (rounds, torches, spell effects) in lockstep with gameplay.
     this.ctx.engine.advance(delta);
 
+    // Directional connectors apply to the whole party (including followers) and
+    // monsters. Check before room-transition persistence observes the new room.
+    this.enforceConnectorTraversal();
+
     // Auto-save on room transition
-    const currentRoom = this.currentRoomIndex;
-    if (currentRoom !== this.lastRoomIndex) {
-      this.lastRoomIndex = currentRoom;
+    const currentRoom = this.currentRoomId;
+    if (currentRoom !== this.lastRoomId) {
+      this.lastRoomId = currentRoom;
+      this.activateRoomRequirements(currentRoom, true);
       this.saveToSlot(0);
     }
     this.updateLeaderInput(time, delta);
     this.party.updateFollowers(time, (m, dir, targetY) => this.followerCanStep(m, dir, targetY));
+    this.updateFollowerClimbs();
     this.updateFollowerSupport(time);
     this.trapSystem.update(time);
     this.updateMonsters(time, delta);
@@ -1082,6 +1187,7 @@ export class DungeonScene extends Phaser.Scene {
     // Attack
     if (this.keys.J!.isDown || this.keys.X!.isDown || this.leftControlDown) {
       const outcome = meleeSwing(this.meleeDeps(), leader);
+      if (outcome.swung) this.emitNoiseAt(leader.x, leader.y);
       if (outcome.swung && leader.character.className === "fighter") this.breakWeakWalls(leader);
       if (outcome.check && !outcome.check.success) {
         this.offerLuck(leader, "the blade finds its mark", () => {
@@ -1142,12 +1248,16 @@ export class DungeonScene extends Phaser.Scene {
     for (const w of hits) {
       const img = w as Phaser.Physics.Arcade.Image;
       floatText(this, img.x, img.y, "CRUNCH", "#d0a060");
+      const connector = this.connectorWeakWalls.get(img);
+      if (connector) openConnector(connector, this.activatedRequirements, this.openedConnectors);
       img.destroy();
     }
     if (hits.length > 0) {
       sfx.crunch();
       this.cameras.main.shake(120, 0.006);
       this.ctx.say("Brakka smashes through the crumbling wall!", "#d0a060");
+      this.emitNoiseAt(leader.x, leader.y);
+      this.saveToSlot(0);
     }
   }
 
@@ -1228,7 +1338,19 @@ export class DungeonScene extends Phaser.Scene {
       };
     }
 
-    // 2. Rescue an NPC
+    // 2. Talkable social encounters are distinct from immediate rescues.
+    const talkable = this.talkableNpcs.find(
+      (npc) => Phaser.Math.Distance.Between(leader.x, leader.y, npc.sprite.x, npc.sprite.y) < TILE * 1.8,
+    );
+    if (talkable) {
+      const state = this.npcInteractionStates.get(talkable.spec.id) ?? "unmet";
+      return {
+        label: `${state === "unmet" ? "speak with" : "continue with"} ${talkable.spec.name}`,
+        run: () => this.advanceNpcInteraction(talkable, leader),
+      };
+    }
+
+    // 3. Rescue an NPC
     const npc = this.npcs.find(
       (n) => !n.rescued && Phaser.Math.Distance.Between(leader.x, leader.y, n.x, n.y) < TILE * 1.6,
     );
@@ -1272,12 +1394,34 @@ export class DungeonScene extends Phaser.Scene {
       return image.active && Phaser.Math.Distance.Between(leader.x, leader.y, image.x, image.y) < TILE * 1.8;
     }) as Phaser.Physics.Arcade.Image | undefined;
     if (gate) {
+      const connector = this.connectorGates.get(gate);
+      const requirement = connector?.requirement;
+      if (requirement && !this.activatedRequirements.has(requirement.id)) {
+        return {
+          label: requirement.kind === "key" ? "requires its key" : "requires its switch",
+          run: () => this.ctx.say(
+            requirement.kind === "key" ? "The portcullis needs its key." : "The portcullis needs its switch.",
+            "#e0c060",
+          ),
+        };
+      }
       return {
-        label: "raise the portcullis",
+        label: connector?.state === "secret" ? "reveal the secret door" : "raise the portcullis",
         run: () => {
+          if (connector) {
+            const result = openConnector(connector, this.activatedRequirements, this.openedConnectors);
+            if (result === "requires-key" || result === "requires-switch") return;
+          }
           gate.destroy();
           sfx.doorThump();
-          this.ctx.say(`${leader.character.name} heaves the portcullis open.`, "#d0c080");
+          this.ctx.say(
+            connector?.state === "secret"
+              ? `${leader.character.name} finds a concealed release.`
+              : `${leader.character.name} heaves the portcullis open.`,
+            "#d0c080",
+          );
+          this.emitNoiseAt(leader.x, leader.y);
+          this.saveToSlot(0);
         },
       };
     }
@@ -1354,6 +1498,53 @@ export class DungeonScene extends Phaser.Scene {
     }
 
     return null;
+  }
+
+  private advanceNpcInteraction(npc: TalkableNpc, leader: CharacterSprite): void {
+    const { spec } = npc;
+    const state = this.npcInteractionStates.get(spec.id) ?? "unmet";
+    if (state === "unmet") {
+      this.npcInteractionStates.set(spec.id, "heard");
+      this.ctx.say(`${spec.name}, ${spec.role}: “${spec.introduction}”`, "#e8c878");
+      this.saveToSlot(0);
+      return;
+    }
+    if (state === "resolved") {
+      this.ctx.say(`${spec.name}: “${spec.resolution}”`, "#c8b888");
+      return;
+    }
+
+    if (spec.outcome === "give-torch") {
+      const torch = item("torch");
+      if (leader.character.inventory.canAdd(torch)) {
+        leader.character.inventory.add(torch);
+        this.ctx.say(`${spec.name} gives ${leader.character.name} a torch.`, "#d0e080");
+      } else {
+        this.ctx.say(`${leader.character.name} has no room for the offered torch.`, "#e0c060");
+        return;
+      }
+    } else if (spec.outcome === "reveal-route") {
+      const connector = (this.activeDungeon.connectors ?? []).find((candidate) =>
+        candidate.state === "secret" &&
+        !this.openedConnectors.has(candidate.id) &&
+        (candidate.fromRoomId === spec.roomId || candidate.toRoomId === spec.roomId),
+      );
+      if (connector) {
+        openConnector(connector, this.activatedRequirements, this.openedConnectors);
+        for (const [gate, mapped] of this.connectorGates) {
+          if (mapped.id === connector.id) gate.destroy();
+        }
+        for (const [wall, mapped] of this.connectorWeakWalls) {
+          if (mapped.id === connector.id) wall.destroy();
+        }
+        this.ctx.say(`${spec.name} reveals and opens ${connector.id}.`, "#d0e080");
+      }
+    }
+
+    this.npcInteractionStates.set(spec.id, "resolved");
+    npc.marker.setText("·").setColor("#8a8068");
+    this.ctx.say(`${spec.name}: “${spec.resolution}”`, "#e8c878");
+    this.saveToSlot(0);
   }
 
   private claimDungeonReward(): void {
@@ -1480,7 +1671,7 @@ export class DungeonScene extends Phaser.Scene {
       if (!m.active) continue;
       if (m.aiState === "fleeing") {
         m.updateAi(delta, this.party.leader);
-        if (m.x < TILE || m.x > (DUNGEON_W - 2) * TILE) m.destroy();
+        if (m.x < TILE || m.x > (this.activeDungeon.width - 2) * TILE) m.destroy();
         continue;
       }
       if (m.isSleeping) {
@@ -1511,6 +1702,75 @@ export class DungeonScene extends Phaser.Scene {
   private spatial(p: Vec2): sfx.SfxOpts {
     const l = this.party.leader;
     return spatialOpts(p, { x: l.x, y: l.y });
+  }
+
+  /** Alert the current room and rooms one open connector away. */
+  private emitNoiseAt(x: number, y: number): void {
+    const region = roomAtTolerant(
+      this.activeDungeon.regions,
+      Math.floor(x / TILE),
+      Math.floor(y / TILE),
+    );
+    if (!region) return;
+    const alerted = roomsAlertedByNoise(
+      region.id,
+      this.activeDungeon.connectors ?? [],
+      {
+        activatedRequirementIds: this.activatedRequirements,
+        openedConnectorIds: this.openedConnectors,
+      },
+    );
+    for (const monster of this.monsters) {
+      if (monster.active && monster.aiState === "patrol" && alerted.has(monster.groupId)) {
+        monster.alert();
+      }
+    }
+  }
+
+  /**
+   * Reject a room-to-room crossing when its connector is closed or points the
+   * other way. The last in-room position is retained across connector/filler
+   * cells, so a rejected actor returns to the side they entered from.
+   */
+  private enforceConnectorTraversal(): void {
+    const connectors = this.activeDungeon.connectors;
+    if (!connectors || connectors.length === 0) return;
+    const actors: (CharacterSprite | MonsterSprite)[] = [
+      ...this.party.members.filter((member) => member.active),
+      ...this.monsters.filter((monster) => monster.active),
+    ];
+    const persisted = {
+      activatedRequirementIds: this.activatedRequirements,
+      openedConnectorIds: this.openedConnectors,
+    };
+    for (const actor of actors) {
+      const region = roomAt(
+        this.activeDungeon.regions,
+        Math.floor(actor.x / TILE),
+        Math.floor(actor.y / TILE),
+      );
+      const previous = this.connectorActorState.get(actor);
+      if (!previous) {
+        if (region) this.connectorActorState.set(actor, { roomId: region.id, x: actor.x, y: actor.y });
+        continue;
+      }
+      if (!region) continue;
+      if (region.id === previous.roomId) {
+        previous.x = actor.x;
+        previous.y = actor.y;
+        continue;
+      }
+      const candidates = connectors.filter((connector) =>
+        (connector.fromRoomId === previous.roomId && connector.toRoomId === region.id) ||
+        (connector.toRoomId === previous.roomId && connector.fromRoomId === region.id),
+      );
+      if (candidates.some((connector) => canTraverseConnector(connector, previous.roomId, persisted))) {
+        this.connectorActorState.set(actor, { roomId: region.id, x: actor.x, y: actor.y });
+      } else {
+        actor.setPosition(previous.x, previous.y);
+        actor.setVelocity(0, 0);
+      }
+    }
   }
 
   private killMonster(m: MonsterSprite): void {
@@ -1563,6 +1823,27 @@ export class DungeonScene extends Phaser.Scene {
       if (row && solid(row[tx])) return true;
     }
     return targetY > m.y + TILE * 2;
+  }
+
+  /** Followers use the same universal ladders/ropes as the leader. */
+  private updateFollowerClimbs(): void {
+    const leader = this.party.leader;
+    for (const member of this.party.members) {
+      if (member === leader || !member.alive || member.mode === "hold") continue;
+      const touching = this.climbTiles.some(
+        (zone) => Math.abs(zone.x - member.x) <= TILE && Math.abs(zone.y - member.y) <= TILE * 1.5,
+      );
+      const verticalGap = leader.y - member.y;
+      if (touching && Math.abs(verticalGap) > TILE) {
+        const body = member.body as Phaser.Physics.Arcade.Body;
+        member.climbing = true;
+        body.setAllowGravity(false);
+        member.setVelocityY(Math.sign(verticalGap) * 100);
+      } else if (member.climbing) {
+        member.climbing = false;
+        (member.body as Phaser.Physics.Arcade.Body).setAllowGravity(true);
+      }
+    }
   }
 
   private followerAiState(id: string): { nextMoraleAt: number; rescueTargetId: string | null } {
@@ -1860,24 +2141,80 @@ export class DungeonScene extends Phaser.Scene {
     }
   }
 
-  get currentRoomIndex(): number {
+  /** The region the leader currently occupies (falls back to the last one). */
+  get currentRoomId(): string {
     const leaderX = Math.floor(this.party.leader.x / TILE);
-    const band = ROOM_BANDS.find((b) => leaderX >= b.x1 && leaderX <= b.x2 + 1);
-    return band ? band.room : 1;
+    const leaderY = Math.floor(this.party.leader.y / TILE);
+    const region = roomAtTolerant(this.activeDungeon.regions, leaderX, leaderY);
+    return region ? region.id : this.lastRoomId;
   }
 
-  private getRoomEntrancePos(roomIndex: number): { x: number; y: number } {
-    const band = ROOM_BANDS[roomIndex - 1];
-    if (!band) return { x: TILE * 1.5, y: TILE * 12.5 };
-    const startX = band.x1 + 1;
-    for (let y = 0; y < DUNGEON_H - 1; y++) {
+  /**
+   * The layout to render. `?nl=<seed>` renders a non-linear dungeon expanded from
+   * the abstract generator instead of a hand-authored one; `?nltopo` / `?nlorient`
+   * force a specific form/orientation for demonstration. New seeded runs use the
+   * generated layout; old saves without a room id retain their authored layout.
+   */
+  private resolveActiveDungeon(layoutSeed: number): DungeonDefinition {
+    const params = new URLSearchParams(window.location.search);
+    if (this.loadedState && !this.loadedState.roomId) return dungeonAt(layoutSeed);
+    const parsed = parseInt(params.get("nl") ?? String(layoutSeed), 10);
+    const nlSeed = (Number.isFinite(parsed) ? parsed : layoutSeed) >>> 0;
+    const opts: GenerateOptions = {};
+    const topo = params.get("nltopo");
+    const orient = params.get("nlorient");
+    if (topo) opts.topology = topo as TopologyId;
+    if (orient) opts.orientation = orient as Orientation;
+    return expandDungeon(generateAbstractDungeon(nlSeed, opts));
+  }
+
+  /** Keys are collected and switches activated on entering their source room. */
+  private activateRoomRequirements(roomId: string, announce: boolean): void {
+    for (const connector of this.activeDungeon.connectors ?? []) {
+      const requirement = connector.requirement;
+      if (!requirement || requirement.sourceRoomId !== roomId || this.activatedRequirements.has(requirement.id)) continue;
+      this.activatedRequirements.add(requirement.id);
+      if (announce) {
+        this.ctx.say(
+          requirement.kind === "key" ? "You find the gate key." : "You throw the gate switch.",
+          "#d0e080",
+        );
+      }
+    }
+  }
+
+  /** Resolve which room to spawn into on load, migrating pre-roomId saves. */
+  private resolveLoadedRoomId(): string {
+    const state = this.loadedState;
+    if (!state) {
+      for (let y = 0; y < this.activeDungeon.grid.length; y++) {
+        const x = this.activeDungeon.grid[y]!.indexOf("P");
+        const entrance = x >= 0 ? roomAt(this.activeDungeon.regions, x, y) : undefined;
+        if (entrance) return entrance.id;
+      }
+      return this.activeDungeon.regions[0]?.id ?? "room-1";
+    }
+    if (state.roomId) return state.roomId;
+    if (typeof state.currentRoom === "number") {
+      return this.activeDungeon.regions[state.currentRoom - 1]?.id ?? this.activeDungeon.regions[0]!.id;
+    }
+    return this.activeDungeon.regions[0]?.id ?? "room-1";
+  }
+
+  private getRoomEntrancePos(roomId: string): { x: number; y: number } {
+    const region = this.activeDungeon.regions.find((r) => r.id === roomId) ?? this.activeDungeon.regions[0];
+    if (!region) return { x: TILE * 1.5, y: TILE * 12.5 };
+    const startX = region.x1 + 1;
+    // Prefer a floor landing: an open cell sitting on solid ground.
+    for (let y = region.y1; y <= region.y2; y++) {
       const cell = this.activeDungeon.grid[y]?.[startX];
-      const cellUnder = this.activeDungeon.grid[y+1]?.[startX];
+      const cellUnder = this.activeDungeon.grid[y + 1]?.[startX];
       if (cell === "." && cellUnder === "#") {
         return { x: startX * TILE + TILE / 2, y: y * TILE + TILE / 2 };
       }
     }
-    for (let y = DUNGEON_H - 2; y >= 0; y--) {
+    // Otherwise the lowest open cell in the region.
+    for (let y = region.y2; y >= region.y1; y--) {
       const cell = this.activeDungeon.grid[y]?.[startX];
       if (cell === ".") {
         return { x: startX * TILE + TILE / 2, y: y * TILE + TILE / 2 };
@@ -1892,7 +2229,10 @@ export class DungeonScene extends Phaser.Scene {
       timestamp: Date.now(),
       dungeonIndex: this.registry.get("dungeonIndex") ?? 0,
       runSeed: this.registry.get("runSeed") ?? 0,
-      currentRoom: this.currentRoomIndex,
+      roomId: this.currentRoomId,
+      activatedRequirementIds: [...this.activatedRequirements],
+      openedConnectorIds: [...this.openedConnectors],
+      npcInteractionStates: Object.fromEntries(this.npcInteractionStates),
       hasCrown: this.hasCrown,
       kills: this.ctx.kills,
       coinsBanked: this.ctx.totalCoins,

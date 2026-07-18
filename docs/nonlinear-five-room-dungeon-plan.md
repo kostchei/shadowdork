@@ -111,6 +111,22 @@ keywords can be adapted into six Shadowdork content families:
 These are tags, not isolated room scripts. Theme, room role, connector state, party
 composition, and resource budget constrain the final template selection.
 
+The reference's own rules add three lessons the generator should adopt:
+
+- **Variable starting points.** The entrance is the lowest-numbered cell of the
+  rolled footprint, or optionally the cell marked by the layout roll itself — the
+  starting point is a property of the footprint roll, not a fixed corner. When the
+  roll produces duplicate lowest values, the reference permits multiple entrances
+  and exits. Shadowdork may adapt this as a seeded secondary entrance or alternate
+  exit on footprints that support it.
+- **Adjacency implies potential connection.** Wherever two cells touch, a doorway
+  or connecting hall *can* exist — adjacency is an invitation, not an obligation,
+  which matches the graph-edge-versus-physical-connector split above.
+- **A two-zone walk between encounters is acceptable pacing.** Encounter rooms do
+  not need to be directly adjacent; routing an edge through one or two quiet
+  connector cells is fine and often better than teleport-dense adjacency. Travel
+  itself is part of the dungeon's rhythm.
+
 The image also demonstrates that the entrance need not be lower-left. Shadowdork
 may begin at a suitable boundary cell at the top, side, or bottom of the macro-grid.
 
@@ -166,6 +182,11 @@ The entrance may occupy any boundary-facing room cell with a safe spawn landing:
 
 Orientations and reflections are part of seeded variation. A layout must not assume
 that progress always moves right or upward.
+
+Where a footprint supports it, a seed may also select a secondary entrance or
+alternate exit (the reference's duplicate-lowest-roll rule). A secondary opening is
+never mandatory for completion; it exists as route choice, an escape option, or a
+shortcut discovered from inside.
 
 The sanctuary and exit are attached after the five-room graph. They may be reached
 from any boundary-facing reward or post-climax room. Where practical, choose an exit
@@ -270,6 +291,9 @@ type ConnectorState =
 
 ### Connector requirements
 
+- A routed edge may pass through up to two filler cells between rooms. A two-zone
+  walk between encounters is acceptable pacing; longer routes need a landmark,
+  resource, or scenery beat so the journey stays legible and worthwhile.
 - Ordinary ladders and ropes are universal traversal.
 - Vines, narrow shafts, and difficult climbs may be class-favoured shortcuts only.
 - A mandatory weak wall must have a universal interaction or an alternate route;
@@ -335,6 +359,21 @@ For a run seed, the generator independently derives:
 Changing a room template must not change the topology roll. Cosmetic random calls
 must not perturb gameplay generation.
 
+Replayability therefore comes from four independent variance axes, and the same
+value on one axis must still permit the full range of the others:
+
+1. **Space** — footprint, embedding, orientation.
+2. **Starting point** — entrance cell (and any secondary opening) within that
+   footprint.
+3. **Order** — which narrative beat lands on which node; the walk order of beats is
+   not the authored order 1-5.
+4. **Contents** — content family and keyword tags per room (the reference's second
+   d6 roll), then the concrete template.
+
+Two runs sharing a footprint should still feel different when their entrance, beat
+order, or contents differ; seeded tests should assert this independence rather than
+only asserting that grids differ.
+
 ### Content constraints
 
 - Exactly one climax and one campaign reward.
@@ -384,9 +423,23 @@ RunIdentity
   -> accept, or deterministically retry with the next candidate
 ```
 
-Retries are bounded. If a seed exhausts its candidate budget, generation uses a
-known-good topology/template fallback while retaining the seed for debugging. It
-must never publish a partially validated dungeon.
+Retries are bounded and deterministic: candidate `c` derives all its randomness
+from `hash(seed, stage#c)`, so the accepted dungeon is stable per seed.
+
+On candidate-budget exhaustion the generator **throws**, retaining the seed and the
+per-candidate diagnostics for debugging. It does not substitute a known-good
+fallback. This is a deliberate revision of the earlier "known-good fallback"
+direction, for two reasons:
+
+1. Project policy is no silent fallbacks — surface the failure instead of shipping
+   a substitute the caller did not ask for.
+2. A fallback would mask exactly the weak constraint that caused exhaustion. The
+   guarantee that exhaustion never happens for a released topology is instead
+   enforced up front by the property tests (>=1,000 seeds per topology, every
+   supported orientation), so a throw in production would signal a real regression,
+   not an expected event.
+
+It must never publish a partially validated dungeon.
 
 ## Navigability validation
 
@@ -655,7 +708,7 @@ The feature is complete when:
 | Monsters turn every branch into compulsory combat. | Budget mandatory encounters and require bypasses for outmatched guards. |
 | Procedural rooms lose theme identity. | Templates declare theme and connector compatibility; theme is selected before content. |
 | NPCs remain invisible or behave like treasure. | Give talkable NPCs a separate interaction state, visual treatment, placement rate, and persistence tests. |
-| Generation retries hide weak constraints. | Bound retries, record diagnostics, use a known-good fallback, and property-test each topology independently. |
+| Generation retries hide weak constraints. | Bound retries, record diagnostics, throw on exhaustion (no fallback), and property-test each topology independently so exhaustion cannot occur for a released topology. |
 
 ### Review conclusion
 

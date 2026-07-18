@@ -10,6 +10,54 @@
  * validateGrid before it reaches the renderer — invalid grids throw.
  */
 
+import type { RoomRegion } from "./geometry";
+import type {
+  ContentFamily,
+  ConnectorDirection,
+  ConnectorKind,
+  ConnectorState,
+  Requirement,
+} from "./model";
+
+/** A connector after macro expansion, retained for rendering and runtime rules. */
+export interface ExpandedConnector {
+  id: string;
+  fromRoomId: string;
+  toRoomId: string;
+  kind: ConnectorKind;
+  state: ConnectorState;
+  direction: ConnectorDirection;
+  requirement?: Requirement;
+  /** Representative tile at each end used by physical validation. */
+  entry: { x: number; y: number };
+  landing: { x: number; y: number };
+  /** Tile-space polyline retained so each physical segment can be validated. */
+  waypoints: readonly { x: number; y: number }[];
+  /** Tile occupied by an initially closed physical blocker, when applicable. */
+  blocker?: { x: number; y: number };
+  vertical: boolean;
+}
+
+export type TalkableNpcOutcome = "give-torch" | "reveal-route" | "warning";
+
+export interface TalkableNpcSpec {
+  id: string;
+  roomId: string;
+  tile: TilePoint;
+  name: string;
+  role: string;
+  introduction: string;
+  resolution: string;
+  outcome: TalkableNpcOutcome;
+}
+
+export interface ExpandedRoomContent {
+  roomId: string;
+  family: ContentFamily;
+  templateId: string;
+  pressures: readonly ("light" | "hp" | "inventory" | "time" | "position")[];
+}
+
 export const DUNGEON_W = 120;
 export const DUNGEON_H = 17;
 
@@ -22,6 +70,37 @@ export const ROOM_BANDS: readonly { room: number; x1: number; x2: number }[] = [
   { room: 5, x1: 86, x2: 97 },
   { room: 6, x1: 99, x2: 118 }, // sanctuary
 ];
+
+/** Interior play area spans y = 1..14; walls sit at y = 0 and the floor below 14. */
+const LEGACY_ROOM_Y1 = 1;
+const LEGACY_ROOM_Y2 = 14;
+
+const LEGACY_ROOM_LABELS: readonly { title: string; label: string; ordinal: string }[] = [
+  { title: "I  THE GATE", label: "THE GATE", ordinal: "I" },
+  { title: "II  THE TEST", label: "THE TEST", ordinal: "II" },
+  { title: "III  THE SETBACK", label: "THE SETBACK", ordinal: "III" },
+  { title: "IV  THE CLIMAX", label: "THE CLIMAX", ordinal: "IV" },
+  { title: "V  THE REWARD", label: "THE REWARD", ordinal: "V" },
+  { title: "SANCTUARY", label: "SANCTUARY", ordinal: "VI" },
+];
+
+/** Backdrop label anchors, preserved from the original createAtmosphere layout. */
+const LEGACY_LABEL_X = [11, 31, 53, 74, 91, 108];
+
+/** The six regions of the fixed horizontal layout, in (x, y) form. */
+export const LEGACY_REGIONS: readonly RoomRegion[] = ROOM_BANDS.map((band, i) => {
+  const meta = LEGACY_ROOM_LABELS[i]!;
+  return {
+    id: band.room === 6 ? "sanctuary" : `room-${band.room}`,
+    title: meta.title,
+    hud: `ROOM ${meta.ordinal}  |  ${meta.label}`,
+    x1: band.x1,
+    y1: LEGACY_ROOM_Y1,
+    x2: band.x2,
+    y2: LEGACY_ROOM_Y2,
+    labelX: LEGACY_LABEL_X[i]!,
+  };
+});
 
 /** Featured stateful traps are memorable punctuation, not mandatory wallpaper. */
 export const FEATURED_TRAP_CHANCE = 0.4;
@@ -137,7 +216,7 @@ export type FeaturedTrapKind = FeaturedTrapSpec["kind"];
 
 const MONSTER_TILES = new Set(["g", "s", "r", "O"]);
 const RESCUE_TILES = new Set(["2", "3", "4"]);
-export const LEGAL_TILES = new Set([..."." , ..."#%=|+^P234gsrOcGIKtnfFDb*qvh:"]);
+export const LEGAL_TILES = new Set([..."." , ..."#%=|+^P234NgsrOcGIKtnfFDb*qvh:"]);
 
 export interface DungeonTheme {
   background: number;
@@ -165,6 +244,15 @@ export interface DungeonDefinition {
   tagline: string;
   objective: string;
   grid: readonly string[];
+  /** World size in tiles; the scene reads these instead of module constants. */
+  width: number;
+  height: number;
+  /** (x, y) room regions replacing the horizontal-band lookup. */
+  regions: readonly RoomRegion[];
+  /** Present on expanded non-linear layouts; authored legacy dungeons have none. */
+  connectors?: readonly ExpandedConnector[];
+  roomContents?: readonly ExpandedRoomContent[];
+  talkableNpcs?: readonly TalkableNpcSpec[];
   theme: DungeonTheme;
   pools: VariantPools;
   traps: readonly FeaturedTrapSpec[];
@@ -856,7 +944,10 @@ const ALL_SANCTUARIES = [0, 1, 2] as const;
  * (The Crystal Chasm and Sunken Bastion recolors were removed: they return
  * when they have at least one mechanic of their own — see the scope doc.)
  */
-const DUNGEON_BASES: readonly Omit<DungeonDefinition, "grid" | "traps">[] = [
+const DUNGEON_BASES: readonly Omit<
+  DungeonDefinition,
+  "grid" | "traps" | "width" | "height" | "regions"
+>[] = [
   {
     id: "gloom-below",
     name: "The Gloom Below",
@@ -961,7 +1052,13 @@ const DUNGEON_BASES: readonly Omit<DungeonDefinition, "grid" | "traps">[] = [
 
 export const DUNGEONS: readonly DungeonDefinition[] = DUNGEON_BASES.map((base, i) => {
   const layout = generateLayout(base.pools, i, base.trapKinds);
-  return { ...base, ...layout };
+  return {
+    ...base,
+    ...layout,
+    width: DUNGEON_W,
+    height: DUNGEON_H,
+    regions: LEGACY_REGIONS,
+  };
 });
 
 /**
@@ -973,5 +1070,11 @@ export function dungeonAt(index: number): DungeonDefinition {
   if (!Number.isInteger(index)) throw new Error(`Dungeon index must be an integer, got ${index}`);
   const wrapped = ((index % DUNGEONS.length) + DUNGEONS.length) % DUNGEONS.length;
   const base = DUNGEONS[wrapped]!;
-  return { ...base, ...generateLayout(base.pools, index, base.trapKinds) };
+  return {
+    ...base,
+    ...generateLayout(base.pools, index, base.trapKinds),
+    width: DUNGEON_W,
+    height: DUNGEON_H,
+    regions: LEGACY_REGIONS,
+  };
 }

@@ -6,7 +6,7 @@ import { validatePhysicalDungeon } from "../src/game/level/physical";
 import { ORIENTATIONS } from "../src/game/level/embedding";
 import { TOPOLOGIES } from "../src/game/level/topology";
 
-const LEGAL_TILES = new Set([..."." , ..."#%=|+^P234gsrOcGIKtnfFDb*qvh:"]);
+const LEGAL_TILES = new Set([..."." , ..."#%=|+^P234NgsrOcGIKtnfFDb*qvh:"]);
 const MONSTER_TILES = new Set(["g", "s", "r", "O"]);
 
 function countTile(grid: readonly string[], ch: string): number {
@@ -106,6 +106,25 @@ describe("tile expansion", () => {
     const a = expandDungeon(generateAbstractDungeon(7));
     const b = expandDungeon(generateAbstractDungeon(7));
     expect(a.grid.join("\n")).toBe(b.grid.join("\n"));
+    expect(a.roomContents).toEqual(b.roomContents);
+    expect(a.talkableNpcs).toEqual(b.talkableNpcs);
+  });
+
+  it("selects templates by all six content families and caps deterministic NPCs", () => {
+    const families = new Set<string>();
+    let runsWithNpc = 0;
+    for (let seed = 0; seed < 100; seed++) {
+      const expanded = expandDungeon(generateAbstractDungeon(seed));
+      for (const content of expanded.roomContents ?? []) families.add(content.family);
+      expect(expanded.roomContents).toHaveLength(5);
+      expect(expanded.talkableNpcs?.length ?? 0).toBeLessThanOrEqual(1);
+      if ((expanded.talkableNpcs?.length ?? 0) > 0) runsWithNpc++;
+    }
+    expect([...families].sort()).toEqual([
+      "challenge", "discovery", "hazard", "opportunity", "pressure", "twist",
+    ]);
+    expect(runsWithNpc).toBeGreaterThanOrEqual(35);
+    expect(runsWithNpc).toBeLessThanOrEqual(65);
   });
 
   it("retains semantic connector metadata and validates every physical form", () => {
@@ -127,5 +146,22 @@ describe("tile expansion", () => {
         }
       }
     }
+  });
+
+  it("rejects a physical layout whose connector directions block reward/exit", () => {
+    const expanded = expandDungeon(
+      generateAbstractDungeon(11, { topology: "railroad", orientation: "identity" }),
+    );
+    const connectors = (expanded.connectors ?? []).map((connector) => ({
+      ...connector,
+      // Every edge points toward its `from` endpoint, so at least one edge on
+      // the railroad must oppose the entrance-to-exit completion route.
+      state: "one-way" as const,
+      direction: "to-from" as const,
+      kind: "controlled-drop" as const,
+    }));
+    const result = validatePhysicalDungeon({ ...expanded, connectors });
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toContain("no-state-aware-completion-path");
   });
 });

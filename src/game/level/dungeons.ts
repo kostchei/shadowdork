@@ -12,6 +12,7 @@
 
 import type { RoomRegion } from "./geometry";
 import type {
+  ContentFamily,
   ConnectorDirection,
   ConnectorKind,
   ConnectorState,
@@ -30,9 +31,31 @@ export interface ExpandedConnector {
   /** Representative tile at each end used by physical validation. */
   entry: { x: number; y: number };
   landing: { x: number; y: number };
+  /** Tile-space polyline retained so each physical segment can be validated. */
+  waypoints: readonly { x: number; y: number }[];
   /** Tile occupied by an initially closed physical blocker, when applicable. */
   blocker?: { x: number; y: number };
   vertical: boolean;
+}
+
+export type TalkableNpcOutcome = "give-torch" | "reveal-route" | "warning";
+
+export interface TalkableNpcSpec {
+  id: string;
+  roomId: string;
+  tile: TilePoint;
+  name: string;
+  role: string;
+  introduction: string;
+  resolution: string;
+  outcome: TalkableNpcOutcome;
+}
+
+export interface ExpandedRoomContent {
+  roomId: string;
+  family: ContentFamily;
+  templateId: string;
+  pressures: readonly ("light" | "hp" | "inventory" | "time" | "position")[];
 }
 
 export const DUNGEON_W = 120;
@@ -193,7 +216,7 @@ export type FeaturedTrapKind = FeaturedTrapSpec["kind"];
 
 const MONSTER_TILES = new Set(["g", "s", "r", "O"]);
 const RESCUE_TILES = new Set(["2", "3", "4"]);
-export const LEGAL_TILES = new Set([..."." , ..."#%=|+^P234gsrOcGIKtnfFDb*qvh:"]);
+export const LEGAL_TILES = new Set([..."." , ..."#%=|+^P234NgsrOcGIKtnfFDb*qvh:"]);
 
 export interface DungeonTheme {
   background: number;
@@ -228,6 +251,8 @@ export interface DungeonDefinition {
   regions: readonly RoomRegion[];
   /** Present on expanded non-linear layouts; authored legacy dungeons have none. */
   connectors?: readonly ExpandedConnector[];
+  roomContents?: readonly ExpandedRoomContent[];
+  talkableNpcs?: readonly TalkableNpcSpec[];
   theme: DungeonTheme;
   pools: VariantPools;
   traps: readonly FeaturedTrapSpec[];

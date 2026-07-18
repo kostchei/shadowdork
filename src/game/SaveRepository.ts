@@ -188,6 +188,10 @@ export class SaveRepository {
     if (typeof obj.roomId !== "string" && typeof obj.currentRoom !== "number") return false;
     if (obj.activatedRequirementIds !== undefined && (!Array.isArray(obj.activatedRequirementIds) || !obj.activatedRequirementIds.every((id: unknown) => typeof id === "string"))) return false;
     if (obj.openedConnectorIds !== undefined && (!Array.isArray(obj.openedConnectorIds) || !obj.openedConnectorIds.every((id: unknown) => typeof id === "string"))) return false;
+    if (obj.npcInteractionStates !== undefined) {
+      if (!obj.npcInteractionStates || typeof obj.npcInteractionStates !== "object" || Array.isArray(obj.npcInteractionStates)) return false;
+      if (!Object.values(obj.npcInteractionStates).every((state) => state === "unmet" || state === "heard" || state === "resolved")) return false;
+    }
     if (typeof obj.hasCrown !== "boolean") return false;
     if (typeof obj.kills !== "number") return false;
     if (typeof obj.coinsBanked !== "number") return false;

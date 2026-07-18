@@ -1,91 +1,138 @@
-/**
- * Room-content templates for tile expansion.
- *
- * A template stamps a room's contents (spawn, monsters, treasure, hazards,
- * sanctuary fittings) in room-local coordinates, so the same beat can be placed
- * into any macro-cell the embedding chose. Geometry — walls, floors, connector
- * openings — is the expander's job; templates only decorate the carved interior.
- *
- * This is the minimal Milestone 2 set: enough per-beat identity to prove that a
- * Railroad and a vertical form render and play from the same data model. The
- * richer content-family/tag catalogue is Milestone 4.
- */
+/** Deterministic, content-family keyed room templates for expanded dungeons. */
 
-import type { Beat } from "./model";
+import type { ConnectorKind, ContentFamily, DungeonRoomNode } from "./model";
 
 export interface RoomStamp {
-  /** Interior width of the cell in tiles. */
   width: number;
-  /** Themed encounter monster glyph for this dungeon (e.g. "g", "s"). */
   monsterGlyph: string;
-  /** Place a tile at the standing row, cell-local x. */
   put(localX: number, ch: string): void;
-  /**
-   * True when local x is a usable standing spot: the standing row and the head
-   * row above it are open, and the tile below is solid floor (not a shaft hole).
-   */
   canStand(localX: number): boolean;
 }
 
-/** Place a content tile on the nearest usable standing spot to preferredX. */
-function placeOnFloor(s: RoomStamp, preferredX: number, ch: string): void {
+export type RoomPressure = "light" | "hp" | "inventory" | "time" | "position";
+
+export interface RoomTemplate {
+  id: string;
+  family: ContentFamily;
+  pressures: readonly RoomPressure[];
+  minDegree: number;
+  maxDegree: number;
+  connectorKinds?: readonly ConnectorKind[];
+  npc?: true;
+  stamp(s: RoomStamp, place: (preferredX: number, ch: string) => number | undefined): void;
+}
+
+export interface RoomStampResult {
+  templateId: string;
+  pressures: readonly RoomPressure[];
+  npcLocalX?: number;
+}
+
+const templates: readonly RoomTemplate[] = [
+  { id: "discovery-brazier", family: "discovery", pressures: ["light"], minDegree: 1, maxDegree: 4,
+    stamp: (_s, place) => { place(8, "b"); place(12, "t"); } },
+  { id: "discovery-witness", family: "discovery", pressures: ["time"], minDegree: 1, maxDegree: 4, npc: true,
+    stamp: (_s, place) => { place(9, "N"); place(13, "c"); } },
+  { id: "challenge-guard", family: "challenge", pressures: ["hp"], minDegree: 1, maxDegree: 4,
+    stamp: (s, place) => { place(8, s.monsterGlyph); place(13, "c"); } },
+  { id: "challenge-pair", family: "challenge", pressures: ["hp", "position"], minDegree: 1, maxDegree: 3,
+    stamp: (s, place) => { place(7, s.monsterGlyph); place(12, s.monsterGlyph); place(15, "t"); } },
+  { id: "hazard-spikes", family: "hazard", pressures: ["hp", "position"], minDegree: 1, maxDegree: 4,
+    stamp: (_s, place) => { place(8, "^"); place(12, "^"); place(15, "n"); } },
+  { id: "hazard-rubble", family: "hazard", pressures: ["time", "position"], minDegree: 1, maxDegree: 4,
+    stamp: (_s, place) => { place(10, "%"); place(14, "t"); } },
+  { id: "opportunity-cache", family: "opportunity", pressures: ["inventory"], minDegree: 1, maxDegree: 4,
+    stamp: (_s, place) => { place(8, "c"); place(12, "G"); } },
+  { id: "opportunity-shrine", family: "opportunity", pressures: ["inventory"], minDegree: 1, maxDegree: 3,
+    stamp: (_s, place) => { place(9, "b"); place(13, "n"); } },
+  { id: "pressure-arena", family: "pressure", pressures: ["hp", "light"], minDegree: 1, maxDegree: 4,
+    stamp: (s, place) => { place(7, s.monsterGlyph); place(12, s.monsterGlyph); place(10, "b"); } },
+  { id: "pressure-dark", family: "pressure", pressures: ["hp", "time"], minDegree: 1, maxDegree: 3,
+    stamp: (s, place) => { place(8, s.monsterGlyph); place(13, s.monsterGlyph); } },
+  { id: "twist-false-wall", family: "twist", pressures: ["time", "position"], minDegree: 1, maxDegree: 4,
+    stamp: (_s, place) => { place(9, "%"); place(14, "c"); } },
+  { id: "twist-dispute", family: "twist", pressures: ["inventory", "time"], minDegree: 1, maxDegree: 4, npc: true,
+    stamp: (_s, place) => { place(9, "N"); place(13, "I"); } },
+];
+
+export const ROOM_TEMPLATES: readonly RoomTemplate[] = templates;
+
+function hash(seed: number, text: string): number {
+  let value = seed >>> 0;
+  for (let i = 0; i < text.length; i++) {
+    value = Math.imul(value ^ text.charCodeAt(i), 0x45d9f3b) >>> 0;
+  }
+  return value;
+}
+
+function placeOnFloor(s: RoomStamp, preferredX: number, ch: string): number | undefined {
   for (let dx = 0; dx < s.width; dx++) {
     for (const x of [preferredX + dx, preferredX - dx]) {
       if (x > 0 && x < s.width - 1 && s.canStand(x)) {
         s.put(x, ch);
-        return;
+        return x;
       }
     }
   }
+  return undefined;
 }
 
-/**
- * Stamp a room's contents for its beat. `isReward`/`isExit` layer the campaign
- * reward and the sanctuary (campfire, shrine, exit door) onto whichever rooms the
- * generator chose for them, independent of the beat.
- */
+export function chooseRoomTemplate(
+  room: DungeonRoomNode,
+  seed: number,
+  degree: number,
+  connectorKinds: readonly ConnectorKind[],
+  npcMode: "required" | "forbidden" | "optional" = "optional",
+): RoomTemplate {
+  const compatible = templates.filter((template) =>
+    template.family === room.contentFamily &&
+    degree >= template.minDegree && degree <= template.maxDegree &&
+    (npcMode === "optional" || (npcMode === "required" ? template.npc === true : template.npc !== true)) &&
+    (!template.connectorKinds || connectorKinds.some((kind) => template.connectorKinds!.includes(kind))),
+  );
+  if (compatible.length === 0) throw new Error(`No compatible ${room.contentFamily} template for ${room.id}`);
+  return compatible[hash(seed, `room-template:${room.id}`) % compatible.length]!;
+}
+
+/** Stamp deterministic family content, then layer invariant campaign landmarks. */
 export function stampRoom(
-  beat: Beat,
-  opts: { isEntrance: boolean; isReward: boolean; isExit: boolean },
+  room: DungeonRoomNode,
+  opts: { isEntrance: boolean; isReward: boolean; isExit: boolean; allowNpc: boolean },
   s: RoomStamp,
-): void {
-  const mid = Math.floor(s.width / 2);
+  template: RoomTemplate,
+): RoomStampResult {
+  const placed = (preferredX: number, ch: string): number | undefined => {
+    if (ch === "N" && !opts.allowNpc) return undefined;
+    return placeOnFloor(s, preferredX, ch);
+  };
 
   if (opts.isEntrance) {
-    placeOnFloor(s, 2, "P"); // party spawn
-    placeOnFloor(s, 4, "b"); // brazier: light to see the mouth
-    placeOnFloor(s, 6, "t"); // spare torch
+    placeOnFloor(s, 2, "P");
+    placeOnFloor(s, 4, "b");
+    placeOnFloor(s, 6, "t");
   }
 
-  switch (beat) {
-    case "entrance":
-      break; // spawn handled above
-    case "challenge":
-      placeOnFloor(s, mid - 2, s.monsterGlyph);
-      placeOnFloor(s, mid + 3, "c");
-      break;
-    case "setback":
-      placeOnFloor(s, mid - 3, "^"); // spike hazard
-      placeOnFloor(s, mid + 2, "%"); // breakable masonry: an alternate way
-      break;
-    case "climax":
-      placeOnFloor(s, mid - 2, s.monsterGlyph);
-      placeOnFloor(s, mid + 2, s.monsterGlyph);
-      placeOnFloor(s, mid, "b"); // brazier lights the arena
-      break;
-    case "reward":
-      break; // reward marker handled below
-  }
+  let npcLocalX: number | undefined;
+  const trackingPlace = (preferredX: number, ch: string): number | undefined => {
+    const x = placed(preferredX, ch);
+    if (ch === "N" && x !== undefined) npcLocalX = x;
+    return x;
+  };
+  template.stamp(s, trackingPlace);
 
   if (opts.isReward) {
-    placeOnFloor(s, s.width - 4, "K"); // campaign reward marker
+    placeOnFloor(s, s.width - 4, "K");
     placeOnFloor(s, s.width - 6, "c");
-    placeOnFloor(s, s.width - 8, "v"); // banner flourish
+    placeOnFloor(s, s.width - 8, "v");
   }
-
   if (opts.isExit) {
-    placeOnFloor(s, 2, "F"); // sanctuary campfire (rest)
-    placeOnFloor(s, 4, "h"); // shrine (priest atonement)
-    placeOnFloor(s, s.width - 3, "D"); // exit door
+    placeOnFloor(s, 2, "F");
+    placeOnFloor(s, 4, "h");
+    placeOnFloor(s, s.width - 3, "D");
   }
+  return { templateId: template.id, pressures: template.pressures, npcLocalX };
+}
+
+export function templateHash(seed: number, text: string): number {
+  return hash(seed, text);
 }

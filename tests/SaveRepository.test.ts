@@ -94,11 +94,15 @@ describe("SaveRepository", () => {
       roomId: "room-2",
       activatedRequirementIds: ["req-1-2"],
       openedConnectorIds: ["conn-1-2", "conn-2-4"],
+      npcInteractionStates: { "npc-2": "heard", "npc-4": "resolved" },
     };
     delete (nonlinearSave as Partial<SaveSlot>).currentRoom;
 
     SaveRepository.save(1, nonlinearSave);
-    expect(SaveRepository.load(1)?.openedConnectorIds).toEqual(["conn-1-2", "conn-2-4"]);
+    const resumed = SaveRepository.load(1);
+    expect(resumed?.activatedRequirementIds).toEqual(["req-1-2"]);
+    expect(resumed?.openedConnectorIds).toEqual(["conn-1-2", "conn-2-4"]);
+    expect(resumed?.npcInteractionStates).toEqual({ "npc-2": "heard", "npc-4": "resolved" });
   });
 
   it("validates structural integrity of save slots correctly", () => {

@@ -15,13 +15,41 @@
  */
 
 import type { AbstractDungeon, Beat, DungeonConnection, DungeonRoomNode, MacroPoint } from "./model";
-import { DUNGEONS, type DungeonDefinition, type ExpandedConnector, type VariantPools } from "./dungeons";
+import {
+  DUNGEONS,
+  type DungeonDefinition,
+  type ExpandedConnector,
+  type ExpandedRoomContent,
+  type TalkableNpcOutcome,
+  type TalkableNpcSpec,
+  type VariantPools,
+} from "./dungeons";
 import type { RoomRegion } from "./geometry";
-import { stampRoom, type RoomStamp } from "./templates";
+import { chooseRoomTemplate, stampRoom, templateHash, type RoomStamp } from "./templates";
 import { validatePhysicalDungeon } from "./physical";
 
 export const CELL_W = 20;
 export const CELL_H = 12;
+
+const NPC_NAMES = ["Aster Vale", "Brother Senn", "Mara Quill", "Old Kest", "Veyra Ash"] as const;
+const NPC_ROLES = ["lost cartographer", "oathbound pilgrim", "rival delver", "ruin keeper"] as const;
+
+function npcDialogue(outcome: TalkableNpcOutcome): { introduction: string; resolution: string } {
+  switch (outcome) {
+    case "give-torch": return {
+      introduction: "Keep your voice down. The dark here listens.",
+      resolution: "Take this torch. I would rather owe you light than a grave.",
+    };
+    case "reveal-route": return {
+      introduction: "I found a seam in the stone, but dared not test it alone.",
+      resolution: "There—the hidden catch. That route is open now.",
+    };
+    case "warning": return {
+      introduction: "Steel carries farther than footsteps in these halls.",
+      resolution: "Open doors carry noise. A closed gate may be the safer road.",
+    };
+  }
+}
 
 /** Encounter-monster id -> level tile glyph understood by the renderer. */
 const MONSTER_GLYPH: Record<string, string> = {
@@ -162,6 +190,7 @@ function expandedConnector(
     requirement,
     entry: endpointTile(path[0]!),
     landing: endpointTile(path[path.length - 1]!),
+    waypoints: path.map(endpointTile),
     blocker: closed ? blockerTile(path) : undefined,
     vertical,
   };
@@ -220,6 +249,18 @@ export function expandDungeon(abstract: AbstractDungeon): DungeonDefinition {
     expandedConnector(conn, paths[i]!, conn.requirementId ? requirements.get(conn.requirementId) : undefined),
   );
 
+  // A separate deterministic stream controls social content, so changing a room
+  // template never perturbs topology or connector selection. Standard runs get
+  // zero or one talkable NPC, targeting half of seeds.
+  const npcEligible = abstract.rooms.filter((room) =>
+    room.contentFamily === "discovery" || room.contentFamily === "twist",
+  );
+  const npcRoom = npcEligible.length > 0 && templateHash(abstract.seed, "talkable-npc") % 2 === 0
+    ? npcEligible[templateHash(abstract.seed, "talkable-npc-room") % npcEligible.length]
+    : undefined;
+  const roomContents: ExpandedRoomContent[] = [];
+  const talkableNpcs: TalkableNpcSpec[] = [];
+
   // 3. Stamp room contents after all carving, so nothing floats over a shaft.
   for (const room of abstract.rooms) {
     const ox = cellOx(room.position.column);
@@ -237,15 +278,48 @@ export function expandDungeon(abstract: AbstractDungeon): DungeonDefinition {
         );
       },
     };
-    stampRoom(
-      room.beat,
+    const incident = abstract.connections.filter((connection) =>
+      connection.fromRoomId === room.id || connection.toRoomId === room.id,
+    );
+    const selectedTemplate = chooseRoomTemplate(
+      room,
+      abstract.seed,
+      incident.length,
+      incident.map((connection) => connection.kind),
+      room.id === npcRoom?.id ? "required" : "forbidden",
+    );
+    const stamped = stampRoom(
+      room,
       {
         isEntrance: room.id === abstract.entranceRoomId,
         isReward: room.id === abstract.rewardRoomId,
         isExit: room.id === abstract.exitRoomId,
+        allowNpc: room.id === npcRoom?.id,
       },
       stamp,
+      selectedTemplate,
     );
+    roomContents.push({
+      roomId: room.id,
+      family: room.contentFamily,
+      templateId: stamped.templateId,
+      pressures: stamped.pressures,
+    });
+    if (stamped.npcLocalX !== undefined) {
+      const npcHash = templateHash(abstract.seed, `npc:${room.id}`);
+      const outcome = (["give-torch", "reveal-route", "warning"] as const)[npcHash % 3]!;
+      const dialogue = npcDialogue(outcome);
+      talkableNpcs.push({
+        id: `npc-${room.node}`,
+        roomId: room.id,
+        tile: { x: ox + stamped.npcLocalX, y },
+        name: NPC_NAMES[npcHash % NPC_NAMES.length]!,
+        role: NPC_ROLES[(npcHash >>> 4) % NPC_ROLES.length]!,
+        introduction: dialogue.introduction,
+        resolution: dialogue.resolution,
+        outcome,
+      });
+    }
   }
 
   // 4. Closed connector states sit above room decoration and retain stable tile
@@ -279,6 +353,8 @@ export function expandDungeon(abstract: AbstractDungeon): DungeonDefinition {
     height,
     regions,
     connectors,
+    roomContents,
+    talkableNpcs,
     theme: base.theme,
     pools: EMPTY_POOLS,
     traps: [],

@@ -40,12 +40,22 @@ import { PartyManager } from "../systems/party";
 import { CLOSE_PX, FAR_PX, zoneBetween } from "../systems/position";
 import { castSelectedSpell, type SpellDeps } from "../systems/spells";
 import { TrapSystem } from "../systems/traps";
-import { dungeonAt, type DungeonDefinition, type ExpandedConnector } from "../level/dungeons";
+import {
+  dungeonAt,
+  type DungeonDefinition,
+  type ExpandedConnector,
+  type TalkableNpcSpec,
+} from "../level/dungeons";
 import { expandDungeon } from "../level/expand";
 import { generateAbstractDungeon, type GenerateOptions } from "../level/generate";
 import type { TopologyId } from "../level/topology";
 import type { Orientation } from "../level/embedding";
 import { roomAt, roomAtTolerant } from "../level/geometry";
+import {
+  canTraverseConnector,
+  openConnector,
+  roomsAlertedByNoise,
+} from "../level/connectors";
 import { TILE } from "../textures";
 import { serializeCharacter, deserializeCharacter, type SaveSlot } from "../state";
 import { SaveRepository } from "../SaveRepository";
@@ -71,6 +81,12 @@ interface RescuableNpc {
   x: number;
   y: number;
   rescued: boolean;
+}
+
+interface TalkableNpc {
+  spec: TalkableNpcSpec;
+  sprite: Phaser.GameObjects.Image;
+  marker: Phaser.GameObjects.Text;
 }
 
 interface Pickup {
@@ -106,6 +122,11 @@ export class DungeonScene extends Phaser.Scene {
   private connectorWeakWalls = new Map<Phaser.Physics.Arcade.Image, ExpandedConnector>();
   private activatedRequirements = new Set<string>();
   private openedConnectors = new Set<string>();
+  private connectorActorState = new WeakMap<Phaser.GameObjects.Components.Transform, {
+    roomId: string;
+    x: number;
+    y: number;
+  }>();
   private climbTiles: Phaser.GameObjects.Rectangle[] = [];
   private spikes: Phaser.Physics.Arcade.Image[] = [];
   private monsters: MonsterSprite[] = [];
@@ -115,6 +136,8 @@ export class DungeonScene extends Phaser.Scene {
   private fireEmitters: SpatialEmitter[] = [];
   private pickups: Pickup[] = [];
   private npcs: RescuableNpc[] = [];
+  private talkableNpcs: TalkableNpc[] = [];
+  private npcInteractionStates = new Map<string, "unmet" | "heard" | "resolved">();
   private campfires: { x: number; y: number; free: boolean }[] = [];
   private shrines: { x: number; y: number }[] = [];
   private door!: { x: number; y: number };
@@ -181,6 +204,10 @@ export class DungeonScene extends Phaser.Scene {
     this.monsters = [];
     this.pickups = [];
     this.npcs = [];
+    this.talkableNpcs = [];
+    this.npcInteractionStates = new Map(
+      Object.entries(this.loadedState?.npcInteractionStates ?? {}) as [string, "unmet" | "heard" | "resolved"][],
+    );
     this.campfires = [];
     this.shrines = [];
     this.climbTiles = [];
@@ -196,6 +223,7 @@ export class DungeonScene extends Phaser.Scene {
     this.connectorWeakWalls = new Map();
     this.activatedRequirements = new Set(this.loadedState?.activatedRequirementIds ?? []);
     this.openedConnectors = new Set(this.loadedState?.openedConnectorIds ?? []);
+    this.connectorActorState = new WeakMap();
     this.rewardClaimed = this.loadedState?.hasCrown ?? false;
     this.usedCharacterNames = new Set(this.loadedState?.party.map((member) => member.name) ?? []);
     this.startingFighterName = this.loadedState ? "" : this.nextPlebName();
@@ -239,6 +267,7 @@ export class DungeonScene extends Phaser.Scene {
     this.light = new LightSystem(this, this.ctx, this.activeDungeon.theme.darkness);
 
     this.buildLevel();
+    this.createConnectorTelegraphs();
     this.activateRoomRequirements(this.lastRoomId, false);
     this.lightTorch(this.party.leader, "You light a torch.");
     this.trapSystem = new TrapSystem(
@@ -535,6 +564,14 @@ export class DungeonScene extends Phaser.Scene {
               this.addNpc("wizard", this.nextPlebName(), px, py);
             }
             break;
+          case "N": {
+            const spec = this.activeDungeon.talkableNpcs?.find(
+              (candidate) => candidate.tile.x === x && candidate.tile.y === y,
+            );
+            if (!spec) throw new Error(`Talkable NPC at (${x},${y}) has no deterministic spec`);
+            this.addTalkableNpc(spec, px, py);
+            break;
+          }
           case "g":
           case "s":
           case "r":
@@ -675,6 +712,36 @@ export class DungeonScene extends Phaser.Scene {
     }
   }
 
+  /** Direction/state cues are authored from connector metadata, not tile guesses. */
+  private createConnectorTelegraphs(): void {
+    for (const connector of this.activeDungeon.connectors ?? []) {
+      if (connector.direction === "two-way") continue;
+      const forward = connector.direction === "from-to";
+      const points = forward ? connector.waypoints : [...connector.waypoints].reverse();
+      const origin = points[0]!;
+      const next = points[1] ?? origin;
+      const dx = Math.sign(next.x - origin.x);
+      const dy = Math.sign(next.y - origin.y);
+      const arrow = Math.abs(dy) > Math.abs(dx) ? (dy > 0 ? "↓" : "↑") : (dx > 0 ? "→" : "←");
+      const kind = connector.kind === "controlled-drop"
+        ? "CONTROLLED DROP"
+        : connector.kind === "slide" ? "SLIDE" : "ONE WAY";
+      this.add.text(
+        (origin.x + dx * 2) * TILE + TILE / 2,
+        (origin.y + dy * 2) * TILE - TILE * 0.75,
+        `${arrow} ${kind}`,
+        {
+          fontFamily: "Consolas, monospace",
+          fontSize: "10px",
+          color: "#e8b85c",
+          stroke: "#050508",
+          strokeThickness: 3,
+          resolution: RENDER_SCALE,
+        },
+      ).setOrigin(0.5).setAlpha(0.78).setDepth(5);
+    }
+  }
+
   private spawnCharacter(
     id: string,
     name: string,
@@ -697,6 +764,20 @@ export class DungeonScene extends Phaser.Scene {
     const sprite = this.add.image(x, y, `char-${className}`).setDepth(8).setTint(0x777788);
     const prop = propKey ? this.add.image(x, y + (propKey === "shrine" ? 14 : 0), propKey).setDepth(9) : undefined;
     this.npcs.push({ sprite, prop, className, name, x, y, rescued: false });
+  }
+
+  private addTalkableNpc(spec: TalkableNpcSpec, x: number, y: number): void {
+    const state = this.npcInteractionStates.get(spec.id) ?? "unmet";
+    const sprite = this.add.image(x, y, "char-wizard").setDepth(8).setTint(0xd6b36a);
+    const marker = this.add.text(x, y - 30, state === "resolved" ? "·" : "!", {
+      fontFamily: "Georgia, serif",
+      fontSize: "18px",
+      color: state === "resolved" ? "#8a8068" : "#ffe090",
+      stroke: "#050508",
+      strokeThickness: 3,
+      resolution: RENDER_SCALE,
+    }).setOrigin(0.5).setDepth(10);
+    this.talkableNpcs.push({ spec, sprite, marker });
   }
 
   private addPickup(x: number, y: number, itemId: string, qty: number): void {
@@ -797,6 +878,10 @@ export class DungeonScene extends Phaser.Scene {
 
     // Keep all rules time (rounds, torches, spell effects) in lockstep with gameplay.
     this.ctx.engine.advance(delta);
+
+    // Directional connectors apply to the whole party (including followers) and
+    // monsters. Check before room-transition persistence observes the new room.
+    this.enforceConnectorTraversal();
 
     // Auto-save on room transition
     const currentRoom = this.currentRoomId;
@@ -1102,6 +1187,7 @@ export class DungeonScene extends Phaser.Scene {
     // Attack
     if (this.keys.J!.isDown || this.keys.X!.isDown || this.leftControlDown) {
       const outcome = meleeSwing(this.meleeDeps(), leader);
+      if (outcome.swung) this.emitNoiseAt(leader.x, leader.y);
       if (outcome.swung && leader.character.className === "fighter") this.breakWeakWalls(leader);
       if (outcome.check && !outcome.check.success) {
         this.offerLuck(leader, "the blade finds its mark", () => {
@@ -1163,13 +1249,14 @@ export class DungeonScene extends Phaser.Scene {
       const img = w as Phaser.Physics.Arcade.Image;
       floatText(this, img.x, img.y, "CRUNCH", "#d0a060");
       const connector = this.connectorWeakWalls.get(img);
-      if (connector) this.openedConnectors.add(connector.id);
+      if (connector) openConnector(connector, this.activatedRequirements, this.openedConnectors);
       img.destroy();
     }
     if (hits.length > 0) {
       sfx.crunch();
       this.cameras.main.shake(120, 0.006);
       this.ctx.say("Brakka smashes through the crumbling wall!", "#d0a060");
+      this.emitNoiseAt(leader.x, leader.y);
       this.saveToSlot(0);
     }
   }
@@ -1251,7 +1338,19 @@ export class DungeonScene extends Phaser.Scene {
       };
     }
 
-    // 2. Rescue an NPC
+    // 2. Talkable social encounters are distinct from immediate rescues.
+    const talkable = this.talkableNpcs.find(
+      (npc) => Phaser.Math.Distance.Between(leader.x, leader.y, npc.sprite.x, npc.sprite.y) < TILE * 1.8,
+    );
+    if (talkable) {
+      const state = this.npcInteractionStates.get(talkable.spec.id) ?? "unmet";
+      return {
+        label: `${state === "unmet" ? "speak with" : "continue with"} ${talkable.spec.name}`,
+        run: () => this.advanceNpcInteraction(talkable, leader),
+      };
+    }
+
+    // 3. Rescue an NPC
     const npc = this.npcs.find(
       (n) => !n.rescued && Phaser.Math.Distance.Between(leader.x, leader.y, n.x, n.y) < TILE * 1.6,
     );
@@ -1309,8 +1408,11 @@ export class DungeonScene extends Phaser.Scene {
       return {
         label: connector?.state === "secret" ? "reveal the secret door" : "raise the portcullis",
         run: () => {
+          if (connector) {
+            const result = openConnector(connector, this.activatedRequirements, this.openedConnectors);
+            if (result === "requires-key" || result === "requires-switch") return;
+          }
           gate.destroy();
-          if (connector) this.openedConnectors.add(connector.id);
           sfx.doorThump();
           this.ctx.say(
             connector?.state === "secret"
@@ -1318,6 +1420,7 @@ export class DungeonScene extends Phaser.Scene {
               : `${leader.character.name} heaves the portcullis open.`,
             "#d0c080",
           );
+          this.emitNoiseAt(leader.x, leader.y);
           this.saveToSlot(0);
         },
       };
@@ -1395,6 +1498,53 @@ export class DungeonScene extends Phaser.Scene {
     }
 
     return null;
+  }
+
+  private advanceNpcInteraction(npc: TalkableNpc, leader: CharacterSprite): void {
+    const { spec } = npc;
+    const state = this.npcInteractionStates.get(spec.id) ?? "unmet";
+    if (state === "unmet") {
+      this.npcInteractionStates.set(spec.id, "heard");
+      this.ctx.say(`${spec.name}, ${spec.role}: “${spec.introduction}”`, "#e8c878");
+      this.saveToSlot(0);
+      return;
+    }
+    if (state === "resolved") {
+      this.ctx.say(`${spec.name}: “${spec.resolution}”`, "#c8b888");
+      return;
+    }
+
+    if (spec.outcome === "give-torch") {
+      const torch = item("torch");
+      if (leader.character.inventory.canAdd(torch)) {
+        leader.character.inventory.add(torch);
+        this.ctx.say(`${spec.name} gives ${leader.character.name} a torch.`, "#d0e080");
+      } else {
+        this.ctx.say(`${leader.character.name} has no room for the offered torch.`, "#e0c060");
+        return;
+      }
+    } else if (spec.outcome === "reveal-route") {
+      const connector = (this.activeDungeon.connectors ?? []).find((candidate) =>
+        candidate.state === "secret" &&
+        !this.openedConnectors.has(candidate.id) &&
+        (candidate.fromRoomId === spec.roomId || candidate.toRoomId === spec.roomId),
+      );
+      if (connector) {
+        openConnector(connector, this.activatedRequirements, this.openedConnectors);
+        for (const [gate, mapped] of this.connectorGates) {
+          if (mapped.id === connector.id) gate.destroy();
+        }
+        for (const [wall, mapped] of this.connectorWeakWalls) {
+          if (mapped.id === connector.id) wall.destroy();
+        }
+        this.ctx.say(`${spec.name} reveals and opens ${connector.id}.`, "#d0e080");
+      }
+    }
+
+    this.npcInteractionStates.set(spec.id, "resolved");
+    npc.marker.setText("·").setColor("#8a8068");
+    this.ctx.say(`${spec.name}: “${spec.resolution}”`, "#e8c878");
+    this.saveToSlot(0);
   }
 
   private claimDungeonReward(): void {
@@ -1552,6 +1702,75 @@ export class DungeonScene extends Phaser.Scene {
   private spatial(p: Vec2): sfx.SfxOpts {
     const l = this.party.leader;
     return spatialOpts(p, { x: l.x, y: l.y });
+  }
+
+  /** Alert the current room and rooms one open connector away. */
+  private emitNoiseAt(x: number, y: number): void {
+    const region = roomAtTolerant(
+      this.activeDungeon.regions,
+      Math.floor(x / TILE),
+      Math.floor(y / TILE),
+    );
+    if (!region) return;
+    const alerted = roomsAlertedByNoise(
+      region.id,
+      this.activeDungeon.connectors ?? [],
+      {
+        activatedRequirementIds: this.activatedRequirements,
+        openedConnectorIds: this.openedConnectors,
+      },
+    );
+    for (const monster of this.monsters) {
+      if (monster.active && monster.aiState === "patrol" && alerted.has(monster.groupId)) {
+        monster.alert();
+      }
+    }
+  }
+
+  /**
+   * Reject a room-to-room crossing when its connector is closed or points the
+   * other way. The last in-room position is retained across connector/filler
+   * cells, so a rejected actor returns to the side they entered from.
+   */
+  private enforceConnectorTraversal(): void {
+    const connectors = this.activeDungeon.connectors;
+    if (!connectors || connectors.length === 0) return;
+    const actors: (CharacterSprite | MonsterSprite)[] = [
+      ...this.party.members.filter((member) => member.active),
+      ...this.monsters.filter((monster) => monster.active),
+    ];
+    const persisted = {
+      activatedRequirementIds: this.activatedRequirements,
+      openedConnectorIds: this.openedConnectors,
+    };
+    for (const actor of actors) {
+      const region = roomAt(
+        this.activeDungeon.regions,
+        Math.floor(actor.x / TILE),
+        Math.floor(actor.y / TILE),
+      );
+      const previous = this.connectorActorState.get(actor);
+      if (!previous) {
+        if (region) this.connectorActorState.set(actor, { roomId: region.id, x: actor.x, y: actor.y });
+        continue;
+      }
+      if (!region) continue;
+      if (region.id === previous.roomId) {
+        previous.x = actor.x;
+        previous.y = actor.y;
+        continue;
+      }
+      const candidates = connectors.filter((connector) =>
+        (connector.fromRoomId === previous.roomId && connector.toRoomId === region.id) ||
+        (connector.toRoomId === previous.roomId && connector.fromRoomId === region.id),
+      );
+      if (candidates.some((connector) => canTraverseConnector(connector, previous.roomId, persisted))) {
+        this.connectorActorState.set(actor, { roomId: region.id, x: actor.x, y: actor.y });
+      } else {
+        actor.setPosition(previous.x, previous.y);
+        actor.setVelocity(0, 0);
+      }
+    }
   }
 
   private killMonster(m: MonsterSprite): void {
@@ -2013,6 +2232,7 @@ export class DungeonScene extends Phaser.Scene {
       roomId: this.currentRoomId,
       activatedRequirementIds: [...this.activatedRequirements],
       openedConnectorIds: [...this.openedConnectors],
+      npcInteractionStates: Object.fromEntries(this.npcInteractionStates),
       hasCrown: this.hasCrown,
       kills: this.ctx.kills,
       coinsBanked: this.ctx.totalCoins,

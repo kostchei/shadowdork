@@ -53,6 +53,8 @@ export interface SaveSlot {
   activatedRequirementIds?: string[];
   /** Non-linear connector ids opened, revealed, or broken during this run. */
   openedConnectorIds?: string[];
+  /** Deterministic talkable-NPC conversation progress keyed by NPC id. */
+  npcInteractionStates?: Record<string, "unmet" | "heard" | "resolved">;
   hasCrown: boolean;
   kills: number;
   coinsBanked: number;

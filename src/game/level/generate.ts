@@ -292,8 +292,14 @@ function tryBuild(seed: number, candidate: number, opts: GenerateOptions): Abstr
         conn.kind = "secret-door";
       } else {
         conn.state = "one-way";
-        conn.direction = connRng.next() < 0.5 ? "from-to" : "to-from";
-        conn.kind = "slide";
+        if (embEdge.direction === "beside" || embEdge.direction === "non-adjacent") {
+          conn.direction = connRng.next() < 0.5 ? "from-to" : "to-from";
+          conn.kind = "passage";
+        } else {
+          // Slides and controlled drops always point downhill in world space.
+          conn.direction = embEdge.direction === "below" ? "from-to" : "to-from";
+          conn.kind = connRng.next() < 0.5 ? "slide" : "controlled-drop";
+        }
       }
     }
 

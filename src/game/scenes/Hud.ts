@@ -299,7 +299,8 @@ export class HudScene extends Phaser.Scene {
       "E : Interact (Rescue / Rest / Exit)\n" +
       "T : Light Torch  |  H : Toggle Hold/Follow\n" +
       "L : Spend Luck (when prompted)  |  Tab/1-4 : Swap Leader\n" +
-      "C : Character Stats  |  I : Gear/Inventory", {
+      "C : Character Stats  |  I : Gear/Inventory\n" +
+      "M : Mute Sound", {
       ...DATA_STYLE,
       fontSize: "10px",
       align: "center",
@@ -413,7 +414,7 @@ export class HudScene extends Phaser.Scene {
     }
   }
 
-  showGearOverlay(c: any): void {
+  showGearOverlay(c: any, selectedItemId?: string): void {
     if (this.gearOverlay) return;
     const w = GAME_W;
     const h = GAME_H;
@@ -443,8 +444,10 @@ export class HudScene extends Phaser.Scene {
     }).setOrigin(0.5);
 
     const armorName = c.wornArmor ? c.wornArmor.name : "None (AC 10)";
+    const weaponName = c.wieldedWeapon ? c.wieldedWeapon.name : "None";
     const shieldName = c.carriedShield ? `${c.carriedShield.name}${c.shieldStowed ? " (Stowed)" : ""}` : "None";
     const eqText = 
+      `WEAPON : ${weaponName}\n\n` +
       `ARMOR  : ${armorName}\n\n` +
       `SHIELD : ${shieldName}`;
 
@@ -464,7 +467,10 @@ export class HudScene extends Phaser.Scene {
     const stacks = c.inventory.all();
     const gearList = stacks.map((s: any) => {
       const slots = s.def.slotCost === 0 ? "free" : `${s.def.slotCost} slot${s.def.slotCost > 1 ? "s" : ""}`;
-      return `* ${s.qty}x ${s.def.name} (${slots})`;
+      const equipped = c.wieldedWeapon?.id === s.def.id || c.wornArmor?.id === s.def.id ||
+        (c.carriedShield?.id === s.def.id && !c.shieldStowed);
+      const cursor = selectedItemId === s.def.id ? ">" : " ";
+      return `${cursor} ${s.qty}x ${s.def.name}${equipped ? " [EQUIPPED]" : ""} (${slots})`;
     }).join("\n");
 
     const invTitle = this.add.text(w / 2 + 20, h / 2 - 100, "INVENTORY", {
@@ -481,7 +487,7 @@ export class HudScene extends Phaser.Scene {
       lineSpacing: 6
     });
 
-    const footer = this.add.text(w / 2, h / 2 + 150, "Press I to close", {
+    const footer = this.add.text(w / 2, h / 2 + 150, "Up/Down select  |  E equip  |  I close", {
       ...UI_STYLE,
       fontSize: "11px",
       color: "#808490"

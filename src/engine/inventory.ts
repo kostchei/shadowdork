@@ -1,5 +1,8 @@
 /** Gear-slot inventory. Capacity = max(STR score, 10). Overflow throws — no soft encumbrance. */
 
+export type WeaponVisual = "longsword" | "dagger" | "mace" | "staff" | "spear" | "javelin";
+export type ArmorVisual = "leather" | "chain" | "plate" | "mithral";
+
 export interface ItemDef {
   id: string;
   name: string;
@@ -19,6 +22,8 @@ export interface ItemDef {
   twoHanded?: boolean;
   /** Finesse weapons attack with the better of STR or DEX. */
   finesse?: boolean;
+  /** Pixel-art silhouette used independently of the item's rules identity. */
+  weaponVisual?: WeaponVisual;
   /** Wearable armor: base AC plus DEX modifier capped at dexCap. */
   armor?: {
     acBase: number;
@@ -27,6 +32,8 @@ export interface ItemDef {
     /** Class names permitted to wear it. */
     classes: readonly string[];
   };
+  /** Pixel-art material used independently of the item's rules identity. */
+  armorVisual?: ArmorVisual;
   /** Shields grant +2 AC and occupy a hand while readied. */
   shield?: boolean;
 }

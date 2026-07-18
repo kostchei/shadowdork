@@ -5,6 +5,7 @@
 
 import Phaser from "phaser";
 import type { CastResult, EffectHook } from "../../engine";
+import { spellCast, spellMishap, whoosh } from "../audio/sfx";
 import { spell } from "../../data";
 import type { GameContext } from "../context";
 import type { CharacterSprite } from "../entities/CharacterSprite";
@@ -41,11 +42,13 @@ export function castSelectedSpell(deps: SpellDeps, caster: CharacterSprite): Cas
 
   const die = result.check.natural;
   if (result.outcome === "fail") {
+    whoosh({ gain: 0.6 });
     floatText(deps.scene, caster.x, caster.y - 40, `${die} — spell lost!`, "#d07070");
     deps.ctx.say(`${def.name} fizzles — lost until rest. (rolled ${die}+${result.check.modifier} vs DC ${result.check.dc})`, "#d07070");
     return result;
   }
   if (result.outcome === "mishap") {
+    spellMishap();
     deps.scene.cameras.main.shake(250, 0.01);
     floatText(deps.scene, caster.x, caster.y - 40, "NAT 1 — MISHAP!", "#ff4060", 16);
     if (result.mishap) {
@@ -61,6 +64,7 @@ export function castSelectedSpell(deps: SpellDeps, caster: CharacterSprite): Cas
   }
 
   const doubled = result.doubled;
+  spellCast();
   floatText(
     deps.scene,
     caster.x,

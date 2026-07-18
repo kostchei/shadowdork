@@ -1,8 +1,10 @@
 import Phaser from "phaser";
+import { installUnlock } from "./audio/context";
 import { RENDER_SCALE, GAME_H, GAME_W } from "./display";
 import { BootScene } from "./scenes/Boot";
 import { DungeonScene } from "./scenes/Dungeon";
 import { HudScene } from "./scenes/Hud";
+import { EquipmentShowroomScene } from "./scenes/EquipmentShowroom";
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,
@@ -23,12 +25,29 @@ const game = new Phaser.Game({
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
-  scene: [BootScene, DungeonScene, HudScene],
+  scene: [BootScene, DungeonScene, HudScene, EquipmentShowroomScene],
 });
 
 declare global {
   interface Window {
     __game: Phaser.Game;
+    __audio: {
+      context: typeof import("./audio/context");
+      sfx: typeof import("./audio/sfx");
+      ambience: typeof import("./audio/ambience");
+    };
   }
 }
 window.__game = game;
+
+// Audio contexts start suspended until a user gesture — arm the resume now.
+installUnlock();
+
+// Dev/debug handle: lets tooling fire sounds and inspect the audio graph.
+void (async () => {
+  window.__audio = {
+    context: await import("./audio/context"),
+    sfx: await import("./audio/sfx"),
+    ambience: await import("./audio/ambience"),
+  };
+})();

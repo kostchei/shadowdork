@@ -1,5 +1,9 @@
 # Procedural Audio Plan — sound from primitives
 
+> **Status (2026-07-18):** Checkpoints 1–4 implemented and verified. Checkpoint 5
+> (narrative voice) remains a decision gate. A dev handle `window.__audio`
+> (main.ts) exposes the context/sfx/ambience modules for tooling and tuning.
+
 Implements the ideas in [sound on the fly from primiati.md](../sound%20on%20the%20fly%20from%20primiati.md)
 for this stack: Phaser 3 + TypeScript + Vite, running in the browser. The Web Audio API replaces the
 doc's Unity/Godot/Faust buffer-filling: noise, filters, LFOs, FM, envelopes, and panning are all

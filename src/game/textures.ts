@@ -1,6 +1,10 @@
 /** Cohesive runtime-generated pixel art; the game remains asset-pipeline free. */
 
 import Phaser from "phaser";
+import type { ClassName } from "../engine";
+import { allItems } from "../data/items";
+import type { CharacterAppearance } from "./entities/appearance";
+import { characterAppearanceKey } from "./entities/appearance";
 
 export const TILE = 32;
 
@@ -78,15 +82,234 @@ function stoneTile(scene: Phaser.Scene, variant: number): void {
   });
 }
 
+export const CHARACTER_W = 40;
+export const CHARACTER_H = 36;
+
 function drawFace(g: Phaser.GameObjects.Graphics, skin: number, bodyYOffset = 0): void {
   g.fillStyle(skin, 1);
-  g.fillRect(7, 5 + bodyYOffset, 10, 9);
+  g.fillRect(15, 6 + bodyYOffset, 10, 9);
   g.fillStyle(0x201b20, 1);
-  g.fillRect(9, 8 + bodyYOffset, 2, 2);
-  g.fillRect(14, 8 + bodyYOffset, 2, 2);
+  g.fillRect(17, 9 + bodyYOffset, 2, 2);
+  g.fillRect(22, 9 + bodyYOffset, 2, 2);
 }
 
-function drawCharacterFrame(g: Phaser.GameObjects.Graphics, cls: string, type: "idle" | "walk", frame: number): void {
+function drawFeet(
+  g: Phaser.GameObjects.Graphics,
+  cls: ClassName,
+  type: "idle" | "walk",
+  frame: number,
+): void {
+  g.fillStyle(cls === "fighter" ? 0x352b32 : cls === "thief" ? 0x20292a : cls === "priest" ? 0x473c39 : 0x282342, 1);
+  if (type === "idle") {
+    g.fillRect(12, 30, 6, 3);
+    g.fillRect(22, 30, 6, 3);
+  } else if (frame === 0) {
+    g.fillRect(10, 30, 6, 3);
+    g.fillRect(24, 30, 6, 3);
+  } else if (frame === 2) {
+    g.fillRect(14, 30, 6, 3);
+    g.fillRect(20, 30, 6, 3);
+  } else {
+    g.fillRect(17, 30, 6, 3);
+  }
+}
+
+function drawShield(
+  g: Phaser.GameObjects.Graphics,
+  shield: CharacterAppearance["shield"],
+  y: (value: number) => number,
+  foreground: boolean,
+): void {
+  if (shield === "none") return;
+  if ((shield === "readied") !== foreground) return;
+  const x = shield === "stowed" ? 7 : 5;
+  g.fillStyle(0x584047, 1);
+  g.fillCircle(x + 5, y(21), 7);
+  g.fillStyle(0xa0a7ae, 1);
+  g.fillCircle(x + 5, y(21), 5);
+  g.fillStyle(0x71313b, 1);
+  g.fillRect(x + 3, y(17), 4, 8);
+  g.fillStyle(0xe1c15c, 1);
+  g.fillCircle(x + 5, y(21), 2);
+}
+
+function drawWeapon(
+  g: Phaser.GameObjects.Graphics,
+  appearance: CharacterAppearance,
+  y: (value: number) => number,
+): void {
+  const metal = 0xd4d8de;
+  const wood = 0x8e6138;
+  switch (appearance.weapon) {
+    case "spear":
+      g.lineStyle(2, wood, 1);
+      g.lineBetween(30, y(31), 36, y(5));
+      g.fillStyle(metal, 1);
+      g.fillTriangle(34, y(7), 38, y(0), 38, y(9));
+      break;
+    case "javelin":
+      g.lineStyle(2, 0x9c6d3e, 1);
+      g.lineBetween(30, y(29), 35, y(9));
+      g.fillStyle(metal, 1);
+      g.fillTriangle(34, y(10), 37, y(4), 37, y(12));
+      break;
+    case "longsword":
+      g.fillStyle(0x6a432d, 1);
+      g.fillRect(30, y(25), 3, 6);
+      g.fillStyle(0xd4a84b, 1);
+      g.fillRect(27, y(23), 8, 2);
+      g.fillStyle(metal, 1);
+      g.fillTriangle(29, y(23), 33, y(7), 35, y(21));
+      g.fillStyle(0xf4f5f6, 1);
+      g.fillRect(32, y(11), 1, 10);
+      break;
+    case "dagger":
+      g.fillStyle(0x69422d, 1);
+      g.fillRect(29, y(24), 3, 5);
+      g.fillStyle(0xd7ad4b, 1);
+      g.fillRect(27, y(22), 7, 2);
+      g.fillStyle(metal, 1);
+      g.fillTriangle(29, y(22), 34, y(15), 33, y(23));
+      break;
+    case "mace":
+      g.fillStyle(wood, 1);
+      g.fillRect(30, y(18), 3, 13);
+      g.fillStyle(0x9ca4ae, 1);
+      g.fillRect(28, y(12), 7, 7);
+      g.fillRect(27, y(14), 9, 3);
+      g.fillStyle(0xd6dce2, 1);
+      g.fillRect(30, y(13), 3, 2);
+      break;
+    case "staff":
+      g.fillStyle(wood, 1);
+      g.fillRect(31, y(7), 3, 25);
+      g.fillStyle(0x4b3023, 1);
+      g.fillRect(33, y(10), 1, 20);
+      if (appearance.className === "wizard") {
+        g.fillStyle(0x55b9ca, 1);
+        g.fillTriangle(28, y(7), 33, y(0), 37, y(7));
+        g.fillStyle(0xb9fbff, 1);
+        g.fillTriangle(32, y(5), 33, y(1), 35, y(5));
+      }
+      break;
+  }
+}
+
+function drawArmor(
+  g: Phaser.GameObjects.Graphics,
+  appearance: CharacterAppearance,
+  y: (value: number) => number,
+): void {
+  const { armor, className } = appearance;
+  if (armor === "unarmored") {
+    const cloth = className === "fighter" ? 0x78303a : className === "thief" ? 0x6b4a32 : className === "priest" ? 0xd7d0b0 : 0x3c438f;
+    g.fillStyle(cloth, 1);
+    g.fillRect(11, y(15), 18, 15);
+    return;
+  }
+  if (armor === "leather") {
+    g.fillStyle(0x5b3b2b, 1);
+    g.fillRect(10, y(15), 20, 15);
+    g.fillStyle(0x8a5a37, 1);
+    g.fillRect(12, y(16), 16, 5);
+    g.fillRect(19, y(16), 2, 13);
+    g.fillStyle(0xc49a58, 1);
+    g.fillRect(12, y(17), 1, 1);
+    g.fillRect(27, y(17), 1, 1);
+    return;
+  }
+  if (armor === "plate") {
+    g.fillStyle(0x737b86, 1);
+    g.fillRect(8, y(15), 24, 14);
+    g.fillCircle(10, y(17), 4);
+    g.fillCircle(30, y(17), 4);
+    g.fillStyle(0xb8c0c8, 1);
+    g.fillRect(11, y(15), 18, 7);
+    g.fillRect(12, y(25), 4, 6);
+    g.fillRect(24, y(25), 4, 6);
+    g.fillStyle(0xe3e6e8, 1);
+    g.fillRect(14, y(16), 12, 2);
+    return;
+  }
+  const base = armor === "mithral" ? 0x86bfc8 : 0x69717a;
+  const light = armor === "mithral" ? 0xcdfaff : 0xaab1b8;
+  g.fillStyle(base, 1);
+  g.fillRect(9, y(15), 22, 15);
+  g.fillStyle(light, 1);
+  for (let row = 16; row < 29; row += 3) {
+    const start = row % 2 === 0 ? 10 : 12;
+    for (let x = start; x < 30; x += 4) g.fillRect(x, y(row), 2, 1);
+  }
+  if (armor === "mithral") {
+    g.fillStyle(0xffffff, 1);
+    g.fillRect(12, y(17), 1, 1);
+    g.fillRect(27, y(22), 1, 1);
+  }
+}
+
+function drawClassIdentity(
+  g: Phaser.GameObjects.Graphics,
+  appearance: CharacterAppearance,
+  bodyYOffset: number,
+  y: (value: number) => number,
+): void {
+  const cls = appearance.className;
+  const skin = cls === "fighter" || cls === "priest" ? 0xd8ad86 : 0xc99d78;
+  if (cls === "fighter") {
+    g.fillStyle(0x7b2632, 1);
+    g.fillRect(15, y(16), 10, 14);
+    g.fillStyle(0xc54b3c, 1);
+    g.fillRect(16, y(16), 8, 4);
+    drawFace(g, skin, bodyYOffset);
+    g.fillStyle(0x8f969f, 1);
+    g.fillRect(13, y(3), 14, 5);
+    g.fillRect(12, y(6), 3, 6);
+    g.fillRect(25, y(6), 3, 6);
+    g.fillStyle(0xe0bd58, 1);
+    g.fillRect(19, y(18), 3, 3);
+  } else if (cls === "thief") {
+    drawFace(g, skin, bodyYOffset);
+    g.fillStyle(0x285a48, 1);
+    g.fillTriangle(10, y(14), 20, y(1), 30, y(14));
+    g.fillRect(10, y(13), 4, 16);
+    g.fillRect(26, y(13), 4, 16);
+    g.fillStyle(0x3c8062, 1);
+    g.fillTriangle(12, y(13), 20, y(3), 28, y(13));
+    g.fillStyle(0xe6d27b, 1);
+    g.fillRect(17, y(10), 2, 1);
+    g.fillRect(22, y(10), 2, 1);
+    g.fillStyle(0x7d5438, 1);
+    g.fillRect(10, y(21), 20, 3);
+  } else if (cls === "priest") {
+    g.fillStyle(0xd7d0b0, 1);
+    g.fillRect(15, y(15), 10, 15);
+    g.fillStyle(0x8e3044, 1);
+    g.fillRect(14, y(21), 12, 4);
+    drawFace(g, skin, bodyYOffset);
+    g.fillStyle(0xe7d98a, 1);
+    g.fillRect(14, y(3), 12, 4);
+    g.fillRect(18, y(1), 4, 8);
+  } else {
+    g.fillStyle(0x3c438f, 1);
+    g.fillRect(11, y(15), 18, 15);
+    g.fillStyle(0x505fc1, 1);
+    g.fillTriangle(10, y(8), 21, y(0), 29, y(13));
+    g.fillRect(11, y(11), 18, 4);
+    drawFace(g, skin, bodyYOffset);
+    g.fillStyle(0xe5c85d, 1);
+    g.fillRect(21, y(5), 2, 2);
+    g.fillRect(15, y(21), 3, 3);
+  }
+  g.fillStyle(skin, 1);
+  g.fillRect(28, y(20), 4, 4);
+}
+
+function drawCharacterFrame(
+  g: Phaser.GameObjects.Graphics,
+  appearance: CharacterAppearance,
+  type: "idle" | "walk",
+  frame: number,
+): void {
   // Determine body bounce offset
   let bodyYOffset = 0;
   if (type === "idle" && frame === 1) {
@@ -95,104 +318,53 @@ function drawCharacterFrame(g: Phaser.GameObjects.Graphics, cls: string, type: "
     bodyYOffset = -1;
   }
 
-  // Draw feet base
-  g.fillStyle(cls === "fighter" ? 0x352b32 : cls === "thief" ? 0x20292a : cls === "priest" ? 0x473c39 : 0x282342, 1);
-  if (type === "idle") {
-    g.fillRect(5, 29, 6, 3);
-    g.fillRect(13, 29, 6, 3);
-  } else if (type === "walk") {
-    if (frame === 0) {
-      g.fillRect(3, 29, 6, 3);
-      g.fillRect(15, 29, 6, 3);
-    } else if (frame === 2) {
-      g.fillRect(7, 29, 6, 3);
-      g.fillRect(11, 29, 6, 3);
-    } else { // Frame 1 & 3: passing feet together
-      g.fillRect(9, 29, 6, 3);
+  const y = (val: number) => val + bodyYOffset;
+  drawShield(g, appearance.shield, y, false);
+  drawWeapon(g, appearance, y);
+  drawFeet(g, appearance.className, type, frame);
+  drawArmor(g, appearance, y);
+  drawClassIdentity(g, appearance, bodyYOffset, y);
+  drawShield(g, appearance.shield, y, true);
+}
+
+export function ensureCharacterAppearance(scene: Phaser.Scene, appearance: CharacterAppearance): string {
+  const key = characterAppearanceKey(appearance);
+  if (!scene.textures.exists(`${key}-idle-0`)) {
+    for (let f = 0; f < 2; f++) {
+      texture(scene, `${key}-idle-${f}`, CHARACTER_W, CHARACTER_H, (g) => drawCharacterFrame(g, appearance, "idle", f));
+    }
+    for (let f = 0; f < 4; f++) {
+      texture(scene, `${key}-walk-${f}`, CHARACTER_W, CHARACTER_H, (g) => drawCharacterFrame(g, appearance, "walk", f));
     }
   }
-
-  const y = (val: number) => val + bodyYOffset;
-
-  if (cls === "fighter") {
-    // Red plate body
-    g.fillStyle(0x7b2632, 1);
-    g.fillRect(4, y(14), 16, 13);
-    g.fillStyle(0xc54b3c, 1);
-    g.fillRect(6, y(14), 12, 5);
-    drawFace(g, 0xd8ad86, bodyYOffset);
-    // Steel helmet
-    g.fillStyle(0x9aa0a8, 1);
-    g.fillRect(5, y(2), 14, 5);
-    g.fillRect(4, y(5), 3, 6);
-    g.fillRect(17, y(5), 3, 6);
-    g.fillStyle(0xe0bd58, 1);
-    g.fillRect(11, y(16), 3, 3);
-    // Sword
-    g.fillStyle(0xced2d8, 1);
-    g.fillRect(19, y(14), 3, 13);
-  } else if (cls === "thief") {
-    // Green cloak
-    g.fillStyle(0x285a48, 1);
-    g.fillRect(5, y(13), 14, 15);
-    g.fillStyle(0x3c8062, 1);
-    g.fillTriangle(3, y(13), 12, y(1), 21, y(13));
-    drawFace(g, 0xc99d78, bodyYOffset);
-    // Yellow eyes/goggles
-    g.fillStyle(0xe6d27b, 1);
-    g.fillRect(9, y(9), 2, 1);
-    g.fillRect(14, y(9), 2, 1);
-    // Belt
-    g.fillStyle(0x7d5438, 1);
-    g.fillRect(4, y(18), 17, 3);
-    // Dagger
-    g.fillStyle(0xcbd2d8, 1);
-    g.fillTriangle(19, y(21), 24, y(18), 21, y(25));
-  } else if (cls === "priest") {
-    // Beige robe
-    g.fillStyle(0xd7d0b0, 1);
-    g.fillRect(4, y(13), 16, 16);
-    g.fillStyle(0x8e3044, 1);
-    g.fillRect(4, y(18), 16, 4);
-    drawFace(g, 0xd8ad86, bodyYOffset);
-    // Golden mitre/cross
-    g.fillStyle(0xe7d98a, 1);
-    g.fillRect(6, y(2), 12, 4);
-    g.fillRect(10, y(0), 4, 8);
-    // Holy staff
-    g.fillStyle(0xb89535, 1);
-    g.fillRect(11, y(15), 3, 10);
-    g.fillRect(8, y(18), 9, 3);
-  } else if (cls === "wizard") {
-    // Purple robe
-    g.fillStyle(0x3c438f, 1);
-    g.fillRect(4, y(14), 16, 15);
-    drawFace(g, 0xc99d78, bodyYOffset);
-    // Pointy hat
-    g.fillStyle(0x505fc1, 1);
-    g.fillTriangle(2, y(7), 13, y(0), 20, y(12));
-    g.fillRect(3, y(10), 18, 4);
-    g.fillStyle(0xe5c85d, 1);
-    g.fillRect(13, y(4), 2, 2);
-    g.fillRect(7, y(18), 3, 3);
-    // Crystal staff
-    g.fillStyle(0x9e6b3c, 1);
-    g.fillRect(20, y(13), 2, 17);
-    g.fillStyle(0x7ed9dd, 1);
-    g.fillCircle(21, y(11), 3);
+  if (!scene.anims.exists(`${key}-idle`)) {
+    scene.anims.create({
+      key: `${key}-idle`,
+      frames: [0, 1].map((f) => ({ key: `${key}-idle-${f}` })),
+      frameRate: 3,
+      repeat: -1,
+    });
+    scene.anims.create({
+      key: `${key}-walk`,
+      frames: [0, 1, 2, 3].map((f) => ({ key: `${key}-walk-${f}` })),
+      frameRate: 8,
+      repeat: -1,
+    });
   }
+  return key;
 }
 
 function characterTextures(scene: Phaser.Scene): void {
-  const classes = ["fighter", "thief", "priest", "wizard"];
-  for (const cls of classes) {
-    texture(scene, `char-${cls}`, 24, 32, (g) => drawCharacterFrame(g, cls, "idle", 0));
-    for (let f = 0; f < 2; f++) {
-      texture(scene, `char-${cls}-idle-${f}`, 24, 32, (g) => drawCharacterFrame(g, cls, "idle", f));
-    }
-    for (let f = 0; f < 4; f++) {
-      texture(scene, `char-${cls}-walk-${f}`, 24, 32, (g) => drawCharacterFrame(g, cls, "walk", f));
-    }
+  const defaults: readonly CharacterAppearance[] = [
+    { className: "fighter", armor: "chain", weapon: "spear", shield: "none" },
+    { className: "thief", armor: "leather", weapon: "dagger", shield: "none" },
+    { className: "priest", armor: "chain", weapon: "mace", shield: "readied" },
+    { className: "wizard", armor: "unarmored", weapon: "staff", shield: "none" },
+  ];
+  for (const appearance of defaults) {
+    ensureCharacterAppearance(scene, appearance);
+    texture(scene, `char-${appearance.className}`, CHARACTER_W, CHARACTER_H, (g) =>
+      drawCharacterFrame(g, appearance, "idle", 0));
   }
 }
 
@@ -870,6 +1042,64 @@ function propAndPickupTextures(scene: Phaser.Scene): void {
     g.fillStyle(0xe8c889, 1);
     g.fillRect(6, 7, 8, 2);
   });
+
+  for (const def of allItems()) {
+    if (!def.weaponVisual && !def.armorVisual && !def.shield) continue;
+    pickup(`pickup-${def.id}`, (g) => {
+      if (def.armorVisual) {
+        const colors = {
+          leather: [0x5b3b2b, 0xa57345],
+          chain: [0x626b75, 0xaab1b8],
+          plate: [0x7c858f, 0xdce1e5],
+          mithral: [0x78b7c2, 0xd7fbff],
+        } as const;
+        const [base, light] = colors[def.armorVisual];
+        g.fillStyle(base, 1);
+        g.fillRect(4, 6, 12, 12);
+        g.fillRect(2, 7, 4, 6);
+        g.fillRect(14, 7, 4, 6);
+        g.fillStyle(light, 1);
+        g.fillRect(6, 7, 8, 2);
+        if (def.armorVisual === "chain" || def.armorVisual === "mithral") {
+          for (let x = 5; x < 16; x += 3) g.fillRect(x, 12 + (x % 2), 1, 1);
+        }
+        return;
+      }
+      if (def.shield) {
+        g.fillStyle(0x727b85, 1);
+        g.fillCircle(10, 10, 8);
+        g.fillStyle(0x8e3440, 1);
+        g.fillRect(8, 4, 4, 12);
+        g.fillStyle(0xe2c45d, 1);
+        g.fillCircle(10, 10, 2);
+        return;
+      }
+      g.fillStyle(0x8e6138, 1);
+      if (def.weaponVisual === "mace") {
+        g.fillRect(9, 7, 3, 11);
+        g.fillStyle(0xaab1b8, 1);
+        g.fillRect(6, 3, 9, 6);
+      } else if (def.weaponVisual === "dagger") {
+        g.fillRect(8, 13, 3, 5);
+        g.fillStyle(0xd9dde2, 1);
+        g.fillTriangle(8, 14, 13, 5, 12, 14);
+      } else if (def.weaponVisual === "longsword") {
+        g.fillRect(7, 15, 3, 4);
+        g.fillStyle(0xd9dde2, 1);
+        g.fillTriangle(8, 16, 14, 2, 12, 16);
+      } else {
+        g.lineStyle(2, 0x8e6138, 1);
+        g.lineBetween(5, 18, 14, 2);
+        if (def.weaponVisual !== "staff") {
+          g.fillStyle(0xd9dde2, 1);
+          g.fillTriangle(12, 4, 16, 0, 15, 6);
+        } else {
+          g.fillStyle(0x70d7df, 1);
+          g.fillCircle(14, 2, 3);
+        }
+      }
+    });
+  }
 
   texture(scene, "campfire", 32, 26, (g) => {
     g.lineStyle(4, 0x68452c, 1);

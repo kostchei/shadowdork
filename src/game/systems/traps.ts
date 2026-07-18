@@ -4,6 +4,8 @@ import type { FeaturedTrapSpec, TilePoint } from "../level/dungeons";
 import type { GameContext } from "../context";
 import type { CharacterSprite } from "../entities/CharacterSprite";
 import { TILE } from "../textures";
+import { spikeTrap, swordClang, thud, type SfxOpts } from "../audio/sfx";
+import { spatialOpts, type Vec2 } from "../audio/spatial";
 import { floatText } from "./combat";
 
 export interface TrapInteraction {
@@ -268,6 +270,7 @@ export class TrapSystem {
         run: () => {
           const damage = this.ctx.engine.dice.roll("1d6");
           this.ctx.engine.damageCharacter(member.character, damage);
+          thud(this.spatial(member));
           floatText(this.scene, member.x, member.y - 18, `-${damage} grasping dead`, "#ff6050");
           this.openUndeadBarrier(runtime);
           this.ctx.say(`${member.character.name} tears through at a bloody cost.`, "#d07070");
@@ -635,6 +638,8 @@ export class TrapSystem {
       if (target) {
         const shielded = target.character.carriedShield && !target.character.shieldStowed;
         if (shielded) {
+          const o = this.spatial(target);
+          swordClang({ ...o, gain: (o.gain ?? 1) * 0.5 });
           floatText(this.scene, target.x, target.y - 18, "BLOCK", "#f0d080");
           this.ctx.say(`${target.character.name}'s shield catches a dart.`, "#d0a060");
         } else {
@@ -828,6 +833,12 @@ export class TrapSystem {
     }
   }
 
+  /** Trap sounds are heard from wherever the leader stands. */
+  private spatial(p: Vec2): SfxOpts {
+    const l = this.leader();
+    return spatialOpts({ x: p.x, y: p.y }, { x: l.x, y: l.y });
+  }
+
   private hurt(
     trapId: string,
     member: CharacterSprite,
@@ -839,6 +850,7 @@ export class TrapSystem {
     if (time - (this.lastHurtAt.get(key) ?? -Infinity) < 1200) return;
     this.lastHurtAt.set(key, time);
     const damage = this.ctx.engine.dice.roll(damageDice);
+    spikeTrap(this.spatial(member));
     floatText(this.scene, member.x, member.y - 18, `-${damage} ${label}`, "#ff6050");
     const wentDown = this.ctx.engine.damageCharacter(member.character, damage);
     if (wentDown) this.ctx.say(`${member.character.name} is brought down by the ${label}!`, "#ff5050");

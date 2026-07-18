@@ -11,6 +11,7 @@ import {
   xpToNextLevel,
 } from "../src/engine";
 import { createCharacter, item, registerTables, spell } from "../src/data";
+import { appearanceForCharacter, characterAppearanceKey } from "../src/game/entities/appearance";
 
 function makeEngine(seed = 42): Engine {
   const engine = new Engine({ seed });
@@ -274,6 +275,43 @@ describe("armor and AC", () => {
     expect(() => w.equipArmor(item("leather-armor"))).toThrow(/cannot wear/);
     const t = createCharacter(engine, "t", "Thief", "thief");
     expect(() => t.equipArmor(item("plate-mail"))).toThrow(/cannot wear/);
+  });
+});
+
+describe("equipped appearance state", () => {
+  it("equips class starting weapons as authoritative character state", () => {
+    const engine = makeEngine();
+    expect(createCharacter(engine, "f", "Fighter", "fighter").weapon.id).toBe("spear");
+    expect(createCharacter(engine, "t", "Thief", "thief").weapon.id).toBe("dagger");
+    expect(createCharacter(engine, "p", "Priest", "priest").weapon.id).toBe("mace");
+    expect(createCharacter(engine, "w", "Wizard", "wizard").weapon.id).toBe("staff");
+  });
+
+  it("changes the visual signature when equipment changes", () => {
+    const f = createCharacter(makeEngine(), "f", "Fighter", "fighter");
+    expect(characterAppearanceKey(appearanceForCharacter(f))).toBe("char-fighter-chain-spear-none");
+    f.equipWeapon(item("longsword"));
+    f.equipArmor(item("plate-mail"));
+    f.equipShield(item("shield"));
+    expect(characterAppearanceKey(appearanceForCharacter(f))).toBe("char-fighter-plate-longsword-readied");
+    f.shieldStowed = true;
+    expect(characterAppearanceKey(appearanceForCharacter(f))).toBe("char-fighter-plate-longsword-stowed");
+  });
+
+  it("supports thief-wearable mithral without allowing mundane chain or plate", () => {
+    const t = createCharacter(makeEngine(), "t", "Thief", "thief");
+    t.equipArmor(item("mithral-chainmail"));
+    expect(appearanceForCharacter(t).armor).toBe("mithral");
+    expect(() => t.equipArmor(item("chainmail"))).toThrow(/cannot wear/);
+    expect(() => t.equipArmor(item("plate-mail"))).toThrow(/cannot wear/);
+  });
+
+  it("rejects non-weapons and exposes weapon rules through the equipped item", () => {
+    const f = createCharacter(makeEngine(), "f", "Fighter", "fighter");
+    expect(() => f.equipWeapon(item("ration"))).toThrow(/not a melee weapon/);
+    f.equipWeapon(item("longsword"));
+    expect(f.weapon.damage).toBe("1d8");
+    expect(f.weapon.reachTiles).toBe(1.8);
   });
 });
 

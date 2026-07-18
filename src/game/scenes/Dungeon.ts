@@ -6,6 +6,10 @@
 
 import Phaser from "phaser";
 import { HudScene } from "./Hud";
+import { crackleBed, themeAmbience } from "../audio/ambience";
+import { isMuted, setMuted } from "../audio/context";
+import * as sfx from "../audio/sfx";
+import { SpatialEmitter, spatialOpts, type Vec2 } from "../audio/spatial";
 import { classDef, createCharacter, item, monster, spell } from "../../data";
 import { DC } from "../../engine";
 import { GameContext } from "../context";
@@ -86,6 +90,7 @@ export class DungeonScene extends Phaser.Scene {
   private monsterGroup!: Phaser.GameObjects.Group;
   private partyGroup!: Phaser.GameObjects.Group;
   private trapSystem!: TrapSystem;
+  private fireEmitters: SpatialEmitter[] = [];
   private pickups: Pickup[] = [];
   private npcs: RescuableNpc[] = [];
   private campfires: { x: number; y: number; free: boolean }[] = [];
@@ -108,6 +113,7 @@ export class DungeonScene extends Phaser.Scene {
   private gamePaused = false;
   private statsOverlayOpen = false;
   private gearOverlayOpen = false;
+  private gearSelectionIndex = 0;
 
   constructor() {
     super("Dungeon");
@@ -122,6 +128,7 @@ export class DungeonScene extends Phaser.Scene {
     this.gamePaused = false;
     this.statsOverlayOpen = false;
     this.gearOverlayOpen = false;
+    this.gearSelectionIndex = 0;
     this.monsters = [];
     this.pickups = [];
     this.npcs = [];
@@ -138,6 +145,15 @@ export class DungeonScene extends Phaser.Scene {
     const storedIndex = this.registry.get("dungeonIndex");
     const dungeonIndex = typeof storedIndex === "number" ? storedIndex : 0;
     this.activeDungeon = dungeonAt(dungeonIndex);
+
+    // The soundscape follows the backdrop; SHUTDOWN fires on restart too, so
+    // beds never stack across runs.
+    const ambience = themeAmbience(this.activeDungeon.theme.backdrop);
+    this.fireEmitters = [];
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      for (const bed of ambience) bed.destroy();
+      for (const e of this.fireEmitters) e.destroy();
+    });
 
     this.physics.world.setBounds(0, 0, DUNGEON_W * TILE, DUNGEON_H * TILE);
     // The framebuffer is render-scaled; zooming keeps the same 960x540 world view.
@@ -432,6 +448,12 @@ export class DungeonScene extends Phaser.Scene {
               tintAlpha: 0.45,
             });
             flameAt(this, px, py + 2, "campfire");
+            this.fireEmitters.push(
+              new SpatialEmitter(
+                crackleBed({ level: 0.55, popMeanMs: 500, rumbleLevel: 0.3 }),
+                { x: px, y: py },
+              ),
+            );
             break;
           }
           case "h": {
@@ -461,6 +483,12 @@ export class DungeonScene extends Phaser.Scene {
               repeat: -1,
             });
             flameAt(this, px, py - 4, "brazier");
+            this.fireEmitters.push(
+              new SpatialEmitter(
+                crackleBed({ level: 0.4, popMeanMs: 850, rumbleLevel: 0.18 }),
+                { x: px, y: py - 4 },
+              ),
+            );
             break;
           }
           case "*":
@@ -533,7 +561,7 @@ export class DungeonScene extends Phaser.Scene {
     const kb = this.input.keyboard;
     if (!kb) throw new Error("Keyboard input unavailable");
     this.keys = kb.addKeys(
-      "A,D,W,LEFT,RIGHT,UP,SPACE,J,X,K,C,Q,E,T,H,L,R,TAB,ONE,TWO,THREE,FOUR,ESC,I",
+      "A,D,W,LEFT,RIGHT,UP,DOWN,SPACE,J,X,K,C,Q,E,T,H,L,M,R,TAB,ONE,TWO,THREE,FOUR,ESC,I",
     ) as Record<string, Phaser.Input.Keyboard.Key>;
     kb.on("keydown-TAB", (ev: KeyboardEvent) => ev.preventDefault());
     kb.on("keydown", (ev: KeyboardEvent) => {
@@ -550,6 +578,12 @@ export class DungeonScene extends Phaser.Scene {
       return;
     }
 
+    // Mute works everywhere — paused, overlays, game over.
+    if (this.justDown("M")) {
+      setMuted(!isMuted());
+      this.ctx.say(isMuted() ? "Sound muted. (M to unmute)" : "Sound on.", "#a0a4b0");
+    }
+
     if (this.gamePaused) {
       return;
     }
@@ -561,7 +595,11 @@ export class DungeonScene extends Phaser.Scene {
       this.toggleGearOverlay();
     }
 
-    if (this.statsOverlayOpen || this.gearOverlayOpen) {
+    if (this.gearOverlayOpen) {
+      this.updateGearOverlayInput();
+      return;
+    }
+    if (this.statsOverlayOpen) {
       return;
     }
 
@@ -581,6 +619,8 @@ export class DungeonScene extends Phaser.Scene {
     this.updatePartyCombat(time);
     for (const m of this.party.members) m.tick(delta);
     this.light.update();
+    const listener = this.party.leader;
+    for (const e of this.fireEmitters) e.setListener({ x: listener.x, y: listener.y });
     this.updateLeaderMarker(time);
     this.updateInteractPrompt();
     this.updateLuckWindow(time);
@@ -634,12 +674,61 @@ export class DungeonScene extends Phaser.Scene {
     }
     const hud = this.scene.get("Hud") as HudScene;
     if (this.gearOverlayOpen) {
+      this.gearSelectionIndex = 0;
       if (this.gamePaused) this.togglePause();
       if (this.statsOverlayOpen) this.toggleStatsOverlay();
-      hud.showGearOverlay(this.party.leader.character);
+      this.refreshGearOverlay();
     } else {
       hud.hideGearOverlay();
     }
+  }
+
+  private equippableGear() {
+    return this.party.leader.character.inventory.all().filter((stack) =>
+      stack.def.weaponVisual !== undefined || stack.def.armor !== undefined || stack.def.shield === true);
+  }
+
+  private refreshGearOverlay(): void {
+    const hud = this.scene.get("Hud") as HudScene;
+    const gear = this.equippableGear();
+    if (gear.length > 0) this.gearSelectionIndex = Phaser.Math.Wrap(this.gearSelectionIndex, 0, gear.length);
+    hud.hideGearOverlay();
+    hud.showGearOverlay(this.party.leader.character, gear[this.gearSelectionIndex]?.def.id);
+  }
+
+  private updateGearOverlayInput(): void {
+    const gear = this.equippableGear();
+    if (gear.length === 0) return;
+    if (this.justDown("UP")) {
+      this.gearSelectionIndex = Phaser.Math.Wrap(this.gearSelectionIndex - 1, 0, gear.length);
+      this.refreshGearOverlay();
+      return;
+    }
+    if (this.justDown("DOWN")) {
+      this.gearSelectionIndex = Phaser.Math.Wrap(this.gearSelectionIndex + 1, 0, gear.length);
+      this.refreshGearOverlay();
+      return;
+    }
+    if (!this.justDown("E")) return;
+    const member = this.party.leader;
+    const def = gear[this.gearSelectionIndex]!.def;
+    try {
+      if (def.weaponVisual) {
+        if (member.torchLit && def.twoHanded) {
+          throw new Error(`${member.character.name} cannot wield ${def.name} while carrying a torch`);
+        }
+        member.character.equipWeapon(def);
+      } else if (def.armor) {
+        member.character.equipArmor(def);
+      } else if (def.shield) {
+        member.character.equipShield(def);
+        if (member.torchLit) member.character.shieldStowed = true;
+      }
+      this.ctx.say(`${member.character.name} equips ${def.name}.`, "#e0c060");
+    } catch (error) {
+      this.ctx.say(error instanceof Error ? error.message : String(error), "#d07070");
+    }
+    this.refreshGearOverlay();
   }
 
   private updateLeaderMarker(time: number): void {
@@ -820,6 +909,7 @@ export class DungeonScene extends Phaser.Scene {
       img.destroy();
     }
     if (hits.length > 0) {
+      sfx.crunch();
       this.cameras.main.shake(120, 0.006);
       this.ctx.say("Brakka smashes through the crumbling wall!", "#d0a060");
     }
@@ -830,7 +920,7 @@ export class DungeonScene extends Phaser.Scene {
       this.ctx.say(`${leader.character.name} already carries a lit torch.`);
       return;
     }
-    const weapon = item(leader.cls.weaponId);
+    const weapon = leader.character.weapon;
     if (weapon.twoHanded) {
       this.ctx.say(
         `${leader.character.name} needs both hands for the ${weapon.name} — someone else must carry the light.`,
@@ -861,6 +951,7 @@ export class DungeonScene extends Phaser.Scene {
         }
       },
     );
+    sfx.torchIgnite();
     this.ctx.say(
       message ?? `${c.name} lights a torch (${c.inventory.count("torch")} left). It burns in real time.`,
       "#f0c060",
@@ -878,6 +969,7 @@ export class DungeonScene extends Phaser.Scene {
     if (member.character.carriedShield && member.character.shieldStowed) {
       member.character.shieldStowed = false;
     }
+    sfx.splash();
     this.ctx.say(`${member.character.name}'s torch hisses out in the water.`, "#70b8d0");
   }
 
@@ -991,6 +1083,7 @@ export class DungeonScene extends Phaser.Scene {
       return {
         label: this.hasCrown ? "leave with the crown" : "leave empty-handed",
         run: () => {
+          sfx.doorThump();
           this.won = true;
           this.ctx.events.emit("won");
         },
@@ -1077,7 +1170,14 @@ export class DungeonScene extends Phaser.Scene {
     }
   }
 
+  /** One-shots away from the leader pan, attenuate, and muffle by distance. */
+  private spatial(p: Vec2): sfx.SfxOpts {
+    const l = this.party.leader;
+    return spatialOpts(p, { x: l.x, y: l.y });
+  }
+
   private killMonster(m: MonsterSprite): void {
+    sfx.deathKnell(m.def.undead, this.spatial(m));
     floatText(this, m.x, m.y - 10, "slain", "#c0c0c0");
     this.ctx.kills++;
     this.dropLoot(m);
@@ -1167,6 +1267,7 @@ export class DungeonScene extends Phaser.Scene {
 
       const jewel =
         def.id === "gem" || def.id === "jeweled-idol" || def.id === "crown-of-the-deep";
+      sfx.pickupChime(jewel, this.spatial({ x: pxCoord, y: pyCoord }));
       sparkleBurst(this, pxCoord, pyCoord, jewel);
       // Coins bank toward 100-coin XP thresholds; other treasure is XP outright.
       const xp = def.id === "coins" ? this.ctx.bankCoins(p.qty) : (def.xpValue ?? 0);
@@ -1207,6 +1308,7 @@ export class DungeonScene extends Phaser.Scene {
             floatText(this, m.x, m.y - 16, `${save.natural} — twists clear!`, "#60e080");
             continue;
           }
+          sfx.spikeTrap(this.spatial(m));
           floatText(
             this,
             m.x,
@@ -1262,6 +1364,7 @@ export class DungeonScene extends Phaser.Scene {
           `LEVEL UP! ${c.name} → level ${result.newLevel}. +${result.hpGained} HP. Talent (${result.talent.roll}): ${result.talent.entry.text}`,
           "#ffd040",
         );
+        sfx.levelUp();
         floatText(this, m.x, m.y - 40, `LEVEL ${result.newLevel}!`, "#ffd040", 18);
       }
     }

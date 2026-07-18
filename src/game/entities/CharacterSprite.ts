@@ -6,14 +6,17 @@
 
 import Phaser from "phaser";
 import type { Character } from "../../engine";
-import { classDef, item, type ClassDef } from "../../data";
+import { classDef, type ClassDef } from "../../data";
 import type { GameContext } from "../context";
 import type { MonsterSprite } from "./MonsterSprite";
+import { crackleBed, type AmbienceHandle } from "../audio/ambience";
+import { footstep, landThud } from "../audio/sfx";
 import { floatText } from "../systems/combat";
 import { flameFollowing } from "../fx/vfx";
 import type { LightSystem } from "../systems/light";
 import { DARK_SIGHT_TINT, SELF_GLOW_RADIUS } from "../systems/light";
-import { TILE } from "../textures";
+import { ensureCharacterAppearance, TILE } from "../textures";
+import { appearanceForCharacter, characterAppearanceKey } from "./appearance";
 
 /** Falls up to this many tiles are free; beyond, 1d6 per 3 tiles (RAW ~10 ft). */
 const SAFE_FALL_TILES = 4;
@@ -41,6 +44,8 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
   swingCooldown = 0;
   mode: FollowerMode = "follow";
   climbing = false;
+  /** Kept in sync by PartyManager — the leader's footsteps sound loudest. */
+  isLeader = false;
 
   /** Last monster that swung at this character — fuels retaliation. */
   lastAttackedBy: MonsterSprite | null = null;
@@ -54,8 +59,13 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
   private lastGroundedAt = 0;
   private shadow: Phaser.GameObjects.Image;
   private torchEmitter: Phaser.GameObjects.Particles.ParticleEmitter | null = null;
+  private torchCrackle: AmbienceHandle | null = null;
   /** Highest point (lowest y) reached while airborne — falls measure from here. */
   private fallPeakY: number | null = null;
+  /** Horizontal distance walked since the last footstep sound. */
+  private stepAccum = 0;
+  private prevStepX = 0;
+  private appearanceKey = "";
 
   constructor(
     scene: Phaser.Scene,
@@ -74,6 +84,7 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
     scene.physics.add.existing(this);
     this.setSize(20, 30).setDepth(10);
     this.setCollideWorldBounds(true);
+    this.syncAppearance();
 
     light.addSource(SELF_GLOW_RADIUS, () => (this.character.dead ? null : { x: this.x, y: this.y }), {
       tint: DARK_SIGHT_TINT,
@@ -93,14 +104,14 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
   }
 
   get weaponDamage(): string {
-    const weapon = item(this.cls.weaponId);
+    const weapon = this.character.weapon;
     if (!weapon.damage) throw new Error(`${weapon.name} has no damage dice`);
     return weapon.damage;
   }
 
   /** How far this character's melee swing lands, in pixels. */
   get weaponReachPx(): number {
-    const weapon = item(this.cls.weaponId);
+    const weapon = this.character.weapon;
     if (weapon.reachTiles === undefined) throw new Error(`${weapon.name} has no reach`);
     return weapon.reachTiles * TILE;
   }
@@ -160,24 +171,44 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
     } else {
       this.clearTint();
       this.setAngle(0);
+      this.syncAppearance();
       const isMoving = Math.abs(this.body?.velocity.x ?? 0) > 10;
       if (isMoving && this.grounded) {
-        this.play(`char-${this.character.className}-walk`, true);
+        this.play(`${this.appearanceKey}-walk`, true);
+        // Boots on stone: one grit-burst per stride, quieter for followers.
+        this.stepAccum += Math.abs(this.x - this.prevStepX);
+        if (this.stepAccum > TILE * 0.9) {
+          this.stepAccum = 0;
+          footstep({ gain: this.isLeader ? 1 : 0.3 });
+        }
       } else {
-        this.play(`char-${this.character.className}-idle`, true);
+        this.stepAccum = 0;
+        this.play(`${this.appearanceKey}-idle`, true);
       }
+      this.prevStepX = this.x;
     }
 
     if (this.torchLit) {
       if (!this.torchEmitter) {
         this.torchEmitter = flameFollowing(this.scene, this, this.facing * 6, -4);
+        this.torchCrackle = crackleBed({ level: 0.35, popMeanMs: 1300, rumbleLevel: 0.06 });
       }
       // The torch hand leads: keep the flame on the facing side.
       this.torchEmitter.followOffset.x = this.facing * 6;
     } else if (this.torchEmitter) {
       this.torchEmitter.destroy();
       this.torchEmitter = null;
+      this.torchCrackle!.destroy();
+      this.torchCrackle = null;
     }
+  }
+
+  private syncAppearance(): void {
+    const appearance = appearanceForCharacter(this.character);
+    const nextKey = characterAppearanceKey(appearance);
+    if (nextKey === this.appearanceKey) return;
+    this.appearanceKey = ensureCharacterAppearance(this.scene, appearance);
+    this.setTexture(`${this.appearanceKey}-idle-0`);
   }
 
   /** RAW falling damage: 1d6 per ~10 ft. Short hops are free; long drops bite. */
@@ -196,6 +227,7 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
     if (tilesFallen <= SAFE_FALL_TILES) return;
     const diceCount = Math.max(1, Math.floor((tilesFallen - SAFE_FALL_TILES) / TILES_PER_FALL_DIE) + 1);
     const dmg = this.ctx.engine.dice.roll(`${diceCount}d6`);
+    landThud();
     floatText(this.scene, this.x, this.y - 16, `-${dmg} fall`, "#ff8050");
     const wentDown = this.ctx.engine.damageCharacter(this.character, dmg);
     if (wentDown) {
@@ -221,6 +253,11 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
   override destroy(fromScene?: boolean): void {
     if (this.shadow.active) this.shadow.destroy();
     if (this.torchEmitter) this.torchEmitter.destroy();
+    // Scene shutdown destroys sprites without ticking — release the audio too.
+    if (this.torchCrackle) {
+      this.torchCrackle.destroy();
+      this.torchCrackle = null;
+    }
     super.destroy(fromScene);
   }
 }

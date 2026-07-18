@@ -74,7 +74,9 @@ export function createCharacter(
   }
 
   for (const spellId of def.startingSpellIds) c.learnSpell(spellId);
-  c.inventory.add(item(def.weaponId), 1, true);
+  const startingWeapon = item(def.startingWeaponId);
+  c.inventory.add(startingWeapon, 1, true);
+  c.equipWeapon(startingWeapon);
   if (def.armorId) {
     const armor = item(def.armorId);
     c.inventory.add(armor, 1, true);

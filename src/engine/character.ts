@@ -82,6 +82,8 @@ export class Character {
 
   /** Worn armor (class-gated via equipArmor). Null = unarmored: AC 10 + DEX. */
   wornArmor: ItemDef | null = null;
+  /** Weapon currently in hand. Starting weapons are equipped during character creation. */
+  wieldedWeapon: ItemDef | null = null;
   /** A readied shield: +2 AC, occupies a hand. */
   carriedShield: ItemDef | null = null;
   /** Shield slung on the back (e.g. to carry a torch): hand free, no AC bonus. */
@@ -148,6 +150,20 @@ export class Character {
       throw new Error(`A ${this.className} cannot wear ${def.name}`);
     }
     this.wornArmor = def;
+  }
+
+  /** Put a weapon in hand. Inventory ownership is enforced by the game/UI layer. */
+  equipWeapon(def: ItemDef): void {
+    if (!def.tags.includes("weapon") || !def.damage || def.reachTiles === undefined) {
+      throw new Error(`${def.name} is not a melee weapon`);
+    }
+    this.wieldedWeapon = def;
+  }
+
+  /** The active weapon; combat cannot proceed without one. */
+  get weapon(): ItemDef {
+    if (!this.wieldedWeapon) throw new Error(`${this.name} has no weapon equipped`);
+    return this.wieldedWeapon;
   }
 
   /** Ready a shield (+2 AC, occupies a hand). */

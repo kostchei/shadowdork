@@ -4,7 +4,7 @@ export interface ClassDef {
   name: ClassName;
   displayName: string;
   hitDie: string;
-  weaponId: string;
+  startingWeaponId: string;
   /** Starting armor kit: worn armor id (null = unarmored) and optional shield. */
   armorId: string | null;
   startsWithShield: boolean;
@@ -20,7 +20,7 @@ const CLASS_LIST: readonly ClassDef[] = [
     name: "fighter",
     displayName: "Fighter",
     hitDie: "1d8",
-    weaponId: "spear",
+    startingWeaponId: "spear",
     armorId: "chainmail",
     startsWithShield: false,
     talentTableId: "fighter-talents",
@@ -42,7 +42,7 @@ const CLASS_LIST: readonly ClassDef[] = [
     name: "thief",
     displayName: "Thief",
     hitDie: "1d4",
-    weaponId: "dagger",
+    startingWeaponId: "dagger",
     armorId: "leather-armor",
     startsWithShield: false,
     talentTableId: "thief-talents",
@@ -59,7 +59,7 @@ const CLASS_LIST: readonly ClassDef[] = [
     name: "priest",
     displayName: "Priest",
     hitDie: "1d6",
-    weaponId: "mace",
+    startingWeaponId: "mace",
     armorId: "chainmail",
     startsWithShield: true,
     talentTableId: "priest-talents",
@@ -71,7 +71,7 @@ const CLASS_LIST: readonly ClassDef[] = [
     name: "wizard",
     displayName: "Wizard",
     hitDie: "1d4",
-    weaponId: "staff",
+    startingWeaponId: "staff",
     armorId: null,
     startsWithShield: false,
     talentTableId: "wizard-talents",

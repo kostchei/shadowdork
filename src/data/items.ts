@@ -13,25 +13,29 @@ const ITEM_LIST: readonly ItemDef[] = [
 
   // Weapons — reachTiles: how far the swing lands; monsters strike at 1.6, so
   // the spear (and staff) can poke from beyond a monster's claws.
-  { id: "longsword", name: "Longsword", slotCost: 1, bundleSize: 1, tags: ["weapon"], damage: "1d8", reachTiles: 1.8 },
-  { id: "dagger", name: "Dagger", slotCost: 1, bundleSize: 1, tags: ["weapon"], damage: "1d4", finesse: true, reachTiles: 1.6 },
-  { id: "mace", name: "Mace", slotCost: 1, bundleSize: 1, tags: ["weapon"], damage: "1d6", reachTiles: 1.6 },
-  { id: "staff", name: "Staff", slotCost: 1, bundleSize: 1, tags: ["weapon"], damage: "1d4", twoHanded: true, reachTiles: 2.0 },
-  { id: "spear", name: "Spear", slotCost: 1, bundleSize: 1, tags: ["weapon"], damage: "1d6", finesse: true, reachTiles: 2.4 },
-  { id: "javelin", name: "Javelin", slotCost: 1, bundleSize: 1, tags: ["weapon"], damage: "1d4", finesse: true, reachTiles: 1.8 },
+  { id: "longsword", name: "Longsword", slotCost: 1, bundleSize: 1, tags: ["weapon"], damage: "1d8", reachTiles: 1.8, weaponVisual: "longsword" },
+  { id: "dagger", name: "Dagger", slotCost: 1, bundleSize: 1, tags: ["weapon"], damage: "1d4", finesse: true, reachTiles: 1.6, weaponVisual: "dagger" },
+  { id: "mace", name: "Mace", slotCost: 1, bundleSize: 1, tags: ["weapon"], damage: "1d6", reachTiles: 1.6, weaponVisual: "mace" },
+  { id: "staff", name: "Staff", slotCost: 1, bundleSize: 1, tags: ["weapon"], damage: "1d4", twoHanded: true, reachTiles: 2.0, weaponVisual: "staff" },
+  { id: "spear", name: "Spear", slotCost: 1, bundleSize: 1, tags: ["weapon"], damage: "1d6", finesse: true, reachTiles: 2.4, weaponVisual: "spear" },
+  { id: "javelin", name: "Javelin", slotCost: 1, bundleSize: 1, tags: ["weapon"], damage: "1d4", finesse: true, reachTiles: 1.8, weaponVisual: "javelin" },
 
   // Armor — AC = acBase + DEX (capped); class permissions are RAW.
   {
     id: "leather-armor", name: "Leather Armor", slotCost: 1, bundleSize: 1, tags: ["armor"],
-    armor: { acBase: 11, dexCap: 99, classes: ["fighter", "priest", "thief"] },
+    armor: { acBase: 11, dexCap: 99, classes: ["fighter", "priest", "thief"] }, armorVisual: "leather",
   },
   {
     id: "chainmail", name: "Chainmail", slotCost: 2, bundleSize: 1, tags: ["armor"],
-    armor: { acBase: 13, dexCap: 99, classes: ["fighter", "priest"] },
+    armor: { acBase: 13, dexCap: 99, classes: ["fighter", "priest"] }, armorVisual: "chain",
   },
   {
     id: "plate-mail", name: "Plate Mail", slotCost: 3, bundleSize: 1, tags: ["armor"],
-    armor: { acBase: 15, dexCap: 0, classes: ["fighter", "priest"] },
+    armor: { acBase: 15, dexCap: 0, classes: ["fighter", "priest"] }, armorVisual: "plate",
+  },
+  {
+    id: "mithral-chainmail", name: "Mithral Chainmail", slotCost: 1, bundleSize: 1, tags: ["armor", "magic"],
+    armor: { acBase: 13, dexCap: 99, classes: ["fighter", "priest", "thief"] }, armorVisual: "mithral",
   },
   { id: "shield", name: "Shield", slotCost: 1, bundleSize: 1, tags: ["armor"], shield: true },
 

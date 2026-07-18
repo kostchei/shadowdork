@@ -82,6 +82,7 @@ export class PartyManager {
 
   updateFollowers(now: number): void {
     const leader = this.leader;
+    for (const m of this.members) m.isLeader = m === leader;
     for (const m of this.members) {
       if (m === leader || !m.alive) continue;
       m.noteGrounded(now);

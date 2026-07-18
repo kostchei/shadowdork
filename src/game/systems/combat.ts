@@ -6,11 +6,11 @@
 
 import Phaser from "phaser";
 import { monsterAttackRoll, moraleCheck, type CheckResult } from "../../engine";
-import { item } from "../../data";
 import type { GameContext } from "../context";
 import { RENDER_SCALE } from "../display";
 import type { CharacterSprite } from "../entities/CharacterSprite";
 import type { MonsterSprite } from "../entities/MonsterSprite";
+import { swordClang, swordCrit, thud, whoosh } from "../audio/sfx";
 import { hitBurst } from "../fx/vfx";
 import type { LightSystem } from "./light";
 
@@ -182,7 +182,7 @@ export function meleeSwing(deps: MeleeDeps, attacker: CharacterSprite): SwingOut
     attacker: attacker.character,
     targetAc: target.def.ac,
     damage: attacker.weaponDamage,
-    weapon: item(attacker.cls.weaponId),
+    weapon: attacker.character.weapon,
     extraDamageDice: backstab ? 1 + Math.floor(attacker.character.level / 2) : 0,
     advantage: posCtx.advantage,
     disadvantage: posCtx.disadvantage,
@@ -194,8 +194,11 @@ export function meleeSwing(deps: MeleeDeps, attacker: CharacterSprite): SwingOut
     floatText(deps.scene, target.x, target.y - 16, label, result.check.crit ? "#ffd040" : "#ff7050");
     if (result.check.crit) deps.scene.cameras.main.shake(150, 0.008);
     else deps.scene.cameras.main.shake(80, 0.003);
+    if (result.check.crit) swordCrit();
+    else swordClang();
     applyDamageToMonster(deps, target, result.damage);
   } else {
+    whoosh();
     floatText(deps.scene, target.x, target.y - 16, `${die} miss`, "#8888aa");
   }
   if (posCtx.advantage.length > 0 && posCtx.disadvantage.length === 0) {
@@ -239,6 +242,7 @@ export function monsterSwing(
     inDark && monster.def.darkvision ? "advantage" : "normal",
   );
   if (result.hit) {
+    thud();
     floatText(scene, target.x, target.y - 16, `-${result.damage}`, "#ff5050");
     const wentDown = ctx.engine.damageCharacter(target.character, result.damage);
     scene.cameras.main.shake(80, 0.004);
@@ -251,6 +255,7 @@ export function monsterSwing(
       );
     }
   } else {
+    whoosh({ gain: 0.5 });
     floatText(scene, target.x, target.y - 16, "miss", "#8888aa");
   }
 }

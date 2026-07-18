@@ -96,11 +96,11 @@ function drawFace(g: Phaser.GameObjects.Graphics, skin: number, bodyYOffset = 0)
 function drawFeet(
   g: Phaser.GameObjects.Graphics,
   cls: ClassName,
-  type: "idle" | "walk",
+  type: "idle" | "walk" | "brace",
   frame: number,
 ): void {
   g.fillStyle(cls === "fighter" ? 0x352b32 : cls === "thief" ? 0x20292a : cls === "priest" ? 0x473c39 : 0x282342, 1);
-  if (type === "idle") {
+  if (type === "idle" || type === "brace") {
     g.fillRect(12, 30, 6, 3);
     g.fillRect(22, 30, 6, 3);
   } else if (frame === 0) {
@@ -119,8 +119,21 @@ function drawShield(
   shield: CharacterAppearance["shield"],
   y: (value: number) => number,
   foreground: boolean,
+  isBracing = false,
 ): void {
   if (shield === "none") return;
+  if (isBracing) {
+    if (!foreground) return;
+    g.fillStyle(0x584047, 1);
+    g.fillRect(10, y(-1), 20, 5);
+    g.fillStyle(0xa0a7ae, 1);
+    g.fillRect(11, y(0), 18, 3);
+    g.fillStyle(0x71313b, 1);
+    g.fillRect(18, y(0), 4, 3);
+    g.fillStyle(0xe1c15c, 1);
+    g.fillCircle(20, y(1), 2);
+    return;
+  }
   if ((shield === "readied") !== foreground) return;
   const x = shield === "stowed" ? 7 : 5;
   g.fillStyle(0x584047, 1);
@@ -137,7 +150,9 @@ function drawWeapon(
   g: Phaser.GameObjects.Graphics,
   appearance: CharacterAppearance,
   y: (value: number) => number,
+  isBracing = false,
 ): void {
+  if (isBracing) return;
   const metal = 0xd4d8de;
   const wood = 0x8e6138;
   switch (appearance.weapon) {
@@ -307,7 +322,7 @@ function drawClassIdentity(
 function drawCharacterFrame(
   g: Phaser.GameObjects.Graphics,
   appearance: CharacterAppearance,
-  type: "idle" | "walk",
+  type: "idle" | "walk" | "brace",
   frame: number,
 ): void {
   // Determine body bounce offset
@@ -316,15 +331,18 @@ function drawCharacterFrame(
     bodyYOffset = 1;
   } else if (type === "walk" && (frame === 1 || frame === 3)) {
     bodyYOffset = -1;
+  } else if (type === "brace") {
+    bodyYOffset = 4;
   }
 
   const y = (val: number) => val + bodyYOffset;
-  drawShield(g, appearance.shield, y, false);
-  drawWeapon(g, appearance, y);
+  const bracing = type === "brace";
+  drawShield(g, appearance.shield, y, false, bracing);
+  drawWeapon(g, appearance, y, bracing);
   drawFeet(g, appearance.className, type, frame);
   drawArmor(g, appearance, y);
   drawClassIdentity(g, appearance, bodyYOffset, y);
-  drawShield(g, appearance.shield, y, true);
+  drawShield(g, appearance.shield, y, true, bracing);
 }
 
 export function ensureCharacterAppearance(scene: Phaser.Scene, appearance: CharacterAppearance): string {
@@ -336,8 +354,15 @@ export function ensureCharacterAppearance(scene: Phaser.Scene, appearance: Chara
     for (let f = 0; f < 4; f++) {
       texture(scene, `${key}-walk-${f}`, CHARACTER_W, CHARACTER_H, (g) => drawCharacterFrame(g, appearance, "walk", f));
     }
+    texture(scene, `${key}-brace-0`, CHARACTER_W, CHARACTER_H, (g) => drawCharacterFrame(g, appearance, "brace", 0));
   }
   if (!scene.anims.exists(`${key}-idle`)) {
+    scene.anims.create({
+      key: `${key}-brace`,
+      frames: [{ key: `${key}-brace-0` }],
+      frameRate: 1,
+      repeat: -1,
+    });
     scene.anims.create({
       key: `${key}-idle`,
       frames: [0, 1].map((f) => ({ key: `${key}-idle-${f}` })),

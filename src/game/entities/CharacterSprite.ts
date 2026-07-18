@@ -31,6 +31,7 @@ const CLASS_SPEED: Record<string, number> = {
 
 export const JUMP_VELOCITY = -450;
 export const COYOTE_MS = 110;
+export const JUMP_BUFFER_MS = 120;
 export const SWING_COOLDOWN_MS = 1000;
 
 export type FollowerMode = "follow" | "hold";
@@ -44,6 +45,7 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
   swingCooldown = 0;
   mode: FollowerMode = "follow";
   climbing = false;
+  bracing = false;
   /** Kept in sync by PartyManager — the leader's footsteps sound loudest. */
   isLeader = false;
 
@@ -57,6 +59,9 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
   spellIndex = 0;
 
   private lastGroundedAt = 0;
+  private lastJumpPressedAt = -Infinity;
+  ledgeGrabState: { side: "left" | "right"; ledgeY: number } | null = null;
+  lastLedgeGrabReleaseAt = -Infinity;
   private shadow: Phaser.GameObjects.Image;
   private torchEmitter: Phaser.GameObjects.Particles.ParticleEmitter | null = null;
   private torchCrackle: AmbienceHandle | null = null;
@@ -135,6 +140,43 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
     if (dir !== 0) {
       this.facing = dir;
       this.setFlipX(dir === -1);
+    } else if (this.grounded) {
+      // Sticky edges: if standing still, prevent slipping off platform edges
+      const dungeon = this.scene as any;
+      if (dungeon && dungeon.activeDungeon && dungeon.activeDungeon.grid) {
+        const grid = dungeon.activeDungeon.grid;
+        const tileY = Math.floor((this.y + 16) / TILE);
+        if (tileY >= 0 && tileY < grid.length) {
+          const row = grid[tileY]!;
+          const getTile = (px: number) => {
+            const tx = Math.floor(px / TILE);
+            return (tx >= 0 && tx < row.length) ? row[tx] : undefined;
+          };
+          const isSolid = (ch: string | undefined) => ch === "#" || ch === "%" || ch === "=";
+
+          const centerSolid = isSolid(getTile(this.x));
+          const leftSolid = isSolid(getTile(this.x - 10));
+          const rightSolid = isSolid(getTile(this.x + 10));
+
+          if (!centerSolid) {
+            if (leftSolid && !rightSolid) {
+              const leftTileX = Math.floor((this.x - 10) / TILE);
+              const snapX = (leftTileX + 1) * TILE - 10;
+              if (this.x > snapX) {
+                this.x = snapX;
+                this.setVelocityX(0);
+              }
+            } else if (rightSolid && !leftSolid) {
+              const rightTileX = Math.floor((this.x + 10) / TILE);
+              const snapX = rightTileX * TILE + 10;
+              if (this.x < snapX) {
+                this.x = snapX;
+                this.setVelocityX(0);
+              }
+            }
+          }
+        }
+      }
     }
   }
 
@@ -144,17 +186,40 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
     if (now - this.lastGroundedAt <= COYOTE_MS) {
       this.setVelocityY(JUMP_VELOCITY);
       this.lastGroundedAt = -Infinity;
+      this.lastJumpPressedAt = -Infinity;
       return true;
+    } else {
+      this.lastJumpPressedAt = now;
     }
     return false;
   }
 
   noteGrounded(now: number): void {
-    if (this.grounded) this.lastGroundedAt = now;
+    if (this.grounded) {
+      this.lastGroundedAt = now;
+      if (now - this.lastJumpPressedAt <= JUMP_BUFFER_MS) {
+        this.setVelocityY(JUMP_VELOCITY);
+        this.lastJumpPressedAt = -Infinity;
+        this.lastGroundedAt = -Infinity;
+      }
+    }
   }
 
   tick(delta: number): void {
     this.swingCooldown = Math.max(0, this.swingCooldown - delta);
+    if (this.ledgeGrabState) {
+      this.setVelocity(0, 0);
+      (this.body as Phaser.Physics.Arcade.Body).allowGravity = false;
+      this.play(`${this.appearanceKey}-idle`, true);
+      this.shadow.setVisible(false);
+      return;
+    }
+    if (this.bracing) {
+      this.setVelocityX(0);
+      this.play(`${this.appearanceKey}-brace`, true);
+      this.shadow.setPosition(this.x, this.y + 15).setVisible(true);
+      return;
+    }
     this.trackFalling();
     this.shadow.setPosition(this.x, this.y + 15).setVisible(!this.character.dead);
     const speedRatio = Math.min(1, Math.abs(this.body?.velocity.x ?? 0) / this.speed);
@@ -219,6 +284,44 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
     }
     if (!this.grounded) {
       if (this.fallPeakY === null || this.y < this.fallPeakY) this.fallPeakY = this.y;
+      
+      // Ledge grab detection when falling
+      const body = this.body as Phaser.Physics.Arcade.Body;
+      if (body.velocity.y > 0 && !this.ledgeGrabState) {
+        const now = this.scene.time.now;
+        if (now - this.lastLedgeGrabReleaseAt > 500) {
+          const side = body.blocked.left ? "left" : body.blocked.right ? "right" : null;
+          if (side) {
+            const dx = side === "left" ? -11 : 11;
+            const tileX = Math.floor((this.x + dx) / TILE);
+            const tileYChest = Math.floor((this.y + 2) / TILE);
+            const tileYHead = Math.floor((this.y - 14) / TILE);
+            const dungeon = this.scene as any;
+            if (dungeon && dungeon.activeDungeon && dungeon.activeDungeon.grid) {
+              const grid = dungeon.activeDungeon.grid;
+              const getCell = (tx: number, ty: number) => {
+                if (ty < 0 || ty >= grid.length) return undefined;
+                const row = grid[ty]!;
+                return (tx >= 0 && tx < row.length) ? row[tx] : undefined;
+              };
+              const isSolid = (ch: string | undefined) => ch === "#" || ch === "%" || ch === "=";
+              const chestSolid = isSolid(getCell(tileX, tileYChest));
+              const headSolid = isSolid(getCell(tileX, tileYHead));
+              if (chestSolid && !headSolid) {
+                const ledgeY = tileYChest * TILE;
+                if (body.top >= ledgeY - 6 && body.top <= ledgeY + 14) {
+                  this.ledgeGrabState = { side, ledgeY };
+                  this.setVelocity(0, 0);
+                  body.allowGravity = false;
+                  this.y = ledgeY + 15;
+                  this.x = side === "left" ? (tileX + 1) * TILE + 10 : tileX * TILE - 10;
+                  this.fallPeakY = null; // Reset fall distance for damage
+                }
+              }
+            }
+          }
+        }
+      }
       return;
     }
     if (this.fallPeakY === null) return;

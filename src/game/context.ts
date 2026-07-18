@@ -36,6 +36,10 @@ export class GameContext {
   /** Running total of coins looted this run. Every full 100 banked = 1 XP. */
   private coinsBanked = 0;
 
+  set totalCoins(value: number) {
+    this.coinsBanked = value;
+  }
+
   get totalCoins(): number {
     return this.coinsBanked;
   }

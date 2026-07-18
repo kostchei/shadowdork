@@ -38,6 +38,7 @@ import {
   type DungeonDefinition,
 } from "../level/dungeons";
 import { TILE } from "../textures";
+import { serializeCharacter, deserializeCharacter, type SaveSlot } from "../state";
 
 /**
  * How long after being hit a character keeps swinging back. Monsters attack
@@ -103,6 +104,8 @@ export class DungeonScene extends Phaser.Scene {
   private lastHurtAt = new Map<string, number>();
   private encounterWaves = 0;
   private interactPrompt!: Phaser.GameObjects.Text;
+  loadedState: SaveSlot | null = null;
+  private lastRoomIndex = 1;
   private leaderMarker!: Phaser.GameObjects.Image;
   /** Read by the HUD to show the reroll hint. */
   luckWindow: LuckWindow | null = null;
@@ -120,6 +123,21 @@ export class DungeonScene extends Phaser.Scene {
   }
 
   create(): void {
+    const loadStateJson = this.registry.get("loadState");
+    this.loadedState = null;
+    if (loadStateJson) {
+      this.loadedState = typeof loadStateJson === "string" ? JSON.parse(loadStateJson) : loadStateJson;
+      this.registry.set("loadState", null); // Consume it
+      
+      this.registry.set("dungeonIndex", this.loadedState!.dungeonIndex);
+      
+      const newCtx = new GameContext();
+      newCtx.totalCoins = this.loadedState!.coinsBanked;
+      newCtx.kills = this.loadedState!.kills;
+      newCtx.messages.push(...this.loadedState!.messages);
+      this.registry.set("ctx", newCtx);
+    }
+
     this.ctx = this.registry.get("ctx") as GameContext;
     if (!this.ctx) throw new Error("GameContext missing from registry");
 
@@ -141,6 +159,7 @@ export class DungeonScene extends Phaser.Scene {
     this.luckWindow = null;
     this.leftControlDown = false;
     this.encounterWaves = 0;
+    this.lastRoomIndex = this.loadedState ? this.loadedState.currentRoom : 1;
 
     const storedIndex = this.registry.get("dungeonIndex");
     const dungeonIndex = typeof storedIndex === "number" ? storedIndex : 0;
@@ -193,6 +212,25 @@ export class DungeonScene extends Phaser.Scene {
     this.monsterGroup = this.add.group(this.monsters);
     this.physics.add.collider(this.partyGroup, this.walls);
     this.physics.add.collider(this.partyGroup, this.weakWalls);
+    this.physics.add.collider(this.partyGroup, this.partyGroup, undefined, (o1, o2) => {
+      const s1 = o1 as CharacterSprite;
+      const s2 = o2 as CharacterSprite;
+      let fighter: CharacterSprite | null = null;
+      let other: CharacterSprite | null = null;
+      if (s1.character.className === "fighter" && s1.bracing) {
+        fighter = s1;
+        other = s2;
+      } else if (s2.character.className === "fighter" && s2.bracing) {
+        fighter = s2;
+        other = s1;
+      }
+      if (fighter && other) {
+        const falling = other.body!.velocity.y >= 0;
+        const above = other.body!.bottom <= fighter.body!.top + 6;
+        return falling && above;
+      }
+      return false;
+    });
     this.physics.add.collider(this.monsterGroup, this.walls);
     this.physics.add.collider(this.monsterGroup, this.weakWalls);
     for (const member of this.party.members) this.trapSystem.registerActor(member);
@@ -388,18 +426,26 @@ export class DungeonScene extends Phaser.Scene {
             break;
           }
           case "P": {
-            const fighter = this.spawnCharacter("pc-fighter", "Brakka", "fighter", px, py);
-            this.party.add(fighter);
+            if (!this.loadedState) {
+              const fighter = this.spawnCharacter("pc-fighter", "Brakka", "fighter", px, py);
+              this.party.add(fighter);
+            }
             break;
           }
           case "2":
-            this.addNpc("thief", "Vex", px, py, "cage");
+            if (!this.loadedState || !this.loadedState.party.some((c) => c.className === "thief")) {
+              this.addNpc("thief", "Vex", px, py, "cage");
+            }
             break;
           case "3":
-            this.addNpc("priest", "Odessa", px, py, "shrine");
+            if (!this.loadedState || !this.loadedState.party.some((c) => c.className === "priest")) {
+              this.addNpc("priest", "Odessa", px, py, "shrine");
+            }
             break;
           case "4":
-            this.addNpc("wizard", "Milo", px, py);
+            if (!this.loadedState || !this.loadedState.party.some((c) => c.className === "wizard")) {
+              this.addNpc("wizard", "Milo", px, py);
+            }
             break;
           case "g":
           case "s":
@@ -424,7 +470,9 @@ export class DungeonScene extends Phaser.Scene {
             this.addPickup(px, py, "jeweled-idol", 1);
             break;
           case "K":
-            this.addPickup(px, py, "crown-of-the-deep", 1);
+            if (!this.loadedState || !this.loadedState.hasCrown) {
+              this.addPickup(px, py, "crown-of-the-deep", 1);
+            }
             break;
           case "t":
             this.addPickup(px, py, "torch", 1);
@@ -513,6 +561,30 @@ export class DungeonScene extends Phaser.Scene {
           default:
             throw new Error(`Unknown level char "${ch}" at (${x},${y})`);
         }
+      }
+    }
+
+    if (this.loadedState) {
+      const spawnPos = this.getRoomEntrancePos(this.loadedState.currentRoom);
+      this.hasCrown = this.loadedState.hasCrown;
+
+      this.loadedState.party.forEach((savedChar, idx) => {
+        const char = deserializeCharacter(savedChar, this.ctx.engine);
+        this.ctx.engine.registerCharacter(char);
+
+        // Offset followers slightly to the left
+        const px = spawnPos.x - idx * 24;
+        const py = spawnPos.y;
+
+        const sprite = new CharacterSprite(this, this.ctx, px, py, char, this.light);
+        this.add.existing(sprite);
+        this.party.add(sprite);
+      });
+
+      // Set the saved leader index
+      const savedLeaderIndex = this.loadedState.party.findIndex((c) => !c.dead);
+      if (savedLeaderIndex !== -1) {
+        this.party.selectLeader(savedLeaderIndex);
       }
     }
   }
@@ -608,7 +680,14 @@ export class DungeonScene extends Phaser.Scene {
       return;
     }
 
-    this.ctx.engine.advance(delta);
+    this.updatePartyMove(time, delta);
+
+    // Auto-save on room transition
+    const currentRoom = this.currentRoomIndex;
+    if (currentRoom !== this.lastRoomIndex) {
+      this.lastRoomIndex = currentRoom;
+      this.saveToSlot(0);
+    }
     this.updateLeaderInput(time, delta);
     this.party.updateFollowers(time);
     this.trapSystem.update(time);
@@ -810,6 +889,51 @@ export class DungeonScene extends Phaser.Scene {
     const left = this.keys.A!.isDown || this.keys.LEFT!.isDown;
     const right = this.keys.D!.isDown || this.keys.RIGHT!.isDown;
     const up = this.keys.W!.isDown || this.keys.UP!.isDown || this.keys.SPACE!.isDown;
+
+    // Ledge Grab Input Handling
+    if (leader.ledgeGrabState) {
+      const body = leader.body as Phaser.Physics.Arcade.Body;
+      const grab = leader.ledgeGrabState;
+      const down = this.keys.DOWN!.isDown;
+      const oppositeDir = grab.side === "left" ? (right || this.keys.D!.isDown) : (left || this.keys.A!.isDown);
+
+      if (up) {
+        // Auto-mantle: move player onto the platform
+        const tileX = Math.floor((leader.x + (grab.side === "left" ? -11 : 11)) / TILE);
+        leader.y = grab.ledgeY - 16;
+        leader.x = tileX * TILE + TILE / 2;
+        body.setAllowGravity(true);
+        leader.lastLedgeGrabReleaseAt = time;
+        leader.ledgeGrabState = null;
+      } else if (down || oppositeDir) {
+        // Drop down
+        body.setAllowGravity(true);
+        leader.lastLedgeGrabReleaseAt = time;
+        leader.ledgeGrabState = null;
+      } else {
+        // While hanging, hold position and velocity
+        leader.setVelocity(0, 0);
+        body.setAllowGravity(false);
+        leader.y = grab.ledgeY + 15;
+      }
+      return;
+    }
+
+    // Fighter Bracing logic
+    if (leader.character.className === "fighter") {
+      const down = this.keys.DOWN!.isDown;
+      if (down && leader.grounded) {
+        leader.bracing = true;
+        leader.setVelocityX(0);
+      } else {
+        leader.bracing = false;
+      }
+    }
+
+    if (leader.bracing) {
+      leader.noteGrounded(time);
+      return;
+    }
 
     // Thief climbing
     leader.touchingClimbable = this.climbTiles.some(
@@ -1140,6 +1264,8 @@ export class DungeonScene extends Phaser.Scene {
         this.ctx.say(`${c.name} rests: full HP, spells recovered, 1 ration consumed.`, "#60e080");
       }
     }
+    this.saveToSlot(0); // Checkpoint auto-saved!
+  }
   }
 
   private updateMonsters(time: number, delta: number): void {
@@ -1379,6 +1505,62 @@ export class DungeonScene extends Phaser.Scene {
         this.ctx.events.emit("gameover");
       }
     }
+  }
+
+  get currentRoomIndex(): number {
+    const leaderX = Math.floor(this.party.leader.x / TILE);
+    const band = ROOM_BANDS.find((b) => leaderX >= b.x1 && leaderX <= b.x2 + 1);
+    return band ? band.room : 1;
+  }
+
+  private getRoomEntrancePos(roomIndex: number): { x: number; y: number } {
+    const band = ROOM_BANDS[roomIndex - 1];
+    if (!band) return { x: TILE * 1.5, y: TILE * 12.5 };
+    const startX = band.x1 + 1;
+    for (let y = 0; y < DUNGEON_H - 1; y++) {
+      const cell = this.activeDungeon.grid[y]?.[startX];
+      const cellUnder = this.activeDungeon.grid[y+1]?.[startX];
+      if (cell === "." && cellUnder === "#") {
+        return { x: startX * TILE + TILE / 2, y: y * TILE + TILE / 2 };
+      }
+    }
+    for (let y = DUNGEON_H - 2; y >= 0; y--) {
+      const cell = this.activeDungeon.grid[y]?.[startX];
+      if (cell === ".") {
+        return { x: startX * TILE + TILE / 2, y: y * TILE + TILE / 2 };
+      }
+    }
+    return { x: startX * TILE + TILE / 2, y: TILE * 12.5 };
+  }
+
+  saveToSlot(slotId: number): void {
+    const state: SaveSlot = {
+      slotId,
+      timestamp: Date.now(),
+      dungeonIndex: this.registry.get("dungeonIndex") ?? 0,
+      currentRoom: this.currentRoomIndex,
+      hasCrown: this.hasCrown,
+      kills: this.ctx.kills,
+      coinsBanked: this.ctx.totalCoins,
+      party: this.party.members.map((m) => serializeCharacter(m.character)),
+      rescuedIds: this.party.members.map((m) => m.character.className),
+      messages: [...this.ctx.messages],
+    };
+    const key = slotId === 0 ? "shadowdork_autosave" : `shadowdork_slot_${slotId}`;
+    localStorage.setItem(key, JSON.stringify(state));
+    this.ctx.say(slotId === 0 ? "Checkpoint auto-saved." : `Game saved to Slot ${slotId}.`, "#60e080");
+  }
+
+  loadFromSlot(slotId: number): void {
+    const key = slotId === 0 ? "shadowdork_autosave" : `shadowdork_slot_${slotId}`;
+    const data = localStorage.getItem(key);
+    if (!data) {
+      this.ctx.say(`No saved game found in Slot ${slotId}.`, "#d07070");
+      return;
+    }
+    this.registry.set("loadState", data);
+    this.scene.stop("Hud");
+    this.scene.restart();
   }
 
   private restartRun(): void {

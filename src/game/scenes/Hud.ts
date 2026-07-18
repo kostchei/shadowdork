@@ -265,11 +265,11 @@ export class HudScene extends Phaser.Scene {
     const bg = this.add.rectangle(w / 2, h / 2, w, h, 0x020205, 0.7);
     const box = this.add.graphics();
     box.fillStyle(0x05060a, 0.94);
-    box.fillRoundedRect(w / 2 - 200, h / 2 - 120, 400, 250, 8);
+    box.fillRoundedRect(w / 2 - 240, h / 2 - 180, 480, 360, 8);
     box.lineStyle(2, accent, 0.9);
-    box.strokeRoundedRect(w / 2 - 200, h / 2 - 120, 400, 250, 8);
+    box.strokeRoundedRect(w / 2 - 240, h / 2 - 180, 480, 360, 8);
 
-    const title = this.add.text(w / 2, h / 2 - 80, "GAME PAUSED", {
+    const title = this.add.text(w / 2, h / 2 - 150, "GAME PAUSED", {
       fontFamily: "Georgia, serif",
       fontSize: "28px",
       color: "#ffd45f",
@@ -278,36 +278,106 @@ export class HudScene extends Phaser.Scene {
       resolution: RENDER_SCALE,
     }).setOrigin(0.5);
 
-    const sub = this.add.text(w / 2, h / 2 - 40, "Press ESC to resume", {
+    const sub = this.add.text(w / 2, h / 2 - 120, "Press ESC to resume", {
       ...UI_STYLE,
-      fontSize: "13px",
+      fontSize: "12px",
       color: "#a0a4b0"
     }).setOrigin(0.5);
 
-    const helpTitle = this.add.text(w / 2, h / 2, "CONTROLS QUICK REFERENCE", {
+    // Save/Load Columns
+    const saveHeader = this.add.text(w / 2 - 110, h / 2 - 86, "SAVE GAME", {
       ...UI_STYLE,
-      fontSize: "12px",
+      fontSize: "13px",
       color: titleColor,
       fontStyle: "bold"
     }).setOrigin(0.5);
 
-    const helpText = this.add.text(w / 2, h / 2 + 62,
-      "A/D or Arrows : Move Left/Right\n" +
-      "W/Space : Jump\n" +
-      "J / X / Left Ctrl : Melee Attack\n" +
-      "K : Cast Spell  |  Q : Cycle Spells\n" +
-      "E : Interact (Rescue / Rest / Exit)\n" +
-      "T : Light Torch  |  H : Toggle Hold/Follow\n" +
-      "L : Spend Luck (when prompted)  |  Tab/1-4 : Swap Leader\n" +
-      "C : Character Stats  |  I : Gear/Inventory\n" +
-      "M : Mute Sound", {
-      ...DATA_STYLE,
-      fontSize: "10px",
-      align: "center",
-      lineSpacing: 4
+    const loadHeader = this.add.text(w / 2 + 110, h / 2 - 86, "LOAD GAME", {
+      ...UI_STYLE,
+      fontSize: "13px",
+      color: titleColor,
+      fontStyle: "bold"
     }).setOrigin(0.5);
 
-    this.pauseOverlay = this.add.container(0, 0, [bg, box as any, title, sub, helpTitle, helpText]).setDepth(2000);
+    const makeSaveButton = (x: number, y: number, slotId: number) => {
+      const btn = this.add.text(x, y, `[ Save Slot ${slotId} ]`, {
+        ...UI_STYLE,
+        fontSize: "13px",
+        color: "#a0a4b0",
+        padding: { x: 8, y: 4 },
+      })
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true })
+      .on("pointerover", () => btn.setColor("#ffd45f"))
+      .on("pointerout", () => btn.setColor("#a0a4b0"))
+      .on("pointerdown", () => {
+        this.dungeon.saveToSlot(slotId);
+        this.hidePauseOverlay();
+        this.dungeon.togglePause();
+      });
+      return btn;
+    };
+
+    const makeLoadButton = (x: number, y: number, slotId: number, name: string) => {
+      const key = slotId === 0 ? "shadowdork_autosave" : `shadowdork_slot_${slotId}`;
+      const hasSaved = localStorage.getItem(key) !== null;
+      const btnText = hasSaved ? `[ Load ${name} ]` : "[ empty ]";
+      const btn = this.add.text(x, y, btnText, {
+        ...UI_STYLE,
+        fontSize: "13px",
+        color: hasSaved ? "#a0a4b0" : "#4a4d55",
+        padding: { x: 8, y: 4 },
+      })
+      .setOrigin(0.5);
+
+      if (hasSaved) {
+        btn.setInteractive({ useHandCursor: true })
+        .on("pointerover", () => btn.setColor("#ffd45f"))
+        .on("pointerout", () => btn.setColor("#a0a4b0"))
+        .on("pointerdown", () => {
+          this.dungeon.loadFromSlot(slotId);
+          this.hidePauseOverlay();
+          this.dungeon.togglePause();
+        });
+      }
+      return btn;
+    };
+
+    const save1 = makeSaveButton(w / 2 - 110, h / 2 - 50, 1);
+    const save2 = makeSaveButton(w / 2 - 110, h / 2 - 20, 2);
+    const save3 = makeSaveButton(w / 2 - 110, h / 2 + 10, 3);
+
+    const load1 = makeLoadButton(w / 2 + 110, h / 2 - 50, 1, "Slot 1");
+    const load2 = makeLoadButton(w / 2 + 110, h / 2 - 20, 2, "Slot 2");
+    const load3 = makeLoadButton(w / 2 + 110, h / 2 + 10, 3, "Slot 3");
+    const loadAuto = makeLoadButton(w / 2 + 110, h / 2 + 40, 0, "Auto-Save");
+
+    // Controls
+    const helpTitle = this.add.text(w / 2, h / 2 + 80, "CONTROLS QUICK REFERENCE", {
+      ...UI_STYLE,
+      fontSize: "11px",
+      color: titleColor,
+      fontStyle: "bold"
+    }).setOrigin(0.5);
+
+    const helpText = this.add.text(w / 2, h / 2 + 128,
+      "A/D or Arrows : Move Left/Right  |  W/Space : Jump\n" +
+      "J / X / Left Ctrl : Melee Attack  |  K : Cast Spell\n" +
+      "E : Interact  |  T : Light Torch  |  H : Toggle Hold/Follow\n" +
+      "C : Stats  |  I : Gear/Inventory  |  M : Mute Sound", {
+      ...DATA_STYLE,
+      fontSize: "9px",
+      align: "center",
+      lineSpacing: 3
+    }).setOrigin(0.5);
+
+    this.pauseOverlay = this.add.container(0, 0, [
+      bg, box as any, title, sub,
+      saveHeader, loadHeader,
+      save1, save2, save3,
+      load1, load2, load3, loadAuto,
+      helpTitle, helpText
+    ]).setDepth(2000);
   }
 
   hidePauseOverlay(): void {

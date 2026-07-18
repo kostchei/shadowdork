@@ -40,7 +40,7 @@ import { PartyManager } from "../systems/party";
 import { CLOSE_PX, FAR_PX, zoneBetween } from "../systems/position";
 import { castSelectedSpell, type SpellDeps } from "../systems/spells";
 import { TrapSystem } from "../systems/traps";
-import { dungeonAt, type DungeonDefinition } from "../level/dungeons";
+import { dungeonAt, type DungeonDefinition, type ExpandedConnector } from "../level/dungeons";
 import { expandDungeon } from "../level/expand";
 import { generateAbstractDungeon, type GenerateOptions } from "../level/generate";
 import type { TopologyId } from "../level/topology";
@@ -102,6 +102,10 @@ export class DungeonScene extends Phaser.Scene {
   private walls!: Phaser.Physics.Arcade.StaticGroup;
   private weakWalls!: Phaser.Physics.Arcade.StaticGroup;
   private portcullises!: Phaser.Physics.Arcade.StaticGroup;
+  private connectorGates = new Map<Phaser.Physics.Arcade.Image, ExpandedConnector>();
+  private connectorWeakWalls = new Map<Phaser.Physics.Arcade.Image, ExpandedConnector>();
+  private activatedRequirements = new Set<string>();
+  private openedConnectors = new Set<string>();
   private climbTiles: Phaser.GameObjects.Rectangle[] = [];
   private spikes: Phaser.Physics.Arcade.Image[] = [];
   private monsters: MonsterSprite[] = [];
@@ -188,6 +192,10 @@ export class DungeonScene extends Phaser.Scene {
     this.leftControlDown = false;
     this.encounterWaves = 0;
     this.rewardMarker = null;
+    this.connectorGates = new Map();
+    this.connectorWeakWalls = new Map();
+    this.activatedRequirements = new Set(this.loadedState?.activatedRequirementIds ?? []);
+    this.openedConnectors = new Set(this.loadedState?.openedConnectorIds ?? []);
     this.rewardClaimed = this.loadedState?.hasCrown ?? false;
     this.usedCharacterNames = new Set(this.loadedState?.party.map((member) => member.name) ?? []);
     this.startingFighterName = this.loadedState ? "" : this.nextPlebName();
@@ -231,6 +239,7 @@ export class DungeonScene extends Phaser.Scene {
     this.light = new LightSystem(this, this.ctx, this.activeDungeon.theme.darkness);
 
     this.buildLevel();
+    this.activateRoomRequirements(this.lastRoomId, false);
     this.lightTorch(this.party.leader, "You light a torch.");
     this.trapSystem = new TrapSystem(
       this,
@@ -458,7 +467,14 @@ export class DungeonScene extends Phaser.Scene {
               .setDepth(1);
             break;
           case "%":
-            this.weakWalls.create(px, py, "tile-weak").setTint(theme.stoneTint).setDepth(2);
+            {
+              const wall = this.weakWalls.create(px, py, "tile-weak").setTint(theme.stoneTint).setDepth(2);
+              const connector = this.activeDungeon.connectors?.find(
+                (entry) => entry.blocker?.x === x && entry.blocker?.y === y,
+              );
+              if (connector && this.openedConnectors.has(connector.id)) wall.destroy();
+              else if (connector) this.connectorWeakWalls.set(wall, connector);
+            }
             break;
           case "=": {
             // One-way platform: solid on top only, jump up through it.
@@ -479,6 +495,11 @@ export class DungeonScene extends Phaser.Scene {
           case "+": {
             const gate = this.portcullises.create(px, py, "tile-portcullis");
             gate.setTint(theme.stoneTint).setDepth(6);
+            const connector = this.activeDungeon.connectors?.find(
+              (entry) => entry.blocker?.x === x && entry.blocker?.y === y,
+            );
+            if (connector && this.openedConnectors.has(connector.id)) gate.destroy();
+            else if (connector) this.connectorGates.set(gate, connector);
             break;
           }
           case "^": {
@@ -781,10 +802,12 @@ export class DungeonScene extends Phaser.Scene {
     const currentRoom = this.currentRoomId;
     if (currentRoom !== this.lastRoomId) {
       this.lastRoomId = currentRoom;
+      this.activateRoomRequirements(currentRoom, true);
       this.saveToSlot(0);
     }
     this.updateLeaderInput(time, delta);
     this.party.updateFollowers(time, (m, dir, targetY) => this.followerCanStep(m, dir, targetY));
+    this.updateFollowerClimbs();
     this.updateFollowerSupport(time);
     this.trapSystem.update(time);
     this.updateMonsters(time, delta);
@@ -1139,12 +1162,15 @@ export class DungeonScene extends Phaser.Scene {
     for (const w of hits) {
       const img = w as Phaser.Physics.Arcade.Image;
       floatText(this, img.x, img.y, "CRUNCH", "#d0a060");
+      const connector = this.connectorWeakWalls.get(img);
+      if (connector) this.openedConnectors.add(connector.id);
       img.destroy();
     }
     if (hits.length > 0) {
       sfx.crunch();
       this.cameras.main.shake(120, 0.006);
       this.ctx.say("Brakka smashes through the crumbling wall!", "#d0a060");
+      this.saveToSlot(0);
     }
   }
 
@@ -1269,12 +1295,30 @@ export class DungeonScene extends Phaser.Scene {
       return image.active && Phaser.Math.Distance.Between(leader.x, leader.y, image.x, image.y) < TILE * 1.8;
     }) as Phaser.Physics.Arcade.Image | undefined;
     if (gate) {
+      const connector = this.connectorGates.get(gate);
+      const requirement = connector?.requirement;
+      if (requirement && !this.activatedRequirements.has(requirement.id)) {
+        return {
+          label: requirement.kind === "key" ? "requires its key" : "requires its switch",
+          run: () => this.ctx.say(
+            requirement.kind === "key" ? "The portcullis needs its key." : "The portcullis needs its switch.",
+            "#e0c060",
+          ),
+        };
+      }
       return {
-        label: "raise the portcullis",
+        label: connector?.state === "secret" ? "reveal the secret door" : "raise the portcullis",
         run: () => {
           gate.destroy();
+          if (connector) this.openedConnectors.add(connector.id);
           sfx.doorThump();
-          this.ctx.say(`${leader.character.name} heaves the portcullis open.`, "#d0c080");
+          this.ctx.say(
+            connector?.state === "secret"
+              ? `${leader.character.name} finds a concealed release.`
+              : `${leader.character.name} heaves the portcullis open.`,
+            "#d0c080",
+          );
+          this.saveToSlot(0);
         },
       };
     }
@@ -1560,6 +1604,27 @@ export class DungeonScene extends Phaser.Scene {
       if (row && solid(row[tx])) return true;
     }
     return targetY > m.y + TILE * 2;
+  }
+
+  /** Followers use the same universal ladders/ropes as the leader. */
+  private updateFollowerClimbs(): void {
+    const leader = this.party.leader;
+    for (const member of this.party.members) {
+      if (member === leader || !member.alive || member.mode === "hold") continue;
+      const touching = this.climbTiles.some(
+        (zone) => Math.abs(zone.x - member.x) <= TILE && Math.abs(zone.y - member.y) <= TILE * 1.5,
+      );
+      const verticalGap = leader.y - member.y;
+      if (touching && Math.abs(verticalGap) > TILE) {
+        const body = member.body as Phaser.Physics.Arcade.Body;
+        member.climbing = true;
+        body.setAllowGravity(false);
+        member.setVelocityY(Math.sign(verticalGap) * 100);
+      } else if (member.climbing) {
+        member.climbing = false;
+        (member.body as Phaser.Physics.Arcade.Body).setAllowGravity(true);
+      }
+    }
   }
 
   private followerAiState(id: string): { nextMoraleAt: number; rescueTargetId: string | null } {
@@ -1868,14 +1933,13 @@ export class DungeonScene extends Phaser.Scene {
   /**
    * The layout to render. `?nl=<seed>` renders a non-linear dungeon expanded from
    * the abstract generator instead of a hand-authored one; `?nltopo` / `?nlorient`
-   * force a specific form/orientation for demonstration. Without the flag (or when
-   * resuming a save), the campaign's hand-authored dungeon is used.
+   * force a specific form/orientation for demonstration. New seeded runs use the
+   * generated layout; old saves without a room id retain their authored layout.
    */
   private resolveActiveDungeon(layoutSeed: number): DungeonDefinition {
     const params = new URLSearchParams(window.location.search);
-    if (!params.has("nl") || this.loadedState) return dungeonAt(layoutSeed);
-
-    const parsed = parseInt(params.get("nl") ?? "", 10);
+    if (this.loadedState && !this.loadedState.roomId) return dungeonAt(layoutSeed);
+    const parsed = parseInt(params.get("nl") ?? String(layoutSeed), 10);
     const nlSeed = (Number.isFinite(parsed) ? parsed : layoutSeed) >>> 0;
     const opts: GenerateOptions = {};
     const topo = params.get("nltopo");
@@ -1885,10 +1949,32 @@ export class DungeonScene extends Phaser.Scene {
     return expandDungeon(generateAbstractDungeon(nlSeed, opts));
   }
 
+  /** Keys are collected and switches activated on entering their source room. */
+  private activateRoomRequirements(roomId: string, announce: boolean): void {
+    for (const connector of this.activeDungeon.connectors ?? []) {
+      const requirement = connector.requirement;
+      if (!requirement || requirement.sourceRoomId !== roomId || this.activatedRequirements.has(requirement.id)) continue;
+      this.activatedRequirements.add(requirement.id);
+      if (announce) {
+        this.ctx.say(
+          requirement.kind === "key" ? "You find the gate key." : "You throw the gate switch.",
+          "#d0e080",
+        );
+      }
+    }
+  }
+
   /** Resolve which room to spawn into on load, migrating pre-roomId saves. */
   private resolveLoadedRoomId(): string {
     const state = this.loadedState;
-    if (!state) return this.activeDungeon.regions[0]?.id ?? "room-1";
+    if (!state) {
+      for (let y = 0; y < this.activeDungeon.grid.length; y++) {
+        const x = this.activeDungeon.grid[y]!.indexOf("P");
+        const entrance = x >= 0 ? roomAt(this.activeDungeon.regions, x, y) : undefined;
+        if (entrance) return entrance.id;
+      }
+      return this.activeDungeon.regions[0]?.id ?? "room-1";
+    }
     if (state.roomId) return state.roomId;
     if (typeof state.currentRoom === "number") {
       return this.activeDungeon.regions[state.currentRoom - 1]?.id ?? this.activeDungeon.regions[0]!.id;
@@ -1925,6 +2011,8 @@ export class DungeonScene extends Phaser.Scene {
       dungeonIndex: this.registry.get("dungeonIndex") ?? 0,
       runSeed: this.registry.get("runSeed") ?? 0,
       roomId: this.currentRoomId,
+      activatedRequirementIds: [...this.activatedRequirements],
+      openedConnectorIds: [...this.openedConnectors],
       hasCrown: this.hasCrown,
       kills: this.ctx.kills,
       coinsBanked: this.ctx.totalCoins,

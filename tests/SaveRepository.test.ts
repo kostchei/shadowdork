@@ -88,6 +88,19 @@ describe("SaveRepository", () => {
     expect(loaded?.currentRoom).toBeUndefined();
   });
 
+  it("persists non-linear connector and requirement state", () => {
+    const nonlinearSave: SaveSlot = {
+      ...validSaveSlot,
+      roomId: "room-2",
+      activatedRequirementIds: ["req-1-2"],
+      openedConnectorIds: ["conn-1-2", "conn-2-4"],
+    };
+    delete (nonlinearSave as Partial<SaveSlot>).currentRoom;
+
+    SaveRepository.save(1, nonlinearSave);
+    expect(SaveRepository.load(1)?.openedConnectorIds).toEqual(["conn-1-2", "conn-2-4"]);
+  });
+
   it("validates structural integrity of save slots correctly", () => {
     expect(SaveRepository.validateSaveSlot(validSaveSlot)).toBe(true);
     expect(SaveRepository.validateSaveSlot(null)).toBe(false);

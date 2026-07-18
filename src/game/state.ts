@@ -49,6 +49,10 @@ export interface SaveSlot {
   roomId?: string;
   /** @deprecated Legacy 1-based room index (1-6); read only to migrate old saves. */
   currentRoom?: number;
+  /** Requirements acquired or switches activated in the current non-linear layout. */
+  activatedRequirementIds?: string[];
+  /** Non-linear connector ids opened, revealed, or broken during this run. */
+  openedConnectorIds?: string[];
   hasCrown: boolean;
   kills: number;
   coinsBanked: number;

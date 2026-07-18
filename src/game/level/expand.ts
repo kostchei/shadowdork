@@ -14,10 +14,11 @@
  * unchanged. This is the Milestone 2 bridge from the M1 pipeline to the screen.
  */
 
-import type { AbstractDungeon, Beat, DungeonRoomNode, MacroPoint } from "./model";
-import { DUNGEONS, type DungeonDefinition, type VariantPools } from "./dungeons";
+import type { AbstractDungeon, Beat, DungeonConnection, DungeonRoomNode, MacroPoint } from "./model";
+import { DUNGEONS, type DungeonDefinition, type ExpandedConnector, type VariantPools } from "./dungeons";
 import type { RoomRegion } from "./geometry";
 import { stampRoom, type RoomStamp } from "./templates";
+import { validatePhysicalDungeon } from "./physical";
 
 export const CELL_W = 20;
 export const CELL_H = 12;
@@ -124,6 +125,55 @@ function carveConnection(grid: Grid, path: readonly MacroPoint[], phase: Phase):
   }
 }
 
+function endpointTile(point: MacroPoint): { x: number; y: number } {
+  return { x: cellCenterX(point.column), y: standingY(point.row) };
+}
+
+/** First connector tile outside the source room, used for gates and secret doors. */
+function blockerTile(path: readonly MacroPoint[]): { x: number; y: number } {
+  const from = path[0]!;
+  const next = path[1]!;
+  if (from.row === next.row) {
+    return {
+      x: next.column > from.column ? cellOx(from.column) + CELL_W : cellOx(from.column),
+      y: standingY(from.row),
+    };
+  }
+  return {
+    x: cellCenterX(from.column),
+    y: next.row > from.row ? standingY(from.row) + 1 : standingY(from.row) - 1,
+  };
+}
+
+function expandedConnector(
+  conn: DungeonConnection,
+  path: readonly MacroPoint[],
+  requirement: AbstractDungeon["requirements"][number] | undefined,
+): ExpandedConnector {
+  const vertical = path.some((p, i) => i > 0 && p.column === path[i - 1]!.column && p.row !== path[i - 1]!.row);
+  const closed = conn.state === "locked" || conn.state === "switched" || conn.state === "secret" || conn.state === "breakable";
+  return {
+    id: conn.id,
+    fromRoomId: conn.fromRoomId,
+    toRoomId: conn.toRoomId,
+    kind: conn.kind,
+    state: conn.state,
+    direction: conn.direction,
+    requirement,
+    entry: endpointTile(path[0]!),
+    landing: endpointTile(path[path.length - 1]!),
+    blocker: closed ? blockerTile(path) : undefined,
+    vertical,
+  };
+}
+
+function stampBlocker(grid: Grid, connector: ExpandedConnector): void {
+  if (!connector.blocker) return;
+  const { x, y } = connector.blocker;
+  if (connector.state === "breakable") set(grid, x, y, "%");
+  else set(grid, x, y, "+");
+}
+
 function themeBase(themeId: string): DungeonDefinition {
   const base = DUNGEONS.find((d) => d.id === themeId);
   if (!base) throw new Error(`Unknown theme id "${themeId}" for expansion`);
@@ -165,6 +215,11 @@ export function expandDungeon(abstract: AbstractDungeon): DungeonDefinition {
   for (const path of paths) carveConnection(grid, path, "horizontal");
   for (const path of paths) carveConnection(grid, path, "vertical");
 
+  const requirements = new Map(abstract.requirements.map((r) => [r.id, r]));
+  const connectors = abstract.connections.map((conn, i) =>
+    expandedConnector(conn, paths[i]!, conn.requirementId ? requirements.get(conn.requirementId) : undefined),
+  );
+
   // 3. Stamp room contents after all carving, so nothing floats over a shaft.
   for (const room of abstract.rooms) {
     const ox = cellOx(room.position.column);
@@ -193,6 +248,10 @@ export function expandDungeon(abstract: AbstractDungeon): DungeonDefinition {
     );
   }
 
+  // 4. Closed connector states sit above room decoration and retain stable tile
+  // coordinates for the scene's interaction/persistence layer.
+  for (const connector of connectors) stampBlocker(grid, connector);
+
   const regions: RoomRegion[] = abstract.rooms.map((room) => {
     const ox = cellOx(room.position.column);
     const oy = cellOy(room.position.row);
@@ -210,7 +269,7 @@ export function expandDungeon(abstract: AbstractDungeon): DungeonDefinition {
     };
   });
 
-  return {
+  const expanded: DungeonDefinition = {
     id: `nl-${abstract.topologyId}-${abstract.seed}`,
     name: base.name,
     tagline: base.tagline,
@@ -219,6 +278,7 @@ export function expandDungeon(abstract: AbstractDungeon): DungeonDefinition {
     width,
     height,
     regions,
+    connectors,
     theme: base.theme,
     pools: EMPTY_POOLS,
     traps: [],
@@ -226,4 +286,7 @@ export function expandDungeon(abstract: AbstractDungeon): DungeonDefinition {
     danger: base.danger,
     encounterMonsterId: base.encounterMonsterId,
   };
+  const physical = validatePhysicalDungeon(expanded);
+  if (!physical.ok) throw new Error(`Invalid physical dungeon: ${physical.diagnostics.join(",")}`);
+  return expanded;
 }

@@ -11,6 +11,29 @@
  */
 
 import type { RoomRegion } from "./geometry";
+import type {
+  ConnectorDirection,
+  ConnectorKind,
+  ConnectorState,
+  Requirement,
+} from "./model";
+
+/** A connector after macro expansion, retained for rendering and runtime rules. */
+export interface ExpandedConnector {
+  id: string;
+  fromRoomId: string;
+  toRoomId: string;
+  kind: ConnectorKind;
+  state: ConnectorState;
+  direction: ConnectorDirection;
+  requirement?: Requirement;
+  /** Representative tile at each end used by physical validation. */
+  entry: { x: number; y: number };
+  landing: { x: number; y: number };
+  /** Tile occupied by an initially closed physical blocker, when applicable. */
+  blocker?: { x: number; y: number };
+  vertical: boolean;
+}
 
 export const DUNGEON_W = 120;
 export const DUNGEON_H = 17;
@@ -203,6 +226,8 @@ export interface DungeonDefinition {
   height: number;
   /** (x, y) room regions replacing the horizontal-band lookup. */
   regions: readonly RoomRegion[];
+  /** Present on expanded non-linear layouts; authored legacy dungeons have none. */
+  connectors?: readonly ExpandedConnector[];
   theme: DungeonTheme;
   pools: VariantPools;
   traps: readonly FeaturedTrapSpec[];

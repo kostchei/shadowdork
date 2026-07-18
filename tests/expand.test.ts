@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { CELL_H, CELL_W, expandDungeon } from "../src/game/level/expand";
 import { generateAbstractDungeon } from "../src/game/level/generate";
 import { roomAt } from "../src/game/level/geometry";
+import { validatePhysicalDungeon } from "../src/game/level/physical";
 import { ORIENTATIONS } from "../src/game/level/embedding";
 import { TOPOLOGIES } from "../src/game/level/topology";
 
@@ -105,5 +106,26 @@ describe("tile expansion", () => {
     const a = expandDungeon(generateAbstractDungeon(7));
     const b = expandDungeon(generateAbstractDungeon(7));
     expect(a.grid.join("\n")).toBe(b.grid.join("\n"));
+  });
+
+  it("retains semantic connector metadata and validates every physical form", () => {
+    for (const form of TOPOLOGIES) {
+      for (const orientation of ORIENTATIONS) {
+        for (let seed = 0; seed < 20; seed++) {
+          const abstract = generateAbstractDungeon(seed, { topology: form.id, orientation });
+          const expanded = expandDungeon(abstract);
+          expect(expanded.connectors).toHaveLength(abstract.connections.length);
+          expect(validatePhysicalDungeon(expanded).ok, `${form.id}/${orientation}/${seed}`).toBe(true);
+          for (const connector of expanded.connectors ?? []) {
+            expect(connector.entry.x).toBeGreaterThanOrEqual(0);
+            expect(connector.landing.y).toBeLessThan(expanded.height);
+            if (connector.state === "locked" || connector.state === "switched") {
+              expect(connector.requirement).toBeDefined();
+              expect(connector.blocker).toBeDefined();
+            }
+          }
+        }
+      }
+    }
   });
 });

@@ -80,29 +80,44 @@ export class PartyManager {
     if (!this.leader.alive) this.cycleLeader();
   }
 
-  updateFollowers(now: number): void {
+  /**
+   * canStep answers "is there ground within a safe drop ahead of this
+   * follower?" — followers stop at ledges unless their target is below them.
+   */
+  updateFollowers(
+    now: number,
+    canStep: (m: CharacterSprite, dir: -1 | 1, targetY: number) => boolean,
+  ): void {
     const leader = this.leader;
     for (const m of this.members) m.isLeader = m === leader;
     for (const m of this.members) {
       if (m === leader || !m.alive) continue;
       m.noteGrounded(now);
-      if (m.mode === "hold") {
+      // A rescue destination overrides both following and HOLD.
+      const rescue = m.aiMoveTarget;
+      if (m.mode === "hold" && !rescue) {
         m.moveHorizontal(0, 0);
         continue;
       }
-      const dx = leader.x - m.x;
+      const target = rescue ?? { x: leader.x, y: leader.y };
+      const gap = rescue ? 20 : FOLLOW_GAP_PX;
+      const dx = target.x - m.x;
       const body = m.body as Phaser.Physics.Arcade.Body;
-      if (Math.abs(dx) > TELEPORT_CATCHUP_PX) {
+      if (!rescue && Math.abs(dx) > TELEPORT_CATCHUP_PX) {
         // Hopelessly separated — catch up (Lost Vikings mercy rule).
         m.setPosition(leader.x, leader.y - 8);
         m.setVelocity(0, 0);
         continue;
       }
-      if (Math.abs(dx) > FOLLOW_GAP_PX) {
+      if (Math.abs(dx) > gap) {
         const dir: -1 | 1 = dx > 0 ? 1 : -1;
+        if (!canStep(m, dir, target.y)) {
+          m.moveHorizontal(0, 0);
+          continue;
+        }
         m.moveHorizontal(dir, 0);
         const wallAhead = dir === 1 ? body.blocked.right : body.blocked.left;
-        if ((wallAhead || leader.y < m.y - 40) && body.blocked.down) {
+        if ((wallAhead || target.y < m.y - 40) && body.blocked.down) {
           m.tryJump(now);
         }
       } else {

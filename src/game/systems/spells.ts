@@ -19,8 +19,12 @@ export interface SpellDeps extends MeleeDeps {
   party: () => CharacterSprite[];
 }
 
-/** Cast the caster's selected spell. Returns the engine result (null if nothing was cast). */
-export function castSelectedSpell(deps: SpellDeps, caster: CharacterSprite): CastResult | null {
+/** Cast the caster's selected spell. A preferred target applies to targeted attack spells. */
+export function castSelectedSpell(
+  deps: SpellDeps,
+  caster: CharacterSprite,
+  preferredTarget?: MonsterSprite,
+): CastResult | null {
   if (!caster.canSwing()) return null;
   const known = caster.character.knownSpells;
   if (known.length === 0) {
@@ -72,18 +76,25 @@ export function castSelectedSpell(deps: SpellDeps, caster: CharacterSprite): Cas
     doubled ? `${die}! CRIT CAST` : `${die} cast`,
     doubled ? "#ffd040" : "#70a0f0",
   );
-  resolveSpellEffect(deps, caster, result);
+  resolveSpellEffect(deps, caster, result, preferredTarget);
   return result;
 }
 
-function resolveSpellEffect(deps: SpellDeps, caster: CharacterSprite, result: CastResult): void {
+function resolveSpellEffect(
+  deps: SpellDeps,
+  caster: CharacterSprite,
+  result: CastResult,
+  preferredTarget?: MonsterSprite,
+): void {
   const def = result.spell;
   const mult = result.doubled ? 2 : 1;
   const { ctx, scene } = deps;
 
   switch (def.id) {
     case "magic-missile": {
-      const target = nearestMonster(deps, caster, FAR_PX);
+      const target = isValidSpellTarget(caster, preferredTarget, FAR_PX)
+        ? preferredTarget
+        : nearestMonster(deps, caster, FAR_PX);
       if (!target) {
         ctx.say("The bolt streaks away into the dark — nothing in range.");
         return;
@@ -247,6 +258,18 @@ function applyMishap(deps: SpellDeps, caster: CharacterSprite, result: CastResul
       if (m.aliveInFight) m.aiState = "aggro";
     }
   }
+}
+
+function isValidSpellTarget(
+  caster: CharacterSprite,
+  target: MonsterSprite | undefined,
+  maxDist: number,
+): target is MonsterSprite {
+  return Boolean(
+    target &&
+      target.aliveInFight &&
+      Phaser.Math.Distance.Between(caster.x, caster.y, target.x, target.y) <= maxDist,
+  );
 }
 
 function nearestMonster(

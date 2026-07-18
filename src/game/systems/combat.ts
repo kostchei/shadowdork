@@ -5,12 +5,13 @@
  */
 
 import Phaser from "phaser";
-import { monsterAttackRoll, moraleCheck, type CheckResult } from "../../engine";
+import { monsterAttackRoll, moraleCheck, type CheckResult, type ItemDef } from "../../engine";
+import { item } from "../../data";
 import type { GameContext } from "../context";
 import { RENDER_SCALE } from "../display";
 import type { CharacterSprite } from "../entities/CharacterSprite";
 import type { MonsterSprite } from "../entities/MonsterSprite";
-import { swordClang, swordCrit, thud, whoosh } from "../audio/sfx";
+import { bowShot, swordClang, swordCrit, thud, whoosh } from "../audio/sfx";
 import { hitBurst } from "../fx/vfx";
 import type { LightSystem } from "./light";
 
@@ -220,6 +221,63 @@ export function applyDamageToMonster(deps: MeleeDeps, target: MonsterSprite, dam
   } else if (target.aiState === "patrol") {
     target.aiState = "aggro";
   }
+}
+
+/** The first ranged weapon in a character's pack, if any (the thief's shortbow). */
+export function carriedRangedWeapon(attacker: CharacterSprite): ItemDef | null {
+  return attacker.character.inventory.has("shortbow") ? item("shortbow") : null;
+}
+
+/** Loose an arrow: attack roll at range, arrow flight, damage on arrival. */
+export function rangedShot(
+  deps: MeleeDeps,
+  attacker: CharacterSprite,
+  target: MonsterSprite,
+  weapon: ItemDef,
+): void {
+  if (!attacker.canSwing()) return;
+  attacker.startSwingCooldown();
+  const { scene, ctx, light } = deps;
+  if (!weapon.damage) throw new Error(`${weapon.name} has no damage dice`);
+
+  attacker.facing = target.x >= attacker.x ? 1 : -1;
+  attacker.setFlipX(attacker.facing === -1);
+  const disadvantage: string[] = [];
+  if (light.levelAt(attacker.x, attacker.y) === "dark") disadvantage.push("darkness");
+
+  const result = ctx.engine.attack({
+    attacker: attacker.character,
+    targetAc: target.def.ac,
+    damage: weapon.damage,
+    weapon,
+    advantage: [],
+    disadvantage,
+  });
+
+  bowShot();
+  const arrow = scene.add
+    .rectangle(attacker.x + attacker.facing * 8, attacker.y - 8, 10, 2, 0xd8cfa8)
+    .setDepth(20);
+  arrow.setRotation(Phaser.Math.Angle.Between(attacker.x, attacker.y, target.x, target.y));
+  scene.tweens.add({
+    targets: arrow,
+    x: target.x,
+    y: target.y - 6,
+    duration: 160,
+    onComplete: () => {
+      arrow.destroy();
+      if (!target.active || !target.aliveInFight) return;
+      const die = result.check.natural;
+      if (result.check.success) {
+        const label = result.check.crit ? `${die}! CRIT ${result.damage}` : `${die} → ${result.damage}`;
+        floatText(scene, target.x, target.y - 16, label, result.check.crit ? "#ffd040" : "#ff7050");
+        applyDamageToMonster(deps, target, result.damage);
+      } else {
+        whoosh({ gain: 0.6 });
+        floatText(scene, target.x, target.y - 16, `${die} miss`, "#8888aa");
+      }
+    },
+  });
 }
 
 /** A monster swings at a character. Darkness favors the monster — it sees fine. */

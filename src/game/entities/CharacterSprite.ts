@@ -48,6 +48,8 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
   bracing = false;
   /** Kept in sync by PartyManager — the leader's footsteps sound loudest. */
   isLeader = false;
+  /** AI destination override (rescues). While set, follower AI walks here instead of trailing the leader. */
+  aiMoveTarget: { x: number; y: number } | null = null;
 
   /** Last monster that swung at this character — fuels retaliation. */
   lastAttackedBy: MonsterSprite | null = null;

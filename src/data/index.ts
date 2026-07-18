@@ -1,4 +1,12 @@
-import { Character, rollStats, type ClassName, type Engine } from "../engine";
+import {
+  Character,
+  rollStats,
+  STAT_NAMES,
+  type ClassName,
+  type Engine,
+  type StatName,
+  type Stats,
+} from "../engine";
 import { classDef } from "./classes";
 import { item } from "./items";
 import { WIZARD_MISHAPS } from "./tables/mishaps";
@@ -23,10 +31,38 @@ export function registerTables(engine: Engine): void {
   engine.tables.register(WIZARD_MISHAPS);
 }
 
+const PRIME_STAT: Record<ClassName, StatName> = {
+  fighter: "STR",
+  thief: "DEX",
+  priest: "WIS",
+  wizard: "INT",
+};
+
+/**
+ * Guarantee the class prime stat carries one of the rolled 15s by swapping the
+ * best qualifying stat in. This also guarantees fighters can carry their
+ * complete starting kit within the strength-based gear-slot rules.
+ */
+function ensurePrimeStat(stats: Stats, cls: ClassName): void {
+  const prime = PRIME_STAT[cls];
+  if (stats[prime] >= 15) return;
+  let best: StatName | null = null;
+  for (const s of STAT_NAMES) {
+    if (s === prime) continue;
+    if (stats[s] >= 15 && (best === null || stats[s] > stats[best])) best = s;
+  }
+  // rollStats guarantees two 15s; the prime isn't one, so one must exist.
+  if (best === null) throw new Error("rollStats produced no 15+ stat to swap");
+  const tmp = stats[prime];
+  stats[prime] = stats[best];
+  stats[best] = tmp;
+}
+
 /**
  * Build a level-1 character of the given class: 3d6 stats (silently rerolled
- * until heroic — see rollStats), HP = hit die + CON (min 1), class armor kit,
- * starting gear and spells. AC is computed from armor + DEX, never stored.
+ * until heroic — see rollStats), prime stat guaranteed 15+, max HP at level 1,
+ * class armor kit, starting gear and spells. AC is computed from armor + DEX,
+ * never stored.
  */
 export function createCharacter(
   engine: Engine,
@@ -37,25 +73,7 @@ export function createCharacter(
 ): Character {
   const def = classDef(cls);
   const stats = rollStats(engine.dice);
-
-  if (cls === "fighter") {
-    if (stats.STR < 15 && stats.DEX < 15) {
-      const candidates: ("CON" | "INT" | "WIS" | "CHA")[] = ["CON", "INT", "WIS", "CHA"];
-      let bestStat: "CON" | "INT" | "WIS" | "CHA" | null = null;
-      let maxVal = -1;
-      for (const s of candidates) {
-        if (stats[s] >= 15 && stats[s] > maxVal) {
-          maxVal = stats[s];
-          bestStat = s;
-        }
-      }
-      if (bestStat) {
-        const temp = stats.STR;
-        stats.STR = stats[bestStat];
-        stats[bestStat] = temp;
-      }
-    }
-  }
+  ensurePrimeStat(stats, cls);
 
   const conMod = Math.floor((stats.CON - 10) / 2);
   const hitDieSides = parseInt(def.hitDie.split("d")[1] || "8", 10);
@@ -89,7 +107,7 @@ export function createCharacter(
   }
 
   if (cls === "fighter") {
-    c.inventory.add(item("javelin"), 1, true);
+    c.inventory.add(item("javelin"), 3, true);
     c.inventory.add(item("backpack"), 1, true);
     c.inventory.add(item("flint-and-steel"), 1, true);
     c.inventory.add(item("torch"), 2, true);
@@ -101,6 +119,9 @@ export function createCharacter(
     c.inventory.add(item("torch"), 2, true);
     c.inventory.add(item("ration"), 1, true);
   }
+  // Class sidearms: the thief shoots from the shadows, the wizard keeps knives.
+  if (cls === "thief") c.inventory.add(item("shortbow"), 1, true);
+  if (cls === "wizard") c.inventory.add(item("dagger"), 2, true);
 
   // Roll starting talents (1 + 1 extra if human/ambitious)
   const talentCount = ancestry === "human" ? 2 : 1;

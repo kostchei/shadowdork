@@ -234,6 +234,23 @@ export function thud(opts: SfxOpts = {}): void {
   shot.finish(anchor, shot.t0 + 1.2);
 }
 
+/** Bowstring thwip plus a short arrow hiss. */
+export function bowShot(opts: SfxOpts = {}): void {
+  const shot = new Shot(opts);
+  sinePartial(shot, { freq: jitter(160, 0.15), tau: 0.05, peak: 0.25 }, opts);
+  const anchor = noiseBurst(
+    shot,
+    {
+      kind: "white",
+      duration: 0.12,
+      peak: 0.12,
+      filter: { type: "bandpass", from: 2500, to: 900 },
+    },
+    opts,
+  );
+  shot.finish(anchor, shot.t0 + 0.5);
+}
+
 /** A miss — air parting around the blade. */
 export function whoosh(opts: SfxOpts = {}): void {
   const shot = new Shot(opts);

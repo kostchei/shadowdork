@@ -139,10 +139,11 @@ export class Engine {
   }
 
   attack(input: AttackInput): AttackResult {
-    // Finesse weapons swing on the better of STR/DEX (the Thief's dagger is DEX).
+    // Ranged weapons use DEX. Finesse melee weapons use the better of STR/DEX.
     const finesse = input.weapon?.finesse === true;
+    const ranged = input.weapon?.tags.includes("ranged") === true;
     const a = input.attacker;
-    const stat = finesse && a.mod("DEX") > a.mod("STR") ? "DEX" : "STR";
+    const stat = ranged || (finesse && a.mod("DEX") > a.mod("STR")) ? "DEX" : "STR";
     const check = this.check({
       actor: a,
       stat,

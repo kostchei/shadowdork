@@ -181,8 +181,8 @@ describe("inventory gear slots", () => {
     const engine = makeEngine();
     const wiz = createCharacter(engine, "w", "Wizard", "wizard");
     expect(wiz.inventory.capacity).toBe(Math.max(wiz.stats.STR, 10));
-    // Starting gear: staff + 2 torches + ration = 4 slots (wizards wear no armor).
-    expect(wiz.inventory.slotsUsed()).toBe(4);
+    // Starting gear: staff + 2 torches + ration + 2 daggers = 6 slots (wizards wear no armor).
+    expect(wiz.inventory.slotsUsed()).toBe(6);
     wiz.inventory.add(item("torch"), wiz.inventory.slotsFree());
     expect(() => wiz.inventory.add(item("torch"))).toThrow(/Cannot carry/);
   });
@@ -327,6 +327,19 @@ describe("attack fidelity", () => {
     });
     const r = engine.attack({ attacker: t, targetAc: 10, damage: "1d4", weapon: item("dagger") });
     expect(r.check.modifier).toBe(3); // DEX +3, not STR -1
+  });
+
+  it("ranged weapons use DEX even when STR is higher", () => {
+    const engine = makeEngine();
+    const archer = new Character({
+      id: "archer",
+      name: "Archer",
+      className: "thief",
+      stats: { STR: 18, DEX: 12, CON: 10, INT: 10, WIS: 10, CHA: 10 },
+      maxHp: 6,
+    });
+    const r = engine.attack({ attacker: archer, targetAc: 10, damage: "1d4", weapon: item("shortbow") });
+    expect(r.check.modifier).toBe(1); // DEX +1, not STR +4
   });
 
   it("backstab extra dice raise the damage ceiling", () => {

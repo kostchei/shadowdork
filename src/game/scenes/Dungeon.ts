@@ -18,16 +18,18 @@ import { CharacterSprite } from "../entities/CharacterSprite";
 import { MonsterSprite, MONSTER_ATTACK_COOLDOWN_MS } from "../entities/MonsterSprite";
 import { flameAt, sparkleBurst } from "../fx/vfx";
 import {
+  carriedRangedWeapon,
   floatText,
   meleeSwing,
   monsterSwing,
   MoraleTracker,
+  rangedShot,
   type MeleeDeps,
 } from "../systems/combat";
 import { EncounterSystem } from "../systems/encounters";
 import { CAMPFIRE_RADIUS, LightSystem } from "../systems/light";
 import { PartyManager } from "../systems/party";
-import { CLOSE_PX, zoneBetween } from "../systems/position";
+import { CLOSE_PX, FAR_PX, zoneBetween } from "../systems/position";
 import { castSelectedSpell, type SpellDeps } from "../systems/spells";
 import { TrapSystem } from "../systems/traps";
 import {
@@ -98,6 +100,8 @@ export class DungeonScene extends Phaser.Scene {
   private shrines: { x: number; y: number }[] = [];
   private door!: { x: number; y: number };
   private morale = new MoraleTracker();
+  /** Per-follower support-AI state, keyed by character id. */
+  private followerAi = new Map<string, { nextMoraleAt: number; rescueTargetId: string | null }>();
   private dyingLabels = new Map<string, Phaser.GameObjects.Text>();
   private gameOver = false;
   private won = false;
@@ -156,6 +160,7 @@ export class DungeonScene extends Phaser.Scene {
     this.spikes = [];
     this.dyingLabels = new Map();
     this.morale = new MoraleTracker();
+    this.followerAi = new Map();
     this.luckWindow = null;
     this.leftControlDown = false;
     this.encounterWaves = 0;
@@ -566,7 +571,7 @@ export class DungeonScene extends Phaser.Scene {
 
     if (this.loadedState) {
       const spawnPos = this.getRoomEntrancePos(this.loadedState.currentRoom);
-      this.hasCrown = this.loadedState.hasCrown;
+      // hasCrown is derived from party inventories, restored just below.
 
       this.loadedState.party.forEach((savedChar, idx) => {
         const char = deserializeCharacter(savedChar, this.ctx.engine);
@@ -680,7 +685,8 @@ export class DungeonScene extends Phaser.Scene {
       return;
     }
 
-    this.updatePartyMove(time, delta);
+    // Keep all rules time (rounds, torches, spell effects) in lockstep with gameplay.
+    this.ctx.engine.advance(delta);
 
     // Auto-save on room transition
     const currentRoom = this.currentRoomIndex;
@@ -689,7 +695,8 @@ export class DungeonScene extends Phaser.Scene {
       this.saveToSlot(0);
     }
     this.updateLeaderInput(time, delta);
-    this.party.updateFollowers(time);
+    this.party.updateFollowers(time, (m, dir, targetY) => this.followerCanStep(m, dir, targetY));
+    this.updateFollowerSupport(time);
     this.trapSystem.update(time);
     this.updateMonsters(time, delta);
     this.updatePickups();
@@ -707,7 +714,7 @@ export class DungeonScene extends Phaser.Scene {
     this.checkEndConditions();
   }
 
-  private togglePause(): void {
+  togglePause(): void {
     this.gamePaused = !this.gamePaused;
     this.physics.world.isPaused = this.gamePaused;
     if (this.gamePaused) {
@@ -1266,7 +1273,6 @@ export class DungeonScene extends Phaser.Scene {
     }
     this.saveToSlot(0); // Checkpoint auto-saved!
   }
-  }
 
   private updateMonsters(time: number, delta: number): void {
     for (const m of this.monsters) {
@@ -1336,14 +1342,142 @@ export class DungeonScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * Followers refuse to walk off ledges: a step is legal only when solid
+   * ground exists within a safe drop (4 tiles, matching free-fall range)
+   * ahead, or when their destination is genuinely below them.
+   */
+  private followerCanStep(m: CharacterSprite, dir: -1 | 1, targetY: number): boolean {
+    const SAFE_DROP_TILES = 4;
+    const grid = this.activeDungeon.grid;
+    const tx = Math.floor((m.x + dir * TILE * 0.75) / TILE);
+    const footTy = Math.floor((m.y + 16) / TILE);
+    const solid = (ch: string | undefined) => ch === "#" || ch === "%" || ch === "=";
+    for (let dy = 0; dy <= SAFE_DROP_TILES; dy++) {
+      const row = grid[footTy + dy];
+      if (row && solid(row[tx])) return true;
+    }
+    return targetY > m.y + TILE * 2;
+  }
+
+  private followerAiState(id: string): { nextMoraleAt: number; rescueTargetId: string | null } {
+    let s = this.followerAi.get(id);
+    if (!s) {
+      s = { nextMoraleAt: 0, rescueTargetId: null };
+      this.followerAi.set(id, s);
+    }
+    return s;
+  }
+
+  /** Point a caster's spellIndex at a spell if it's ready; false otherwise. */
+  private selectSpell(m: CharacterSprite, spellId: string): boolean {
+    const idx = m.character.knownSpells.findIndex(
+      (s) => s.spellId === spellId && s.status === "available" && !s.requiresAtonement,
+    );
+    if (idx < 0) return false;
+    m.spellIndex = idx;
+    return true;
+  }
+
+  /** Follower stabilize — same engine roll as the leader's, no luck window. */
+  private followerStabilize(m: CharacterSprite, dying: CharacterSprite): void {
+    // Another follower may already have healed or stabilized this target this frame.
+    if (!m.canSwing() || !dying.character.dying) return;
+    m.startSwingCooldown();
+    const result = this.ctx.engine.stabilize(m.character, dying.character);
+    if (result.success) {
+      floatText(this, dying.x, dying.y - 20, `${result.natural} stable!`, "#60e080");
+      this.ctx.say(`${m.character.name} stabilizes ${dying.character.name} at 1 HP.`, "#60e080");
+    } else {
+      floatText(this, dying.x, dying.y - 20, `${result.natural} — failed`, "#d07070");
+    }
+  }
+
+  /**
+   * Support AI for followers: rally (morale check) to stabilize the dying,
+   * priests heal anyone under half HP, wizards hammer an aggro'd boss.
+   */
+  private updateFollowerSupport(time: number): void {
+    const leader = this.party.leader;
+
+    for (const m of this.party.members) {
+      if (m === leader || !m.alive) continue;
+      const c = m.character;
+      const state = this.followerAiState(c.id);
+      // Re-evaluate for every follower: a prior follower can stabilize in this same update.
+      const dying = this.party.members.find((p) => p.character.dying && !p.character.dead);
+
+      // 1. Rescue the dying. Courage first: a WIS morale check to run in.
+      if (dying && dying !== m) {
+        if (state.rescueTargetId !== dying.character.id && time >= state.nextMoraleAt) {
+          state.nextMoraleAt = time + 3000;
+          const morale = this.ctx.engine.check({
+            actor: c,
+            stat: "WIS",
+            dc: DC.NORMAL,
+            kind: "stat",
+          });
+          if (morale.success) {
+            state.rescueTargetId = dying.character.id;
+            this.ctx.say(`${c.name} rushes to help ${dying.character.name}!`, "#70d070");
+          } else {
+            floatText(this, m.x, m.y - 24, `${morale.natural} — hesitates!`, "#d07070", 11);
+          }
+        }
+        if (state.rescueTargetId === dying.character.id) {
+          if (zoneBetween(m, dying) === "close") {
+            m.aiMoveTarget = null;
+            this.followerStabilize(m, dying);
+          } else {
+            m.aiMoveTarget = { x: dying.x, y: dying.y };
+          }
+          continue; // A rescue outranks spellcasting.
+        }
+      } else {
+        state.rescueTargetId = null;
+        m.aiMoveTarget = null;
+      }
+
+      // 2. Priest: mend whoever has slipped under half HP (or is dying).
+      if (c.className === "priest" && m.canSwing()) {
+        const wounded = this.party.members.find(
+          (p) =>
+            !p.character.dead &&
+            (p.character.dying !== null || p.character.hp < p.character.maxHp / 2) &&
+            zoneBetween(m, p) !== "beyond",
+        );
+        if (wounded && this.selectSpell(m, "cure-wounds")) {
+          castSelectedSpell(this.spellDeps(), m);
+          continue;
+        }
+      }
+
+      // 3. Wizard: unload on the boss once battle is joined.
+      if (c.className === "wizard" && m.canSwing()) {
+        const boss = this.monsters.find(
+          (mon) =>
+            mon.aliveInFight &&
+            mon.def.leader === true &&
+            mon.aiState === "aggro" &&
+            Phaser.Math.Distance.Between(m.x, m.y, mon.x, mon.y) <= FAR_PX,
+        );
+        if (boss && this.selectSpell(m, "magic-missile")) {
+          m.facing = boss.x >= m.x ? 1 : -1;
+          m.setFlipX(m.facing === -1);
+          castSelectedSpell(this.spellDeps(), m, boss);
+        }
+      }
+    }
+  }
+
   private updatePartyCombat(time: number): void {
     for (const m of this.party.members) {
       if (!m.alive) continue;
       const reach = m.weaponReachPx;
 
-      // Followers on FOLLOW pick fights with whatever wanders into reach.
+      // Followers — FOLLOW or HOLD — swing at whatever wanders into reach.
       let foe: MonsterSprite | undefined;
-      if (m !== this.party.leader && m.mode === "follow") {
+      if (m !== this.party.leader) {
         foe = this.monsters.find(
           (mon) => mon.aliveInFight && Phaser.Math.Distance.Between(m.x, m.y, mon.x, mon.y) <= reach,
         );
@@ -1368,6 +1502,21 @@ export class DungeonScene extends Phaser.Scene {
         m.facing = foe.x >= m.x ? 1 : -1;
         m.setFlipX(m.facing === -1);
         meleeSwing(this.meleeDeps(), m);
+        continue;
+      }
+
+      // Archers pick off riled monsters from range when nothing is in reach.
+      if (m !== this.party.leader) {
+        const bow = carriedRangedWeapon(m);
+        if (bow) {
+          const mark = this.monsters.find(
+            (mon) =>
+              mon.aliveInFight &&
+              mon.aiState === "aggro" &&
+              Phaser.Math.Distance.Between(m.x, m.y, mon.x, mon.y) <= FAR_PX,
+          );
+          if (mark) rangedShot(this.meleeDeps(), m, mark, bow);
+        }
       }
     }
   }

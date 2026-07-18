@@ -1,4 +1,12 @@
-import type { Engine, Character, Stats, KnownSpell, DyingState, Effect } from "../engine";
+import type {
+  Alignment,
+  Character,
+  DyingState,
+  Effect,
+  Engine,
+  KnownSpell,
+  Stats,
+} from "../engine";
 import { Character as EngineCharacter } from "../engine";
 import { item } from "../data";
 
@@ -11,6 +19,9 @@ export interface SavedCharacter {
   id: string;
   name: string;
   className: string;
+  /** Optional for backward compatibility with saves created before character identity data. */
+  alignment?: Alignment;
+  ancestry?: string;
   stats: Stats;
   level: number;
   xp: number;
@@ -51,6 +62,8 @@ export function serializeCharacter(c: Character): SavedCharacter {
     id: c.id,
     name: c.name,
     className: c.className,
+    alignment: c.alignment,
+    ancestry: c.ancestry,
     stats: c.stats,
     level: c.level,
     xp: c.xp,
@@ -74,6 +87,8 @@ export function deserializeCharacter(state: SavedCharacter, engine: Engine): Cha
     id: state.id,
     name: state.name,
     className: state.className as any,
+    alignment: state.alignment ?? "neutral",
+    ancestry: state.ancestry ?? "human",
     stats: state.stats,
     maxHp: state.hp, // Set initial hp to prevent maxHp calculation issues during init
   });

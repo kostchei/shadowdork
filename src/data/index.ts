@@ -1,11 +1,13 @@
 import {
   Character,
+  rollAlignment,
   rollStats,
   STAT_NAMES,
   type ClassName,
   type Engine,
   type StatName,
   type Stats,
+  type Alignment,
 } from "../engine";
 import { classDef } from "./classes";
 import { item } from "./items";
@@ -21,6 +23,7 @@ export { classDef, type ClassDef } from "./classes";
 export { allItems, item } from "./items";
 export { monster } from "./monsters";
 export { highestAvailableSpellIndex, spell, spellsForClass } from "./spells";
+export { isPlebName, plebNameForSeed, randomPlebName } from "./names";
 
 /** Register all data tables with an engine instance. Call once at boot. */
 export function registerTables(engine: Engine): void {
@@ -70,6 +73,7 @@ export function createCharacter(
   name: string,
   cls: ClassName,
   ancestry = "human",
+  alignment?: Alignment,
 ): Character {
   const def = classDef(cls);
   const stats = rollStats(engine.dice);
@@ -78,7 +82,15 @@ export function createCharacter(
   const conMod = Math.floor((stats.CON - 10) / 2);
   const hitDieSides = parseInt(def.hitDie.split("d")[1] || "8", 10);
   const maxHp = Math.max(1, hitDieSides + conMod);
-  const c = new Character({ id, name, className: cls, stats, maxHp, ancestry });
+  const c = new Character({
+    id,
+    name,
+    className: cls,
+    stats,
+    maxHp,
+    ancestry,
+    alignment: alignment ?? rollAlignment(engine.dice),
+  });
   for (const f of def.features) c.addEffect(structuredClone(f) as typeof f);
 
   // Configure Grit for Fighter:

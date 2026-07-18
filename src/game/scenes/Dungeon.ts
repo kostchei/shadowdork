@@ -16,9 +16,10 @@ import {
   highestAvailableSpellIndex,
   item,
   monster,
+  randomPlebName,
   spell,
 } from "../../data";
-import { DC } from "../../engine";
+import { DC, type Alignment } from "../../engine";
 import { GameContext } from "../context";
 import { RENDER_SCALE } from "../display";
 import { CharacterSprite } from "../entities/CharacterSprite";
@@ -138,6 +139,9 @@ export class DungeonScene extends Phaser.Scene {
   private statsOverlayOpen = false;
   private gearOverlayOpen = false;
   private gearSelectionIndex = 0;
+  private startPaused = true;
+  private usedCharacterNames = new Set<string>();
+  private startingFighterName = "";
 
   constructor() {
     super("Dungeon");
@@ -165,6 +169,7 @@ export class DungeonScene extends Phaser.Scene {
     this.gameOver = false;
     this.won = false;
     this.gamePaused = false;
+    this.startPaused = true;
     this.statsOverlayOpen = false;
     this.gearOverlayOpen = false;
     this.gearSelectionIndex = 0;
@@ -184,6 +189,8 @@ export class DungeonScene extends Phaser.Scene {
     this.rewardMarker = null;
     this.rewardClaimed = this.loadedState?.hasCrown ?? false;
     this.lastRoomIndex = this.loadedState ? this.loadedState.currentRoom : 1;
+    this.usedCharacterNames = new Set(this.loadedState?.party.map((member) => member.name) ?? []);
+    this.startingFighterName = this.loadedState ? "" : this.nextPlebName();
 
     const storedIndex = this.registry.get("dungeonIndex");
     const dungeonIndex = typeof storedIndex === "number" ? storedIndex : 0;
@@ -192,7 +199,7 @@ export class DungeonScene extends Phaser.Scene {
       dungeonIndex,
       this.loadedState
         ? progressFromSavedParty(this.loadedState.party)
-        : [{ className: "fighter", level: 1, knownSpellIds: [] }],
+        : [{ name: this.startingFighterName, className: "fighter", level: 1, knownSpellIds: [] }],
     );
 
     // The soundscape follows the backdrop; SHUTDOWN fires on restart too, so
@@ -303,7 +310,19 @@ export class DungeonScene extends Phaser.Scene {
     );
     this.cameras.main.fadeIn(450, 0, 0, 0);
 
+    this.physics.world.isPaused = true;
+    this.anims.pauseAll();
     this.scene.launch("Hud");
+  }
+
+  get awaitingStart(): boolean {
+    return this.startPaused;
+  }
+
+  private nextPlebName(): string {
+    const name = randomPlebName(this.ctx.engine.dice, this.usedCharacterNames);
+    this.usedCharacterNames.add(name);
+    return name;
   }
 
   /** Spawn an encounter wave off-screen, already hunting the party. */
@@ -459,24 +478,30 @@ export class DungeonScene extends Phaser.Scene {
           }
           case "P": {
             if (!this.loadedState) {
-              const fighter = this.spawnCharacter("pc-fighter", "Brakka", "fighter", px, py);
+              const fighter = this.spawnCharacter(
+                "pc-fighter",
+                this.startingFighterName,
+                "fighter",
+                px,
+                py,
+              );
               this.party.add(fighter);
             }
             break;
           }
           case "2":
             if (!this.loadedState || !this.loadedState.party.some((c) => c.className === "thief")) {
-              this.addNpc("thief", "Vex", px, py, "cage");
+              this.addNpc("thief", this.nextPlebName(), px, py, "cage");
             }
             break;
           case "3":
             if (!this.loadedState || !this.loadedState.party.some((c) => c.className === "priest")) {
-              this.addNpc("priest", "Odessa", px, py, "shrine");
+              this.addNpc("priest", this.nextPlebName(), px, py, "shrine");
             }
             break;
           case "4":
             if (!this.loadedState || !this.loadedState.party.some((c) => c.className === "wizard")) {
-              this.addNpc("wizard", "Milo", px, py);
+              this.addNpc("wizard", this.nextPlebName(), px, py);
             }
             break;
           case "g":
@@ -625,8 +650,9 @@ export class DungeonScene extends Phaser.Scene {
     cls: "fighter" | "thief" | "priest" | "wizard",
     x: number,
     y: number,
+    alignment?: Alignment,
   ): CharacterSprite {
-    const character = createCharacter(this.ctx.engine, id, name, cls);
+    const character = createCharacter(this.ctx.engine, id, name, cls, "human", alignment);
     return new CharacterSprite(this, this.ctx, x, y, character, this.light);
   }
 
@@ -698,6 +724,11 @@ export class DungeonScene extends Phaser.Scene {
   }
 
   override update(time: number, delta: number): void {
+    if (this.startPaused) {
+      if (this.startControlDown()) this.dismissStartPause();
+      return;
+    }
+
     if (this.justDown("ESC")) {
       this.togglePause();
       return;
@@ -778,6 +809,19 @@ export class DungeonScene extends Phaser.Scene {
     } else {
       hud.hidePauseOverlay();
     }
+  }
+
+  private startControlDown(): boolean {
+    return ["A", "D", "W", "LEFT", "RIGHT", "UP", "DOWN", "SPACE", "J", "X", "K"]
+      .some((key) => this.keys[key]!.isDown) || this.leftControlDown;
+  }
+
+  private dismissStartPause(): void {
+    this.startPaused = false;
+    this.physics.world.isPaused = false;
+    this.anims.resumeAll();
+    const hud = this.scene.get("Hud") as HudScene;
+    hud.hideStartOverlay();
   }
 
   private toggleStatsOverlay(): void {
@@ -1296,6 +1340,7 @@ export class DungeonScene extends Phaser.Scene {
         reward.className,
         this.rewardMarker.x,
         this.rewardMarker.y,
+        reward.alignment,
       );
       this.party.add(recruit);
       this.partyGroup.add(recruit);

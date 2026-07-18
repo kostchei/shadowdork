@@ -194,6 +194,13 @@ export class SaveRepository {
       if (typeof char.id !== "string") return false;
       if (typeof char.name !== "string") return false;
       if (typeof char.className !== "string") return false;
+      if (
+        char.alignment !== undefined &&
+        char.alignment !== "law" &&
+        char.alignment !== "neutral" &&
+        char.alignment !== "chaos"
+      ) return false;
+      if (char.ancestry !== undefined && typeof char.ancestry !== "string") return false;
       if (typeof char.level !== "number") return false;
       if (typeof char.hp !== "number") return false;
       if (typeof char.maxHp !== "number") return false;

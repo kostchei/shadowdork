@@ -33,6 +33,8 @@ describe("Save slots / serialization", () => {
     const serialized = serializeCharacter(thief);
     expect(serialized.name).toBe("Vex");
     expect(serialized.className).toBe("thief");
+    expect(serialized.alignment).toBe(thief.alignment);
+    expect(serialized.ancestry).toBe(thief.ancestry);
     expect(serialized.hp).toBe(3);
     expect(serialized.wornArmorId).toBe("leather-armor");
     expect(serialized.wieldedWeaponId).toBe("dagger");
@@ -45,6 +47,8 @@ describe("Save slots / serialization", () => {
     expect(restored.id).toBe("t");
     expect(restored.name).toBe("Vex");
     expect(restored.className).toBe("thief");
+    expect(restored.alignment).toBe(thief.alignment);
+    expect(restored.ancestry).toBe(thief.ancestry);
     expect(restored.level).toBe(1);
     expect(restored.xp).toBe(5);
     expect(restored.hp).toBe(3);

@@ -3,7 +3,13 @@
 import Phaser from "phaser";
 import { spell } from "../../data";
 import { RENDER_SCALE, GAME_H, GAME_W } from "../display";
-import { MAX_LEVEL, xpToNextLevel, type LevelUpResult } from "../../engine";
+import {
+  MAX_LEVEL,
+  alignmentLabel,
+  xpToNextLevel,
+  type Character,
+  type LevelUpResult,
+} from "../../engine";
 import type { GameContext } from "../context";
 import { ROOM_BANDS } from "../level/dungeons";
 import { TILE } from "../textures";
@@ -51,6 +57,7 @@ export class HudScene extends Phaser.Scene {
   private torchWarning!: Phaser.GameObjects.Text;
   private luckHint!: Phaser.GameObjects.Text;
   private overlay: Phaser.GameObjects.Container | null = null;
+  private startOverlay: Phaser.GameObjects.Container | null = null;
   private pauseOverlay: Phaser.GameObjects.Container | null = null;
   private statsOverlay: Phaser.GameObjects.Container | null = null;
   private gearOverlay: Phaser.GameObjects.Container | null = null;
@@ -65,6 +72,7 @@ export class HudScene extends Phaser.Scene {
     this.ctx = this.registry.get("ctx") as GameContext;
     if (!this.ctx) throw new Error("GameContext missing from registry");
     this.overlay = null;
+    this.startOverlay = null;
     this.pauseOverlay = null;
     this.statsOverlay = null;
     this.gearOverlay = null;
@@ -189,6 +197,107 @@ export class HudScene extends Phaser.Scene {
       this.ctx.events.off("won");
       this.ctx.events.off("levelup");
     });
+
+    if (this.dungeon.awaitingStart) this.showStartOverlay(this.dungeon.party.leader.character);
+  }
+
+  showStartOverlay(c: Character): void {
+    if (this.startOverlay) return;
+    const w = GAME_W;
+    const h = GAME_H;
+    const accent = this.dungeon.activeDungeon.theme.accent;
+    const accentColor = `#${accent.toString(16).padStart(6, "0")}`;
+
+    const bg = this.add.rectangle(w / 2, h / 2, w, h, 0x020205, 0.82);
+    const box = this.add.graphics();
+    box.fillStyle(0x05060a, 0.98).fillRoundedRect(74, 34, w - 148, h - 68, 9);
+    box.lineStyle(2, accent, 0.95).strokeRoundedRect(74, 34, w - 148, h - 68, 9);
+
+    const statLines = (["STR", "DEX", "CON", "INT", "WIS", "CHA"] as const)
+      .map((stat) => {
+        const modifier = c.mod(stat);
+        return `${stat}  ${String(c.stats[stat]).padStart(2, " ")}  (${modifier >= 0 ? "+" : ""}${modifier})`;
+      })
+      .join("\n");
+    const equipped = [
+      `Weapon  ${c.wieldedWeapon?.name ?? "Unarmed"}`,
+      `Armour  ${c.wornArmor?.name ?? "None"}`,
+      `Shield  ${c.carriedShield?.name ?? "None"}`,
+      `AC      ${c.ac}`,
+      `HP      ${c.hp}/${c.maxHp}`,
+    ].join("\n");
+
+    this.startOverlay = this.add.container(0, 0, [
+      bg,
+      box as any,
+      this.add
+        .text(w / 2, 61, `${c.name.toUpperCase()} THE ${c.title.toUpperCase()}`, {
+          fontFamily: "Georgia, serif",
+          fontSize: "29px",
+          color: "#ffd45f",
+          stroke: "#000000",
+          strokeThickness: 3,
+          resolution: RENDER_SCALE,
+        })
+        .setOrigin(0.5),
+      this.add
+        .text(
+          w / 2,
+          98,
+          `LEVEL ${c.level}  •  ${alignmentLabel(c.alignment).toUpperCase()} ${c.className.toUpperCase()}  •  ${c.ancestry.toUpperCase()}`,
+          { ...UI_STYLE, fontSize: "12px", color: "#b8bbc4" },
+        )
+        .setOrigin(0.5),
+      this.add.text(145, 135, "ROLLED STATS", {
+        ...UI_STYLE,
+        fontSize: "12px",
+        color: accentColor,
+        fontStyle: "bold",
+      }),
+      this.add.text(145, 160, statLines, {
+        ...DATA_STYLE,
+        fontSize: "14px",
+        lineSpacing: 7,
+      }),
+      this.add.text(405, 135, "EQUIPPED GEAR", {
+        ...UI_STYLE,
+        fontSize: "12px",
+        color: accentColor,
+        fontStyle: "bold",
+      }),
+      this.add.text(405, 160, equipped, {
+        ...DATA_STYLE,
+        fontSize: "13px",
+        lineSpacing: 9,
+      }),
+      this.add.text(145, 340, "HOW TO PLAY", {
+        ...UI_STYLE,
+        fontSize: "12px",
+        color: accentColor,
+        fontStyle: "bold",
+      }),
+      this.add.text(
+        145,
+        365,
+        "A/D or ←/→  MOVE    W/↑/SPACE  JUMP    J/X/CTRL  ATTACK    K  CAST\n" +
+          "E  INTERACT    T  TORCH    Q  NEXT SPELL    TAB/1-4  LEADER\n" +
+          "C  STATS    I  GEAR    H  HOLD/FOLLOW    ESC  PAUSE",
+        { ...DATA_STYLE, fontSize: "11px", lineSpacing: 5 },
+      ),
+      this.add
+        .text(w / 2, 467, "PRESS A MOVEMENT OR ATTACK KEY TO BEGIN", {
+          ...UI_STYLE,
+          fontSize: "14px",
+          color: "#ffd45f",
+          fontStyle: "bold",
+        })
+        .setOrigin(0.5),
+    ]).setDepth(2100);
+  }
+
+  hideStartOverlay(): void {
+    this.startOverlay?.destroy();
+    this.startOverlay = null;
   }
 
   private drawChrome(memberCount: number): void {

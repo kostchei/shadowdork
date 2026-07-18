@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { Engine, statModifier, type ClassName } from "../src/engine";
-import { createCharacter, registerTables } from "../src/data";
+import {
+  Engine,
+  characterTitle,
+  statModifier,
+  type Alignment,
+  type ClassName,
+} from "../src/engine";
+import { createCharacter, isPlebName, randomPlebName, registerTables } from "../src/data";
 
 function makeEngine(seed: number): Engine {
   const engine = new Engine({ seed });
@@ -83,5 +89,37 @@ describe("character generation rules", () => {
     const other = createCharacter(makeEngine(31), "dw", "D", "fighter", "dwarf");
     const otherTalents = other.effects.filter((ef) => ef.id.startsWith("talent-start-"));
     expect(otherTalents.length).toBe(1);
+  });
+
+  it("draws names from the Pleb Generator pool without duplicates", () => {
+    const engine = makeEngine(8128);
+    const used = new Set<string>();
+    for (let i = 0; i < 20; i++) {
+      const name = randomPlebName(engine.dice, used);
+      expect(isPlebName(name)).toBe(true);
+      expect(used.has(name)).toBe(false);
+      used.add(name);
+    }
+  });
+
+  it("derives Shadowdark titles from class, alignment, and two-level bands", () => {
+    const examples: [ClassName, Alignment, number, string][] = [
+      ["fighter", "law", 1, "Squire"],
+      ["fighter", "chaos", 7, "Reaver"],
+      ["priest", "neutral", 9, "Oracle"],
+      ["thief", "chaos", 5, "Shadow"],
+      ["wizard", "law", 10, "Archmage"],
+    ];
+    for (const [className, alignment, level, title] of examples) {
+      expect(characterTitle(className, alignment, level)).toBe(title);
+    }
+  });
+
+  it("rolls an alignment for generated characters and updates their title on level-up", () => {
+    const c = createCharacter(makeEngine(94), "identity", "Test", "fighter");
+    expect(["law", "neutral", "chaos"]).toContain(c.alignment);
+    expect(c.title).toBe(characterTitle("fighter", c.alignment, 1));
+    c.level = 3;
+    expect(c.title).toBe(characterTitle("fighter", c.alignment, 3));
   });
 });

@@ -12,6 +12,46 @@ export type Stats = Record<StatName, number>;
 export type ClassName = "fighter" | "thief" | "priest" | "wizard";
 export type Alignment = "law" | "neutral" | "chaos";
 
+const TITLES: Record<ClassName, Record<Alignment, readonly string[]>> = {
+  fighter: {
+    law: ["Squire", "Cavalier", "Knight", "Thane", "Lord/Lady"],
+    chaos: ["Knave", "Bandit", "Slayer", "Reaver", "Warlord"],
+    neutral: ["Warrior", "Barbarian", "Battlerager", "Warchief", "Chieftain"],
+  },
+  priest: {
+    law: ["Acolyte", "Crusader", "Templar", "Champion", "Paladin"],
+    chaos: ["Initiate", "Zealot", "Cultist", "Scourge", "Chaos Knight"],
+    neutral: ["Seeker", "Invoker", "Haruspex", "Mystic", "Oracle"],
+  },
+  thief: {
+    law: ["Footpad", "Burglar", "Rook", "Underboss", "Boss"],
+    chaos: ["Thug", "Cutthroat", "Shadow", "Assassin", "Wraith"],
+    neutral: ["Robber", "Outlaw", "Rogue", "Renegade", "Bandit King/Queen"],
+  },
+  wizard: {
+    law: ["Apprentice", "Conjurer", "Arcanist", "Mage", "Archmage"],
+    chaos: ["Adept", "Channeler", "Witch/Warlock", "Diabolist", "Sorcerer"],
+    neutral: ["Shaman", "Seer", "Warden", "Sage", "Druid"],
+  },
+};
+
+/** Shadowdark random-character alignment table: 1-3 law, 4-5 neutral, 6 chaos. */
+export function rollAlignment(dice: Dice): Alignment {
+  const roll = dice.die(6);
+  return roll <= 3 ? "law" : roll <= 5 ? "neutral" : "chaos";
+}
+
+export function alignmentLabel(alignment: Alignment): string {
+  return alignment === "law" ? "Lawful" : alignment === "chaos" ? "Chaotic" : "Neutral";
+}
+
+/** Titles advance in two-level bands: 1-2, 3-4, 5-6, 7-8, and 9-10. */
+export function characterTitle(className: ClassName, alignment: Alignment, level: number): string {
+  if (!Number.isInteger(level) || level < 1) throw new Error(`Invalid character level ${level}`);
+  const band = Math.min(4, Math.floor((level - 1) / 2));
+  return TITLES[className][alignment][band]!;
+}
+
 export type SpellStatus = "available" | "lost";
 
 export interface KnownSpell {
@@ -120,6 +160,10 @@ export class Character {
 
   get maxHp(): number {
     return this.baseMaxHp + sumHook(this.effects, "maxHpBonus");
+  }
+
+  get title(): string {
+    return characterTitle(this.className, this.alignment, this.level);
   }
 
   /** AC = armor base + DEX (capped by the armor) + readied shield + effect hooks + armor type hooks. */

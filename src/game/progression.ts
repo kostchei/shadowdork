@@ -1,9 +1,12 @@
+import type { Alignment } from "../engine";
+import { characterTitle } from "../engine";
 import type { SaveSlot, SavedCharacter } from "./state";
-import { classDef, spellsForClass } from "../data";
+import { classDef, plebNameForSeed, spellsForClass } from "../data";
 
 export type RewardKind = "companion" | "magic-weapon" | "magic-armor" | "gold" | "spells";
 
 export interface PartyProgress {
+  name?: string;
   className: string;
   level: number;
   knownSpellIds: readonly string[];
@@ -16,6 +19,7 @@ export interface CompanionReward {
   description: string;
   className: "thief" | "priest" | "wizard";
   name: string;
+  alignment: Alignment;
 }
 
 export interface ItemReward {
@@ -50,11 +54,7 @@ const REWARD_CYCLE: readonly RewardKind[] = [
   "spells",
 ];
 
-const COMPANIONS = [
-  { className: "thief", name: "Vex" },
-  { className: "priest", name: "Odessa" },
-  { className: "wizard", name: "Milo" },
-] as const;
+const COMPANION_CLASSES = ["thief", "priest", "wizard"] as const;
 
 const STARTING_SPELLS: Record<"wizard" | "priest", readonly string[]> = {
   wizard: classDef("wizard").startingSpellIds,
@@ -76,17 +76,23 @@ function stableIndex(seed: number, size: number): number {
 }
 
 function missingCompanion(party: readonly PartyProgress[], dungeonIndex: number): CompanionReward | null {
-  const missing = COMPANIONS.filter(
-    (candidate) => !party.some((member) => !member.dead && member.className === candidate.className),
+  const missing = COMPANION_CLASSES.filter(
+    (className) => !party.some((member) => !member.dead && member.className === className),
   );
   if (missing.length === 0) return null;
-  const companion = missing[Math.floor(dungeonIndex / REWARD_CYCLE.length) % missing.length]!;
-  const role = companion.className === "priest" ? "Cleric" : `${companion.className[0]!.toUpperCase()}${companion.className.slice(1)}`;
+  const className = missing[Math.floor(dungeonIndex / REWARD_CYCLE.length) % missing.length]!;
+  const usedNames = new Set(party.flatMap((member) => member.name ? [member.name] : []));
+  const name = plebNameForSeed(dungeonIndex * 977 + stableIndex(dungeonIndex + 31, 997), usedNames);
+  const alignmentRoll = stableIndex(dungeonIndex * 131 + 17, 6) + 1;
+  const alignment: Alignment = alignmentRoll <= 3 ? "law" : alignmentRoll <= 5 ? "neutral" : "chaos";
+  const title = characterTitle(className, alignment, 1);
   return {
     kind: "companion",
-    title: `${companion.name}, ${role}`,
-    description: `${companion.name} joins the surviving party for future dungeons.`,
-    ...companion,
+    title: `${name} the ${title}`,
+    description: `${name} joins the surviving party for future dungeons.`,
+    className,
+    name,
+    alignment,
   };
 }
 
@@ -174,6 +180,7 @@ export function chooseDungeonReward(
 
 export function progressFromSavedParty(party: readonly SavedCharacter[]): PartyProgress[] {
   return party.map((member) => ({
+    name: member.name,
     className: member.className,
     level: member.level,
     knownSpellIds: member.knownSpells.map((known) => known.spellId),

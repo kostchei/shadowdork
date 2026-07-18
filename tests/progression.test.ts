@@ -6,7 +6,7 @@ import {
   nextDungeonSave,
   type PartyProgress,
 } from "../src/game/progression";
-import { spell } from "../src/data";
+import { isPlebName, spell } from "../src/data";
 
 const fighter: PartyProgress = { className: "fighter", level: 1, knownSpellIds: [] };
 const thief: PartyProgress = { className: "thief", level: 1, knownSpellIds: [] };
@@ -47,7 +47,10 @@ function saved(id: string, className: string, dead = false): SavedCharacter {
 describe("campaign rewards", () => {
   it("gives a solo first run one companion, not the whole party", () => {
     const reward = chooseDungeonReward(0, [fighter]);
-    expect(reward).toMatchObject({ kind: "companion", className: "thief", name: "Vex" });
+    expect(reward).toMatchObject({ kind: "companion", className: "thief" });
+    if (reward.kind !== "companion") throw new Error("Expected a companion reward");
+    expect(isPlebName(reward.name)).toBe(true);
+    expect(reward.title).toContain(reward.name);
   });
 
   it("cycles through all five reward categories", () => {

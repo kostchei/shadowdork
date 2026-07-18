@@ -211,6 +211,7 @@ export function meleeSwing(deps: MeleeDeps, attacker: CharacterSprite): SwingOut
 }
 
 export function applyDamageToMonster(deps: MeleeDeps, target: MonsterSprite, damage: number): void {
+  target.wake();
   target.hp -= damage;
   target.setTintFill(0xffffff);
   deps.scene.time.delayedCall(80, () => target.clearTint());

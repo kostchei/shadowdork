@@ -330,6 +330,13 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
     const tilesFallen = (this.y - this.fallPeakY) / TILE;
     this.fallPeakY = null;
     if (tilesFallen <= SAFE_FALL_TILES) return;
+    if (this.character.effects.some((effect) => effect.id === "spell-feather-fall")) {
+      this.character.removeEffect("spell-feather-fall");
+      landThud();
+      floatText(this.scene, this.x, this.y - 16, "FEATHER FALL", "#a7d8ff");
+      this.ctx.say(`${this.character.name} drifts safely to the ground.`, "#a7d8ff");
+      return;
+    }
     const diceCount = Math.max(1, Math.floor((tilesFallen - SAFE_FALL_TILES) / TILES_PER_FALL_DIE) + 1);
     const dmg = this.ctx.engine.dice.roll(`${diceCount}d6`);
     landThud();

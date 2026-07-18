@@ -2,18 +2,22 @@ import { describe, expect, it } from "vitest";
 import type { SavedCharacter } from "../src/game/state";
 import {
   chooseDungeonReward,
+  maximumSpellTier,
   nextDungeonSave,
   type PartyProgress,
 } from "../src/game/progression";
+import { spell } from "../src/data";
 
-const fighter: PartyProgress = { className: "fighter", knownSpellIds: [] };
-const thief: PartyProgress = { className: "thief", knownSpellIds: [] };
+const fighter: PartyProgress = { className: "fighter", level: 1, knownSpellIds: [] };
+const thief: PartyProgress = { className: "thief", level: 1, knownSpellIds: [] };
 const priest: PartyProgress = {
   className: "priest",
+  level: 1,
   knownSpellIds: ["cure-wounds", "light", "turn-undead"],
 };
 const wizard: PartyProgress = {
   className: "wizard",
+  level: 1,
   knownSpellIds: ["magic-missile", "burning-hands", "mage-armor"],
 };
 
@@ -52,6 +56,35 @@ describe("campaign rewards", () => {
     expect(chooseDungeonReward(2, fullParty).kind).toBe("magic-armor");
     expect(chooseDungeonReward(3, fullParty).kind).toBe("gold");
     expect(chooseDungeonReward(4, fullParty).kind).toBe("spells");
+  });
+
+  it("always makes a caster's first discovered spell tier 1, even at high level", () => {
+    const veteranWizard = { ...wizard, level: 9 };
+    const reward = chooseDungeonReward(4, [fighter, thief, priest, veteranWizard]);
+    expect(reward.kind).toBe("spells");
+    if (reward.kind !== "spells") throw new Error("Expected a spell reward");
+    expect(spell(reward.spellId).tier).toBe(1);
+  });
+
+  it("limits later random discoveries to tiers unlocked by caster level", () => {
+    expect([1, 1, 2, 2, 3, 3, 4, 4, 5, 5].map((_, index) => maximumSpellTier(index + 1)))
+      .toEqual([1, 1, 2, 2, 3, 3, 4, 4, 5, 5]);
+
+    const developingPriest: PartyProgress = {
+      ...priest,
+      level: 3,
+      knownSpellIds: [...priest.knownSpellIds, "holy-weapon"],
+    };
+    const reward = chooseDungeonReward(9, [fighter, thief, developingPriest]);
+    expect(reward.kind).toBe("spells");
+    if (reward.kind !== "spells") throw new Error("Expected a spell reward");
+    expect(reward.className).toBe("priest");
+    expect(spell(reward.spellId).tier).toBeLessThanOrEqual(2);
+  });
+
+  it("keeps the random reward stable when the same save is reloaded", () => {
+    const party = [fighter, thief, { ...priest, level: 3 }, { ...wizard, level: 3 }];
+    expect(chooseDungeonReward(9, party)).toEqual(chooseDungeonReward(9, party));
   });
 
   it("turns an unusable spell reward into the next missing caster", () => {

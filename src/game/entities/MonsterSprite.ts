@@ -20,6 +20,7 @@ export class MonsterSprite extends Phaser.Physics.Arcade.Sprite {
   readonly groupId: string;
   hp: number;
   aiState: MonsterAiState = "patrol";
+  private asleepUntil = 0;
   attackCooldown = 0;
   patrolDir: 1 | -1 = 1;
   private patrolOriginX: number;
@@ -55,11 +56,26 @@ export class MonsterSprite extends Phaser.Physics.Arcade.Sprite {
     return this.active && this.aiState !== "fleeing";
   }
 
+  get isSleeping(): boolean {
+    return this.scene.time.now < this.asleepUntil;
+  }
+
   updateAi(delta: number, target: { x: number; y: number } | null): void {
     this.attackCooldown = Math.max(0, this.attackCooldown - delta);
     this.shadow.setPosition(this.x, this.y + this.displayHeight * 0.42);
     this.shadow.setScale(this.def.id === "gloom-ogre" ? 1.45 : 0.8, 1);
     const body = this.body as Phaser.Physics.Arcade.Body;
+
+    if (this.isSleeping) {
+      this.setVelocityX(0);
+      this.setTint(0x8a91c8);
+      this.stop();
+      return;
+    }
+    if (this.asleepUntil !== 0) {
+      this.asleepUntil = 0;
+      this.clearTint();
+    }
 
     if (this.aiState === "fleeing") {
       // Run away from the target and despawn off-screen.
@@ -107,6 +123,18 @@ export class MonsterSprite extends Phaser.Physics.Arcade.Sprite {
   flee(): void {
     this.aiState = "fleeing";
     this.setTint(0x9999cc);
+  }
+
+  sleep(durationMs: number): void {
+    this.asleepUntil = Math.max(this.asleepUntil, this.scene.time.now + durationMs);
+    this.aiState = "patrol";
+    this.setVelocity(0, 0);
+  }
+
+  wake(): void {
+    this.asleepUntil = 0;
+    if (this.aiState !== "fleeing") this.aiState = "aggro";
+    this.clearTint();
   }
 
   override destroy(fromScene?: boolean): void {

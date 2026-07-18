@@ -185,7 +185,7 @@ export class DungeonScene extends Phaser.Scene {
       dungeonIndex,
       this.loadedState
         ? progressFromSavedParty(this.loadedState.party)
-        : [{ className: "fighter", knownSpellIds: [] }],
+        : [{ className: "fighter", level: 1, knownSpellIds: [] }],
     );
 
     // The soundscape follows the backdrop; SHUTDOWN fires on restart too, so
@@ -1406,6 +1406,10 @@ export class DungeonScene extends Phaser.Scene {
       if (m.aiState === "fleeing") {
         m.updateAi(delta, this.party.leader);
         if (m.x < TILE || m.x > (DUNGEON_W - 2) * TILE) m.destroy();
+        continue;
+      }
+      if (m.isSleeping) {
+        m.updateAi(delta, null);
         continue;
       }
       // Target the nearest active party member; monsters see fine in the dark.

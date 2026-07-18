@@ -84,6 +84,8 @@ Vite and opens the game directly in Chrome.
   with exactly one major reward: a magic weapon, magic armour, 500 gold, one
   missing party member, or a new Wizard/Cleric spell. Surviving companions stay
   with you between dungeons, so the full party is assembled over a campaign.
+  A caster's first discovered spell is always tier 1; later spell rewards are
+  randomly drawn from unknown class spells unlocked by that character's level.
 
 ## Architecture
 

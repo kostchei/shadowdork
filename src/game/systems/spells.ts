@@ -134,6 +134,55 @@ function resolveSpellEffect(
       }
       return;
     }
+    case "feather-fall": {
+      caster.character.removeEffect("spell-feather-fall");
+      caster.character.addEffect({
+        id: "spell-feather-fall",
+        name: "Feather Fall (next dangerous fall)",
+        hooks: [],
+        duration: { unit: "rounds", remaining: 10 * mult },
+      });
+      ctx.say(`${caster.character.name} feels lighter than air.`, "#a7d8ff");
+      return;
+    }
+    case "sleep": {
+      const victims = deps.monsters().filter(
+        (monster) =>
+          monster.aliveInFight &&
+          !monster.def.leader &&
+          Phaser.Math.Distance.Between(caster.x, caster.y, monster.x, monster.y) <= NEAR_PX,
+      );
+      for (const victim of victims) {
+        victim.sleep(30_000 * mult);
+        floatText(scene, victim.x, victim.y - 18, "ASLEEP", "#9da7ec");
+      }
+      ctx.say(
+        victims.length > 0
+          ? `${victims.length} lesser ${victims.length === 1 ? "creature falls" : "creatures fall"} asleep.`
+          : "The lullaby finds no lesser creature in range.",
+        "#9da7ec",
+      );
+      return;
+    }
+    case "misty-step": {
+      const direction = caster.facing;
+      const bounds = scene.physics.world.bounds;
+      caster.setPosition(
+        Phaser.Math.Clamp(caster.x + direction * NEAR_PX * mult, bounds.left + 64, bounds.right - 64),
+        caster.y,
+      );
+      const mist = scene.add.particles(caster.x, caster.y, "pixel", {
+        color: [0xb8c4df, 0x6f789a, 0xffffff],
+        speed: { min: 20, max: 90 },
+        scale: { start: 2.2, end: 0 },
+        lifespan: 450,
+        duration: 180,
+        maxParticles: 24,
+      }).setDepth(25);
+      scene.time.delayedCall(700, () => mist.destroy());
+      ctx.say(`${caster.character.name} steps through the mist.`, "#b8c4df");
+      return;
+    }
     case "fireball": {
       const target = isValidSpellTarget(caster, preferredTarget, FAR_PX)
         ? preferredTarget
@@ -145,7 +194,7 @@ function resolveSpellEffect(
       const victims = deps.monsters().filter(
         (monster) =>
           monster.aliveInFight &&
-          Phaser.Math.Distance.Between(target.x, target.y, monster.x, monster.y) <= CLOSE_PX,
+          Phaser.Math.Distance.Between(target.x, target.y, monster.x, monster.y) <= NEAR_PX,
       );
       fireBolt(scene, caster, target, () => {
         const burst = scene.add.particles(target.x, target.y, "pixel", {
@@ -249,22 +298,60 @@ function resolveSpellEffect(
       ctx.say(`${undead.length} undead recoil and flee the holy word!`, "#f0e090");
       return;
     }
+    case "holy-weapon": {
+      caster.character.removeEffect("spell-holy-weapon");
+      caster.character.addEffect({
+        id: "spell-holy-weapon",
+        name: "Holy Weapon (+1 attack and damage)",
+        hooks: [
+          { kind: "checkBonus", applies: "attack", bonus: mult },
+          { kind: "damageBonus", bonus: mult },
+        ],
+        duration: { unit: "rounds", remaining: 5 * mult },
+      });
+      ctx.say(`${caster.character.name}'s weapon shines with sacred power (+${mult}).`, "#f0e090");
+      return;
+    }
+    case "shield-of-faith": {
+      caster.character.removeEffect("spell-shield-of-faith");
+      caster.character.addEffect({
+        id: "spell-shield-of-faith",
+        name: "Shield of Faith (+2 AC)",
+        hooks: [{ kind: "acBonus", bonus: 2 * mult }],
+        duration: { unit: "rounds", remaining: 5 * mult },
+      });
+      ctx.say(`Faith surrounds ${caster.character.name} (+${2 * mult} AC).`, "#f0e090");
+      return;
+    }
     case "bless": {
-      const blessed = deps.party().filter((member) => !member.character.dead);
-      for (const member of blessed) {
-        member.character.removeEffect("spell-bless");
-        member.character.addEffect({
-          id: "spell-bless",
-          name: "Blessed (+1 attacks and spells)",
-          hooks: [
-            { kind: "checkBonus", applies: "attack", bonus: mult },
-            { kind: "checkBonus", applies: "spellcast", bonus: mult },
-          ],
-          duration: { unit: "realMs", remaining: def.durationMs! * mult },
-        });
-        floatText(scene, member.x, member.y - 22, `BLESSED +${mult}`, "#ffe486");
+      const blessed = deps.party()
+        .filter(
+          (member) =>
+            !member.character.dead &&
+            !member.character.luckToken &&
+            Phaser.Math.Distance.Between(caster.x, caster.y, member.x, member.y) <= CLOSE_PX,
+        )[0];
+      if (!blessed) {
+        ctx.say("Everyone close already holds a luck token.", "#f0e090");
+        return;
       }
-      ctx.say(`Divine favour settles over the party (+${mult} attacks and spells).`, "#f0e090");
+      blessed.character.luckToken = true;
+      floatText(scene, blessed.x, blessed.y - 22, "LUCK RESTORED", "#ffe486");
+      ctx.say(`${blessed.character.name} receives a fresh luck token.`, "#f0e090");
+      return;
+    }
+    case "smite": {
+      const target = isValidSpellTarget(caster, preferredTarget, NEAR_PX)
+        ? preferredTarget
+        : nearestMonster(deps, caster, NEAR_PX);
+      if (!target) {
+        ctx.say("No foe stands within reach of the divine flame.");
+        return;
+      }
+      const dmg = ctx.engine.dice.roll(def.dice!) * mult;
+      floatText(scene, target.x, target.y - 16, `${dmg}`, "#ffe06a");
+      applyDamageToMonster(deps, target, dmg);
+      ctx.say(`Divine flame smites the ${target.def.name} for ${dmg}.`, "#f0e090");
       return;
     }
     default:

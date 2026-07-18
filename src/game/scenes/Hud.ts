@@ -180,7 +180,7 @@ export class HudScene extends Phaser.Scene {
     this.drawChrome(this.dungeon.party.members.length);
 
     this.ctx.events.on("gameover", () => this.showOverlay("THE DARK CLAIMS YOU", "#ff6159"));
-    this.ctx.events.on("won", () => this.showOverlay("THE CROWN IS YOURS", "#ffd45f"));
+    this.ctx.events.on("won", () => this.showOverlay("THE REWARD IS YOURS", "#ffd45f"));
     this.ctx.events.on("levelup", (payload: { name: string; result: LevelUpResult }) =>
       this.levelUpCeremony(payload.name, payload.result),
     );
@@ -682,7 +682,7 @@ export class HudScene extends Phaser.Scene {
       }`;
     });
     const runIndex = this.registry.get("dungeonIndex");
-    const summary = `Coins ${this.ctx.totalCoins}  |  Kills ${this.ctx.kills}  |  Run seed ${runIndex}`;
+    const summary = `Reward ${this.dungeon.rewardLabel}  |  Coins ${this.ctx.totalCoins}  |  Kills ${this.ctx.kills}  |  Run seed ${runIndex}`;
     this.overlay = this.add.container(0, 0, [
       this.add.rectangle(w / 2, h / 2, w, h, 0x020205, 0.9),
       this.add
@@ -782,7 +782,9 @@ export class HudScene extends Phaser.Scene {
     this.leaderDetail.setText(leaderDetails.length > 0 ? leaderDetails.join("   |   ") : "Leader ready");
 
     this.objectiveText.setText(
-      this.dungeon.hasCrown ? "CROWN SECURED - REACH THE EXIT" : this.dungeon.activeDungeon.objective.toUpperCase(),
+      this.dungeon.hasCrown
+        ? "REWARD CLAIMED - REACH THE EXIT"
+        : `VAULT REWARD: ${this.dungeon.rewardLabel.toUpperCase()}`,
     );
     this.objectiveText.setColor(this.dungeon.hasCrown ? "#72d887" : "#e3c56d");
 

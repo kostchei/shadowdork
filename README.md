@@ -8,7 +8,9 @@ Runs draw from a replayable library of [Five Room Dungeons](https://www.roleplay
 — Entrance & Guardian, Puzzle, Trick/Setback, Climax, Reward — followed by a
 rest spot: free full recovery, a fresh torch each, and the exit door. The
 current library contains The Gloom Below, The Ember Crypt, The Mold Warrens,
-and The Drowned Angle; completing or losing a run rotates to the next dungeon.
+and The Drowned Angle. Winning carries every surviving party member, their
+levels, gear, spells, and banked gold into the next dungeon; a party wipe starts
+a fresh expedition in the next generated dungeon.
 
 Design docs: [Shadowdork.md](Shadowdork.md) (game design),
 [docs/five-room-dungeons.md](docs/five-room-dungeons.md) (level-design bible:
@@ -42,7 +44,7 @@ Vite and opens the game directly in Chrome.
 | K | Cast prepared spell |
 | Q | Cycle prepared spell |
 | T | Light a torch (consumes one; burns in real time) |
-| E | Interact: rescue NPCs, stabilize dying allies, disarm traps (thief), rest at campfires, exit door |
+| E | Interact: claim vault rewards, stabilize dying allies, disarm traps (thief), rest at campfires, exit door |
 | H | Toggle followers between FOLLOW and HOLD |
 | L | Spend the leader's luck token to reroll (while the reroll prompt is up) |
 | Tab / 1–4 | Swap leader |
@@ -71,15 +73,17 @@ Vite and opens the game directly in Chrome.
   cut off pending atonement. Natural 20 doubles the effect.
 - **Death timers**: at 0 HP a character collapses with a visible 1d4+CON round
   countdown. Stabilize (DC 15) or heal them in time, or they're gone for the run.
-- **Treasure is XP** — the only progression, and loot is collected automatically by
+- **Treasure is XP**, and loot is collected automatically by
   walking over it. Slain monsters spill coins and gems where they fall. Coins bank
   toward 1 XP per full 100 (first 100 carried free, then 1 slot per 100). Level-up
   rolls HP and a live 2d6 talent on the class table.
 - **Rest spot after room five**: free full recovery plus a fresh torch per member.
   Mid-dungeon campfires still demand a ration.
 - **Morale**: when half a monster group falls, survivors check DC 15 WIS or rout.
-- Party of 4: start solo as the Fighter; rescue the Thief (caged), Priest (shrine),
-  and Wizard (mid-losing-battle) in the dungeon.
+- **Persistent party:** start solo as the Fighter. Each five-room dungeon ends
+  with exactly one major reward: a magic weapon, magic armour, 500 gold, one
+  missing party member, or a new Wizard/Cleric spell. Surviving companions stay
+  with you between dungeons, so the full party is assembled over a campaign.
 
 ## Architecture
 
@@ -101,7 +105,7 @@ tests/        Engine unit tests.
 ## Replay and presentation
 
 - Four complete dungeon layouts share the Five Room structure but vary room
-  geometry, hazards, platform routes, monster composition, rescue positions,
+  geometry, hazards, platform routes, monster composition,
   light placement, and reward approach.
 - Featured puzzle traps occur in roughly 40% of runs, never more than one per
   run. Ten families range from counterweight machinery, darts, spikes, and
@@ -113,7 +117,7 @@ tests/        Engine unit tests.
   variants, distinct class and monster silhouettes, props, treasure, background
   caverns, haze, motes, and entity shadows.
 - The HUD tracks the active dungeon objective, party HP bars, torch state,
-  selected spells, inventory use, event log, and crown/exit state.
+  selected spells, inventory use, event log, and reward/exit state.
 
 The game layer never rolls dice or mutates rules state itself — it calls the
 engine and renders consequences. Invalid states (unknown table, over-capacity

@@ -21,6 +21,10 @@ const ITEM_LIST: readonly ItemDef[] = [
   { id: "javelin", name: "Javelin", slotCost: 1, bundleSize: 1, tags: ["weapon"], damage: "1d4", finesse: true, reachTiles: 1.8, weaponVisual: "javelin" },
   // Ranged only: no reachTiles, so it can never be wielded for melee.
   { id: "shortbow", name: "Shortbow", slotCost: 1, bundleSize: 1, tags: ["weapon", "ranged"], damage: "1d4", finesse: true },
+  {
+    id: "starfall-blade", name: "Starfall Blade", slotCost: 1, bundleSize: 1, tags: ["weapon", "magic"],
+    damage: "1d10", finesse: true, reachTiles: 1.9, weaponVisual: "longsword",
+  },
 
   // Armor — AC = acBase + DEX (capped); class permissions are RAW.
   {
@@ -38,6 +42,10 @@ const ITEM_LIST: readonly ItemDef[] = [
   {
     id: "mithral-chainmail", name: "Mithral Chainmail", slotCost: 1, bundleSize: 1, tags: ["armor", "magic"],
     armor: { acBase: 13, dexCap: 99, classes: ["fighter", "priest", "thief"] }, armorVisual: "mithral",
+  },
+  {
+    id: "aegis-mail", name: "Aegis Mail", slotCost: 1, bundleSize: 1, tags: ["armor", "magic"],
+    armor: { acBase: 14, dexCap: 99, classes: ["fighter", "priest", "thief", "wizard"] }, armorVisual: "mithral",
   },
   { id: "shield", name: "Shield", slotCost: 1, bundleSize: 1, tags: ["armor"], shield: true },
 

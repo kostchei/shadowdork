@@ -4,10 +4,9 @@
  * Every layout keeps the same compact character legend, which lets the scene
  * render any dungeon without knowing how it was authored. Each dungeon draws
  * its rooms from a themed variant pool (so The Ember Crypt always reads as a
- * crypt), rescues follow a designed distribution (mostly front-loaded, with a
- * tuned chance of one late reward rescue), and the climax's monster budget is
- * chosen AFTER rescue placement so the boss room is always beatable by the
- * party guaranteed to exist on arrival. Every generated grid passes
+ * crypt), the fifth room contains one campaign reward, and the climax's monster
+ * budget remains beatable by a solo adventurer or a persistent party. Every
+ * generated grid passes
  * validateGrid before it reaches the renderer — invalid grids throw.
  */
 
@@ -23,9 +22,6 @@ export const ROOM_BANDS: readonly { room: number; x1: number; x2: number }[] = [
   { room: 5, x1: 86, x2: 97 },
   { room: 6, x1: 99, x2: 118 }, // sanctuary
 ];
-
-/** Chance a run places one rescue late, in the climax room, as a reward. */
-export const REWARD_RESCUE_CHANCE = 0.22;
 
 /** Featured stateful traps are memorable punctuation, not mandatory wallpaper. */
 export const FEATURED_TRAP_CHANCE = 0.4;
@@ -557,9 +553,8 @@ function buildFeaturedTrapRoom(g: GridBuilder, kind: FeaturedTrapKind, npc?: str
 }
 
 /**
- * The climax. `easier` is set when only two rescues precede this room —
- * the boss keeps the arena but sheds minions so the guaranteed-on-arrival
- * party can win it. A solo-Fighter brute path exists in every variant.
+ * The climax. The solo-safe form sheds optional minions so a first-run Fighter
+ * can win it; persistent parties still face the boss and the arena hazards.
  */
 function buildRoom4(g: GridBuilder, variant: number, npc: string | undefined, easier: boolean): void {
   g.put(67, 14, "b");
@@ -673,36 +668,6 @@ function buildSanctuary(g: GridBuilder, variant: number): void {
   }
 }
 
-interface RescuePlacement {
-  /** room number -> rescue tile ("2" thief, "3" priest, "4" wizard). */
-  byRoom: Map<number, string>;
-  /** How many rescues sit in rooms 1–3, i.e. precede the climax. */
-  before4: number;
-}
-
-/**
- * Designed rescue distribution: all three rescues land in rooms 1–3 (one per
- * room, shuffled), except a tuned REWARD_RESCUE_CHANCE of runs where one
- * rescue becomes the climax room's reward (the bible's Chained Companion).
- */
-function placeRescues(rng: Rng): RescuePlacement {
-  const npcs = ["2", "3", "4"];
-  const earlyRooms = rng.shuffle([1, 2, 3]);
-  const byRoom = new Map<number, string>();
-
-  if (rng.next() < REWARD_RESCUE_CHANCE) {
-    const rewardIdx = rng.between(0, 2);
-    byRoom.set(4, npcs[rewardIdx]!);
-    const rest = npcs.filter((_, i) => i !== rewardIdx);
-    byRoom.set(earlyRooms[0]!, rest[0]!);
-    byRoom.set(earlyRooms[1]!, rest[1]!);
-    return { byRoom, before4: 2 };
-  }
-
-  npcs.forEach((npc, i) => byRoom.set(earlyRooms[i]!, npc));
-  return { byRoom, before4: 3 };
-}
-
 function bandOf(x: number): number {
   const band = ROOM_BANDS.find((b) => x >= b.x1 && x <= b.x2);
   if (!band) throw new Error(`x=${x} falls on a divider or shell wall`);
@@ -730,34 +695,30 @@ export function validateGrid(grid: readonly string[]): void {
     }
   }
 
-  for (const required of ["P", "2", "3", "4", "K", "F", "D", "h"]) {
+  for (const required of ["P", "K", "F", "D", "h"]) {
     const n = positions.get(required)?.length ?? 0;
     if (n !== 1) throw new Error(`Expected exactly one "${required}", found ${n}`);
+  }
+  for (const rescue of RESCUE_TILES) {
+    const n = positions.get(rescue)?.length ?? 0;
+    if (n !== 0) throw new Error(`Legacy rescue tile "${rescue}" is no longer allowed, found ${n}`);
   }
 
   // Structural placement rules.
   if (bandOf(positions.get("P")![0]!.x) !== 1) throw new Error("Spawn must be in room 1");
-  if (bandOf(positions.get("K")![0]!.x) !== 5) throw new Error("Crown must be in the vault (room 5)");
+  if (bandOf(positions.get("K")![0]!.x) !== 5) throw new Error("Reward must be in the vault (room 5)");
   if (bandOf(positions.get("F")![0]!.x) !== 6) throw new Error("Rest campfire must be in the sanctuary");
   if (bandOf(positions.get("D")![0]!.x) !== 6) throw new Error("Exit door must be in the sanctuary");
 
-  // Beatability budget: a rescue in the climax band means the on-arrival
-  // party is smaller, so the climax must carry a trimmed monster manifest.
+  // Beatability budget for a first run that may still be a solo expedition.
   const climaxBand = ROOM_BANDS[3]!;
   const inClimax = (x: number) => x >= climaxBand.x1 && x <= climaxBand.x2;
-  const rescueInClimax = [...RESCUE_TILES].some((t) =>
-    (positions.get(t) ?? []).some((p) => inClimax(p.x)),
-  );
   let climaxMonsters = 0;
   for (const t of MONSTER_TILES) {
     climaxMonsters += (positions.get(t) ?? []).filter((p) => inClimax(p.x)).length;
   }
   if (climaxMonsters === 0) throw new Error("Climax room has no monsters");
-  if (rescueInClimax && climaxMonsters > 3) {
-    throw new Error(
-      `Climax holds a reward rescue but ${climaxMonsters} monsters — budget is 3 for a short-handed party`,
-    );
-  }
+  if (climaxMonsters > 3) throw new Error(`Solo-safe climax budget exceeded: ${climaxMonsters} monsters`);
 }
 
 /** Build one validated layout for a dungeon's variant pools and a run seed. */
@@ -768,19 +729,17 @@ export function generateLayout(
 ): DungeonLayout {
   const g = gridBuilder();
   const rng = seededRng(seed);
-  const rescues = placeRescues(rng);
-  const easierClimax = rescues.before4 < 3;
   const featuredTrap = trapKinds.length > 0 && rng.next() < FEATURED_TRAP_CHANCE
     ? rng.pick(trapKinds)
     : null;
 
-  buildRoom1(g, rng.pick(pools.room1), rescues.byRoom.get(1));
-  buildRoom2(g, rng.pick(pools.room2), rescues.byRoom.get(2));
+  buildRoom1(g, rng.pick(pools.room1));
+  buildRoom2(g, rng.pick(pools.room2));
   const traps = featuredTrap
-    ? [buildFeaturedTrapRoom(g, featuredTrap, rescues.byRoom.get(3))]
+    ? [buildFeaturedTrapRoom(g, featuredTrap)]
     : [];
-  if (!featuredTrap) buildRoom3(g, rng.pick(pools.room3), rescues.byRoom.get(3));
-  buildRoom4(g, rng.pick(pools.room4), rescues.byRoom.get(4), easierClimax);
+  if (!featuredTrap) buildRoom3(g, rng.pick(pools.room3));
+  buildRoom4(g, rng.pick(pools.room4), undefined, true);
   buildRoom5(g, rng.pick(pools.room5));
   buildSanctuary(g, rng.pick(pools.sanctuary));
 
@@ -860,7 +819,7 @@ const DUNGEON_BASES: readonly Omit<DungeonDefinition, "grid" | "traps">[] = [
     id: "gloom-below",
     name: "The Gloom Below",
     tagline: "Old stone. Thin light. Hungry eyes.",
-    objective: "Recover the Crown of the Deep",
+    objective: "Reach the vault and claim its campaign reward",
     danger: 2,
     encounterMonsterId: "goblin",
     trapKinds: ["plate-gate", "counterweighted-lift", "rolling-stone", "collapsing-floor"],
@@ -885,7 +844,7 @@ const DUNGEON_BASES: readonly Omit<DungeonDefinition, "grid" | "traps">[] = [
     id: "ember-crypt",
     name: "The Ember Crypt",
     tagline: "The dead keep their fires burning.",
-    objective: "Climb the reliquary and seize its crown",
+    objective: "Climb the reliquary and claim its reward",
     danger: 3,
     encounterMonsterId: "skeleton",
     trapKinds: ["alternating-spikes", "dart-gallery", "undead-barrier"],
@@ -935,7 +894,7 @@ const DUNGEON_BASES: readonly Omit<DungeonDefinition, "grid" | "traps">[] = [
     id: "drowned-angle",
     name: "The Drowned Angle",
     tagline: "The sea is above you. The stars are below.",
-    objective: "Take the crown from the impossible sanctum",
+    objective: "Claim the reward in the impossible sanctum",
     danger: 1,
     encounterMonsterId: "skeleton",
     trapKinds: ["flooded-chamber", "light-runes", "undead-barrier", "counterweighted-lift"],

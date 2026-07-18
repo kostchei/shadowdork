@@ -32,6 +32,16 @@ const SPELL_LIST: readonly SpellDef[] = [
     description: "An invisible shell of force hardens around you (+3 AC).",
   },
   {
+    id: "fireball",
+    name: "Fireball",
+    tier: 2,
+    class: "wizard",
+    range: "far",
+    focus: false,
+    dice: "2d6",
+    description: "A mote erupts around its target, burning nearby enemies.",
+  },
+  {
     id: "cure-wounds",
     name: "Cure Wounds",
     tier: 1,
@@ -59,6 +69,16 @@ const SPELL_LIST: readonly SpellDef[] = [
     range: "near",
     focus: false,
     description: "Holy power drives the undead to flee your presence.",
+  },
+  {
+    id: "bless",
+    name: "Bless",
+    tier: 2,
+    class: "priest",
+    range: "near",
+    focus: false,
+    durationMs: 10 * 60 * 1000,
+    description: "Divine favour grants the living party +1 to attacks and spellcasting.",
   },
 ];
 

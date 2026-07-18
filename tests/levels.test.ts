@@ -51,55 +51,29 @@ describe("seeded run grids (property tests)", () => {
     }
   });
 
-  it("places every rescue in rooms 1-4, at least two before the climax", () => {
-    const climax = ROOM_BANDS[3]!;
+  it("uses room five as the only campaign-reward location", () => {
+    const vault = ROOM_BANDS[4]!;
     for (let index = 0; index < RUNS; index++) {
-      const grid = dungeonAt(index).grid.join("\n");
-      let before4 = 0;
-      for (const tile of ["2", "3", "4"]) {
-        const flat = dungeonAt(index).grid.join("");
-        const at = flat.indexOf(tile);
-        expect(at).toBeGreaterThanOrEqual(0);
-        const x = at % DUNGEON_W;
-        expect(x).toBeLessThanOrEqual(climax.x2);
-        if (x < climax.x1) before4++;
-      }
-      expect(before4, `run ${index}: ${grid}`).toBeGreaterThanOrEqual(2);
-    }
-  });
-
-  it("late reward rescues occur at a tuned rate, not as the default", () => {
-    const climax = ROOM_BANDS[3]!;
-    let rewardRuns = 0;
-    const SAMPLE = 500;
-    for (let index = 0; index < SAMPLE; index++) {
       const flat = dungeonAt(index).grid.join("");
-      const hasLate = ["2", "3", "4"].some((tile) => {
-        const x = flat.indexOf(tile) % DUNGEON_W;
-        return x >= climax.x1 && x <= climax.x2;
-      });
-      if (hasLate) rewardRuns++;
+      expect(flat.match(/K/g)).toHaveLength(1);
+      expect(flat).not.toMatch(/[234]/);
+      const rewardX = flat.indexOf("K") % DUNGEON_W;
+      expect(rewardX).toBeGreaterThanOrEqual(vault.x1);
+      expect(rewardX).toBeLessThanOrEqual(vault.x2);
     }
-    // Designed rate is ~22%; deterministic seeds, so bounds are generous but firm.
-    expect(rewardRuns / SAMPLE).toBeGreaterThan(0.1);
-    expect(rewardRuns / SAMPLE).toBeLessThan(0.35);
   });
 
-  it("trims the climax monster budget when a reward rescue is present", () => {
+  it("keeps every climax within the solo-safe monster budget", () => {
     const climax = ROOM_BANDS[3]!;
     for (let index = 0; index < RUNS; index++) {
-      const grid = dungeonAt(index).grid;
       let monsters = 0;
-      let rescue = false;
-      for (const row of grid) {
+      for (const row of dungeonAt(index).grid) {
         for (let x = climax.x1; x <= climax.x2; x++) {
-          const ch = row[x]!;
-          if ("gsrO".includes(ch)) monsters++;
-          if ("234".includes(ch)) rescue = true;
+          if ("gsrO".includes(row[x]!)) monsters++;
         }
       }
       expect(monsters).toBeGreaterThan(0);
-      if (rescue) expect(monsters, `run ${index}`).toBeLessThanOrEqual(3);
+      expect(monsters, `run ${index}`).toBeLessThanOrEqual(3);
     }
   });
 

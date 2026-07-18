@@ -42,6 +42,12 @@ import {
 import { TILE } from "../textures";
 import { serializeCharacter, deserializeCharacter, type SaveSlot } from "../state";
 import { SaveRepository } from "../SaveRepository";
+import {
+  chooseDungeonReward,
+  nextDungeonSave,
+  progressFromSavedParty,
+  type DungeonReward,
+} from "../progression";
 
 /**
  * How long after being hit a character keeps swinging back. Monsters attack
@@ -100,6 +106,9 @@ export class DungeonScene extends Phaser.Scene {
   private campfires: { x: number; y: number; free: boolean }[] = [];
   private shrines: { x: number; y: number }[] = [];
   private door!: { x: number; y: number };
+  private rewardMarker: { x: number; y: number; sprite: Phaser.GameObjects.Image } | null = null;
+  private rewardClaimed = false;
+  private currentReward!: DungeonReward;
   private morale = new MoraleTracker();
   /** Per-follower support-AI state, keyed by character id. */
   private followerAi = new Map<string, { nextMoraleAt: number; rescueTargetId: string | null }>();
@@ -165,11 +174,19 @@ export class DungeonScene extends Phaser.Scene {
     this.luckWindow = null;
     this.leftControlDown = false;
     this.encounterWaves = 0;
+    this.rewardMarker = null;
+    this.rewardClaimed = this.loadedState?.hasCrown ?? false;
     this.lastRoomIndex = this.loadedState ? this.loadedState.currentRoom : 1;
 
     const storedIndex = this.registry.get("dungeonIndex");
     const dungeonIndex = typeof storedIndex === "number" ? storedIndex : 0;
     this.activeDungeon = dungeonAt(dungeonIndex);
+    this.currentReward = chooseDungeonReward(
+      dungeonIndex,
+      this.loadedState
+        ? progressFromSavedParty(this.loadedState.party)
+        : [{ className: "fighter", knownSpellIds: [] }],
+    );
 
     // The soundscape follows the backdrop; SHUTDOWN fires on restart too, so
     // beds never stack across runs.
@@ -305,9 +322,11 @@ export class DungeonScene extends Phaser.Scene {
   }
 
   get hasCrown(): boolean {
-    return this.party.members.some((member) =>
-      member.character.inventory.has("crown-of-the-deep"),
-    );
+    return this.rewardClaimed;
+  }
+
+  get rewardLabel(): string {
+    return this.currentReward.title;
   }
 
   private createAtmosphere(dungeonIndex: number): void {
@@ -476,9 +495,7 @@ export class DungeonScene extends Phaser.Scene {
             this.addPickup(px, py, "jeweled-idol", 1);
             break;
           case "K":
-            if (!this.loadedState || !this.loadedState.hasCrown) {
-              this.addPickup(px, py, "crown-of-the-deep", 1);
-            }
+            if (!this.rewardClaimed) this.addRewardMarker(px, py);
             break;
           case "t":
             this.addPickup(px, py, "torch", 1);
@@ -572,7 +589,7 @@ export class DungeonScene extends Phaser.Scene {
 
     if (this.loadedState) {
       const spawnPos = this.getRoomEntrancePos(this.loadedState.currentRoom);
-      // hasCrown is derived from party inventories, restored just below.
+      // The backward-compatible hasCrown flag now means the vault reward was claimed.
 
       this.loadedState.party.forEach((savedChar, idx) => {
         const char = deserializeCharacter(savedChar, this.ctx.engine);
@@ -633,6 +650,29 @@ export class DungeonScene extends Phaser.Scene {
     this.physics.add.collider(sprite, this.walls);
     this.pickups.push({ sprite, itemId, qty });
     if (this.trapSystem) this.trapSystem.registerActor(sprite);
+  }
+
+  private addRewardMarker(x: number, y: number): void {
+    const reward = this.currentReward;
+    const texture = reward.kind === "companion"
+      ? `char-${reward.className}`
+      : reward.kind === "gold"
+        ? "pickup-coins"
+        : reward.kind === "spells"
+          ? "spell-bolt"
+          : `pickup-${reward.itemId}`;
+    const sprite = this.add.image(x, y, texture).setDepth(8);
+    if (reward.kind === "companion") sprite.setTint(0xa9a8bd);
+    this.tweens.add({
+      targets: sprite,
+      y: y - 5,
+      alpha: { from: 0.78, to: 1 },
+      duration: 720,
+      yoyo: true,
+      repeat: -1,
+      ease: "Sine.inOut",
+    });
+    this.rewardMarker = { x, y, sprite };
   }
 
   private setupInput(): void {
@@ -1147,6 +1187,19 @@ export class DungeonScene extends Phaser.Scene {
       };
     }
 
+    // 3. Claim the single campaign reward in the fifth room.
+    const reward = this.rewardMarker;
+    if (
+      reward &&
+      !this.rewardClaimed &&
+      Phaser.Math.Distance.Between(leader.x, leader.y, reward.x, reward.y) < TILE * 1.8
+    ) {
+      return {
+        label: `claim ${this.currentReward.title}`,
+        run: () => this.claimDungeonReward(),
+      };
+    }
+
     const trapInteraction = this.trapSystem.findInteraction(leader);
     if (trapInteraction) return trapInteraction;
 
@@ -1213,8 +1266,12 @@ export class DungeonScene extends Phaser.Scene {
     // 6. Exit door
     if (Phaser.Math.Distance.Between(leader.x, leader.y, this.door.x, this.door.y) < TILE * 1.6) {
       return {
-        label: this.hasCrown ? "leave with the crown" : "leave empty-handed",
+        label: this.rewardClaimed ? `leave with ${this.currentReward.title}` : "claim the vault reward first",
         run: () => {
+          if (!this.rewardClaimed) {
+            this.ctx.say("The dungeon is not complete — claim the reward in room five first.", "#e0c060");
+            return;
+          }
           sfx.doorThump();
           this.won = true;
           this.ctx.events.emit("won");
@@ -1223,6 +1280,74 @@ export class DungeonScene extends Phaser.Scene {
     }
 
     return null;
+  }
+
+  private claimDungeonReward(): void {
+    if (this.rewardClaimed || !this.rewardMarker) return;
+    const reward = this.currentReward;
+    let message = "";
+
+    if (reward.kind === "companion") {
+      const recruit = this.spawnCharacter(
+        `pc-${reward.className}`,
+        reward.name,
+        reward.className,
+        this.rewardMarker.x,
+        this.rewardMarker.y,
+      );
+      this.party.add(recruit);
+      this.partyGroup.add(recruit);
+      this.trapSystem.registerActor(recruit);
+      message = `${reward.name} joins the party and will travel to future dungeons! (${this.party.size}/4)`;
+    } else if (reward.kind === "magic-weapon" || reward.kind === "magic-armor") {
+      const def = item(reward.itemId);
+      const recipients = [
+        this.party.leader,
+        ...this.party.aliveMembers().filter((member) => member !== this.party.leader),
+      ];
+      const recipient = recipients.find((member) => member.character.inventory.canAdd(def));
+      if (!recipient) {
+        this.ctx.say(`No living party member has room for ${def.name}. Make room in the gear screen first.`, "#d07070");
+        return;
+      }
+      recipient.character.inventory.add(def);
+      message = `${recipient.character.name} receives ${def.name}. Open Gear (I) to equip it.`;
+    } else if (reward.kind === "spells") {
+      const caster = this.party.aliveMembers().find(
+        (member) =>
+          member.character.className === reward.className &&
+          !member.character.knownSpells.some((known) => known.spellId === reward.spellId),
+      );
+      if (caster) {
+        caster.character.learnSpell(reward.spellId);
+        message = `${caster.character.name} learns ${spell(reward.spellId).name}! Cycle spells with Q.`;
+      } else {
+        this.grantGoldReward(500);
+        message = "No living caster can master the secret, so the reliquary yields 500 gold instead.";
+      }
+    } else if (reward.kind === "gold") {
+      const xp = this.grantGoldReward(reward.amount);
+      message = `The party claims ${reward.amount} gold${xp > 0 ? ` and gains ${xp} XP` : ""}!`;
+    }
+
+    const { x, y, sprite } = this.rewardMarker;
+    sprite.destroy();
+    this.rewardMarker = null;
+    this.rewardClaimed = true;
+    sfx.pickupChime(true, this.spatial({ x, y }));
+    sparkleBurst(this, x, y, true);
+    this.ctx.say(message, "#e8c840");
+    this.saveToSlot(0);
+  }
+
+  private grantGoldReward(amount: number): number {
+    const xp = this.ctx.bankCoins(amount);
+    if (xp > 0) {
+      for (const member of this.party.members) {
+        if (!member.character.dead) this.ctx.engine.awardXp(member.character, xp);
+      }
+    }
+    return xp;
   }
 
   private tryStabilize(leader: CharacterSprite, dying: CharacterSprite): void {
@@ -1721,8 +1846,30 @@ export class DungeonScene extends Phaser.Scene {
 
   private restartRun(): void {
     const currentIndex = this.registry.get("dungeonIndex");
-    this.registry.set("dungeonIndex", (typeof currentIndex === "number" ? currentIndex : 0) + 1);
-    this.registry.set("ctx", new GameContext());
+    const dungeonIndex = typeof currentIndex === "number" ? currentIndex : 0;
+    const nextIndex = dungeonIndex + 1;
+
+    if (this.won) {
+      const survivors = this.party.members
+        .map((member) => serializeCharacter(member.character))
+        .filter((member) => !member.dead);
+      const nextState = nextDungeonSave(
+        { coinsBanked: this.ctx.totalCoins, messages: [...this.ctx.messages] },
+        dungeonIndex,
+        survivors,
+      );
+      try {
+        SaveRepository.save(0, nextState);
+      } catch {
+        // A storage failure must not prevent an in-memory campaign transition.
+      }
+      this.registry.set("loadState", nextState);
+    } else {
+      // A party wipe begins a fresh expedition in the next generated dungeon.
+      this.registry.set("dungeonIndex", nextIndex);
+      this.registry.set("loadState", null);
+      this.registry.set("ctx", new GameContext());
+    }
     this.scene.stop("Hud");
     this.scene.restart();
   }

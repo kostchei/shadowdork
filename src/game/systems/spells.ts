@@ -134,6 +134,39 @@ function resolveSpellEffect(
       }
       return;
     }
+    case "fireball": {
+      const target = isValidSpellTarget(caster, preferredTarget, FAR_PX)
+        ? preferredTarget
+        : nearestMonster(deps, caster, FAR_PX);
+      if (!target) {
+        ctx.say("The fireball vanishes into the dark — nothing is in range.");
+        return;
+      }
+      const victims = deps.monsters().filter(
+        (monster) =>
+          monster.aliveInFight &&
+          Phaser.Math.Distance.Between(target.x, target.y, monster.x, monster.y) <= CLOSE_PX,
+      );
+      fireBolt(scene, caster, target, () => {
+        const burst = scene.add.particles(target.x, target.y, "pixel", {
+          color: [0xff3c18, 0xff8c20, 0xffe06a],
+          speed: { min: 70, max: 230 },
+          scale: { start: 3.5, end: 0 },
+          lifespan: { min: 280, max: 620 },
+          duration: 220,
+          maxParticles: 45,
+          blendMode: "ADD",
+        }).setDepth(25);
+        scene.time.delayedCall(900, () => burst.destroy());
+        for (const victim of victims) {
+          const dmg = ctx.engine.dice.roll(def.dice!) * mult;
+          floatText(scene, victim.x, victim.y - 16, `${dmg}`, "#ff7a38");
+          applyDamageToMonster(deps, victim, dmg);
+        }
+        ctx.say(`Fire engulfs ${victims.length} ${victims.length === 1 ? "foe" : "foes"}!`, "#ff9b45");
+      });
+      return;
+    }
     case "mage-armor": {
       caster.character.removeEffect("spell-mage-armor");
       caster.character.addEffect({
@@ -214,6 +247,24 @@ function resolveSpellEffect(
         floatText(scene, m.x, m.y - 20, "turned!", "#f0e090");
       }
       ctx.say(`${undead.length} undead recoil and flee the holy word!`, "#f0e090");
+      return;
+    }
+    case "bless": {
+      const blessed = deps.party().filter((member) => !member.character.dead);
+      for (const member of blessed) {
+        member.character.removeEffect("spell-bless");
+        member.character.addEffect({
+          id: "spell-bless",
+          name: "Blessed (+1 attacks and spells)",
+          hooks: [
+            { kind: "checkBonus", applies: "attack", bonus: mult },
+            { kind: "checkBonus", applies: "spellcast", bonus: mult },
+          ],
+          duration: { unit: "realMs", remaining: def.durationMs! * mult },
+        });
+        floatText(scene, member.x, member.y - 22, `BLESSED +${mult}`, "#ffe486");
+      }
+      ctx.say(`Divine favour settles over the party (+${mult} attacks and spells).`, "#f0e090");
       return;
     }
     default:

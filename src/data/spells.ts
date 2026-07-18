@@ -1,4 +1,4 @@
-import type { SpellDef } from "../engine";
+import type { Character, SpellDef } from "../engine";
 
 const SPELL_LIST: readonly SpellDef[] = [
   {
@@ -147,4 +147,19 @@ export function spell(id: string): SpellDef {
 
 export function spellsForClass(cls: "wizard" | "priest"): readonly SpellDef[] {
   return SPELL_LIST.filter((s) => s.class === cls);
+}
+
+/** Return the known-spell index of the highest-tier spell that can be cast. */
+export function highestAvailableSpellIndex(character: Character): number {
+  let bestIndex = -1;
+  let bestTier = -1;
+  character.knownSpells.forEach((known, index) => {
+    if (known.status !== "available" || known.requiresAtonement) return;
+    const tier = spell(known.spellId).tier;
+    if (tier > bestTier) {
+      bestIndex = index;
+      bestTier = tier;
+    }
+  });
+  return bestIndex;
 }

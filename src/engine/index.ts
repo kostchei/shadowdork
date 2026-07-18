@@ -9,7 +9,13 @@ import { DC, resolveCheck, type CheckInput, type CheckResult } from "./check";
 import { Dice } from "./dice";
 import { EventLog } from "./events";
 import type { ItemDef } from "./inventory";
-import { castSpell, recoverSpells, type CastResult, type SpellDef } from "./spells";
+import {
+  castSpell,
+  completePenance,
+  recoverSpells,
+  type CastResult,
+  type SpellDef,
+} from "./spells";
 import { TableRegistry, type TableRollResult } from "./tables";
 import { DEFAULT_CONFIG, GameClock, type EngineConfig } from "./time";
 
@@ -181,6 +187,13 @@ export class Engine {
       mishap: result.mishap?.entry.text,
     });
     return result;
+  }
+
+  /** Complete divine penance; affected spells still require a later rest. */
+  atone(character: Character): number {
+    const completed = completePenance(character);
+    this.log.append(this.clock.elapsedMs, "spells.atone", { who: character.id, completed });
+    return completed;
   }
 
   rollTable(tableId: string, modifier = 0): TableRollResult {

@@ -9,7 +9,7 @@ import {
 } from "../engine";
 import { classDef } from "./classes";
 import { item } from "./items";
-import { WIZARD_MISHAPS } from "./tables/mishaps";
+import { WIZARD_MISHAP_TABLES } from "./tables/mishaps";
 import {
   FIGHTER_TALENTS,
   PRIEST_TALENTS,
@@ -20,7 +20,7 @@ import {
 export { classDef, type ClassDef } from "./classes";
 export { allItems, item } from "./items";
 export { monster } from "./monsters";
-export { spell, spellsForClass } from "./spells";
+export { highestAvailableSpellIndex, spell, spellsForClass } from "./spells";
 
 /** Register all data tables with an engine instance. Call once at boot. */
 export function registerTables(engine: Engine): void {
@@ -28,7 +28,7 @@ export function registerTables(engine: Engine): void {
   engine.tables.register(THIEF_TALENTS);
   engine.tables.register(PRIEST_TALENTS);
   engine.tables.register(WIZARD_TALENTS);
-  engine.tables.register(WIZARD_MISHAPS);
+  for (const table of WIZARD_MISHAP_TABLES) engine.tables.register(table);
 }
 
 const PRIME_STAT: Record<ClassName, StatName> = {

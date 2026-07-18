@@ -10,7 +10,14 @@ import { crackleBed, themeAmbience } from "../audio/ambience";
 import { isMuted, setMuted } from "../audio/context";
 import * as sfx from "../audio/sfx";
 import { SpatialEmitter, spatialOpts, type Vec2 } from "../audio/spatial";
-import { classDef, createCharacter, item, monster, spell } from "../../data";
+import {
+  classDef,
+  createCharacter,
+  highestAvailableSpellIndex,
+  item,
+  monster,
+  spell,
+} from "../../data";
 import { DC } from "../../engine";
 import { GameContext } from "../context";
 import { RENDER_SCALE } from "../display";
@@ -1238,14 +1245,9 @@ export class DungeonScene extends Phaser.Scene {
       return {
         label: "atone at the shrine",
         run: () => {
-          for (const s of leader.character.knownSpells) {
-            if (s.requiresAtonement) {
-              s.requiresAtonement = false;
-              s.status = "available";
-            }
-          }
+          this.ctx.engine.atone(leader.character);
           this.ctx.say(
-            `${leader.character.name} kneels in penance — the deity's silence lifts.`,
+            `${leader.character.name} completes their penance — the lost spells will return after rest.`,
             "#f0e090",
           );
         },
@@ -1499,11 +1501,9 @@ export class DungeonScene extends Phaser.Scene {
     return s;
   }
 
-  /** Point a caster's spellIndex at a spell if it's ready; false otherwise. */
-  private selectSpell(m: CharacterSprite, spellId: string): boolean {
-    const idx = m.character.knownSpells.findIndex(
-      (s) => s.spellId === spellId && s.status === "available" && !s.requiresAtonement,
-    );
+  /** Point a follower at their highest-tier ready spell; false if none remain. */
+  private selectHighestSpell(m: CharacterSprite): boolean {
+    const idx = highestAvailableSpellIndex(m.character);
     if (idx < 0) return false;
     m.spellIndex = idx;
     return true;
@@ -1525,7 +1525,8 @@ export class DungeonScene extends Phaser.Scene {
 
   /**
    * Support AI for followers: rally (morale check) to stabilize the dying,
-   * priests heal anyone under half HP, wizards hammer an aggro'd boss.
+   * priests cast for wounded allies, wizards cast at an aggro'd boss. Caster
+   * followers always lead with their highest-tier available spell.
    */
   private updateFollowerSupport(time: number): void {
     const leader = this.party.leader;
@@ -1576,7 +1577,7 @@ export class DungeonScene extends Phaser.Scene {
             (p.character.dying !== null || p.character.hp < p.character.maxHp / 2) &&
             zoneBetween(m, p) !== "beyond",
         );
-        if (wounded && this.selectSpell(m, "cure-wounds")) {
+        if (wounded && this.selectHighestSpell(m)) {
           castSelectedSpell(this.spellDeps(), m);
           continue;
         }
@@ -1591,7 +1592,7 @@ export class DungeonScene extends Phaser.Scene {
             mon.aiState === "aggro" &&
             Phaser.Math.Distance.Between(m.x, m.y, mon.x, mon.y) <= FAR_PX,
         );
-        if (boss && this.selectSpell(m, "magic-missile")) {
+        if (boss && this.selectHighestSpell(m)) {
           m.facing = boss.x >= m.x ? 1 : -1;
           m.setFlipX(m.facing === -1);
           castSelectedSpell(this.spellDeps(), m, boss);

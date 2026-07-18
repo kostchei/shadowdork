@@ -41,7 +41,17 @@ export interface CastResult {
 }
 
 const CAST_STAT: Record<SpellClass, StatName> = { wizard: "INT", priest: "WIS" };
-export const WIZARD_MISHAP_TABLE = "wizard-mishaps";
+export const WIZARD_MISHAP_TABLE_TIER_1_2 = "wizard-mishaps-tier-1-2";
+export const WIZARD_MISHAP_TABLE_TIER_3_4 = "wizard-mishaps-tier-3-4";
+export const WIZARD_MISHAP_TABLE_TIER_5 = "wizard-mishaps-tier-5";
+
+/** Select the increasingly dangerous mishap table for the spell's tier. */
+export function wizardMishapTableId(tier: number): string {
+  if (tier <= 0 || tier > 5) throw new Error(`Invalid spell tier ${tier}`);
+  if (tier <= 2) return WIZARD_MISHAP_TABLE_TIER_1_2;
+  if (tier <= 4) return WIZARD_MISHAP_TABLE_TIER_3_4;
+  return WIZARD_MISHAP_TABLE_TIER_5;
+}
 
 export function castingStat(spellClass: SpellClass): StatName {
   return CAST_STAT[spellClass];
@@ -74,7 +84,7 @@ export function castSpell(
   if (check.fumble) {
     known.status = "lost";
     if (spell.class === "wizard") {
-      const mishap = tables.roll(dice, WIZARD_MISHAP_TABLE);
+      const mishap = tables.roll(dice, wizardMishapTableId(spell.tier));
       return { spell, check, outcome: "mishap", doubled: false, mishap };
     }
     known.requiresAtonement = true;
@@ -99,4 +109,15 @@ export function recoverSpells(caster: Character): void {
   for (const s of caster.knownSpells) {
     if (s.status === "lost" && !s.requiresAtonement) s.status = "available";
   }
+}
+
+/** Complete divine penance; affected spells still require a subsequent rest. */
+export function completePenance(caster: Character): number {
+  let completed = 0;
+  for (const s of caster.knownSpells) {
+    if (!s.requiresAtonement) continue;
+    s.requiresAtonement = false;
+    completed++;
+  }
+  return completed;
 }

@@ -5,12 +5,22 @@ import {
   Dice,
   Engine,
   Inventory,
+  WIZARD_MISHAP_TABLE_TIER_1_2,
+  WIZARD_MISHAP_TABLE_TIER_3_4,
+  WIZARD_MISHAP_TABLE_TIER_5,
   resolveCheck,
   rollStats,
   statModifier,
+  wizardMishapTableId,
   xpToNextLevel,
 } from "../src/engine";
-import { createCharacter, item, registerTables, spell } from "../src/data";
+import {
+  createCharacter,
+  highestAvailableSpellIndex,
+  item,
+  registerTables,
+  spell,
+} from "../src/data";
 import { appearanceForCharacter, characterAppearanceKey } from "../src/game/entities/appearance";
 
 function makeEngine(seed = 42): Engine {
@@ -167,6 +177,49 @@ describe("spellcasting state machine", () => {
       }
     }
     throw new Error("No seed produced a nat 1 in 500 tries");
+  });
+
+  it("uses the wizard mishap table matching the spell tier", () => {
+    expect(wizardMishapTableId(1)).toBe(WIZARD_MISHAP_TABLE_TIER_1_2);
+    expect(wizardMishapTableId(2)).toBe(WIZARD_MISHAP_TABLE_TIER_1_2);
+    expect(wizardMishapTableId(3)).toBe(WIZARD_MISHAP_TABLE_TIER_3_4);
+    expect(wizardMishapTableId(4)).toBe(WIZARD_MISHAP_TABLE_TIER_3_4);
+    expect(wizardMishapTableId(5)).toBe(WIZARD_MISHAP_TABLE_TIER_5);
+  });
+
+  it("requires priest penance followed by a rest after a natural 1", () => {
+    for (let seed = 0; seed < 500; seed++) {
+      const engine = makeEngine(seed);
+      const priest = createCharacter(engine, "p", "Priest", "priest");
+      const result = engine.cast(priest, spell("cure-wounds"));
+      if (result.check.natural !== 1) continue;
+
+      const known = priest.knownSpell("cure-wounds");
+      expect(known.status).toBe("lost");
+      expect(known.requiresAtonement).toBe(true);
+      engine.freeRest(priest);
+      expect(known.status).toBe("lost");
+      expect(engine.atone(priest)).toBe(1);
+      expect(known.requiresAtonement).toBe(false);
+      expect(known.status).toBe("lost");
+      engine.freeRest(priest);
+      expect(known.status).toBe("available");
+      return;
+    }
+    throw new Error("No seed produced a priest nat 1 in 500 tries");
+  });
+
+  it("selects a follower caster's highest-tier available spell", () => {
+    const engine = makeEngine();
+    const wizard = createCharacter(engine, "w", "Wizard", "wizard");
+    wizard.learnSpell("misty-step");
+    wizard.learnSpell("fireball");
+
+    expect(wizard.knownSpells[highestAvailableSpellIndex(wizard)]?.spellId).toBe("fireball");
+    wizard.knownSpell("fireball").status = "lost";
+    expect(wizard.knownSpells[highestAvailableSpellIndex(wizard)]?.spellId).toBe("misty-step");
+    wizard.knownSpell("misty-step").requiresAtonement = true;
+    expect(spell(wizard.knownSpells[highestAvailableSpellIndex(wizard)]!.spellId).tier).toBe(1);
   });
 
   it("priests cannot cast wizard spells and vice versa", () => {

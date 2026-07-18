@@ -189,7 +189,7 @@ export function progressFromSavedParty(party: readonly SavedCharacter[]): PartyP
 }
 
 export function nextDungeonSave(
-  current: Pick<SaveSlot, "coinsBanked" | "messages">,
+  current: Pick<SaveSlot, "coinsBanked" | "messages" | "runSeed">,
   dungeonIndex: number,
   party: SavedCharacter[],
   timestamp = Date.now(),
@@ -199,6 +199,7 @@ export function nextDungeonSave(
     slotId: 0,
     timestamp,
     dungeonIndex: dungeonIndex + 1,
+    runSeed: current.runSeed,
     currentRoom: 1,
     hasCrown: false,
     kills: 0,

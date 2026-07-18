@@ -43,6 +43,8 @@ export interface SaveSlot {
   slotId: number;
   timestamp: number;
   dungeonIndex: number;
+  /** Stable layout seed for this expedition; absent in saves from before procedural runs. */
+  runSeed?: number;
   currentRoom: number; // 1-based index (1-6)
   hasCrown: boolean;
   kills: number;

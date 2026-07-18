@@ -575,6 +575,18 @@ function environmentTextures(scene: Phaser.Scene): void {
     g.lineStyle(2, 0x73a660, 1);
     for (let y = 5; y < 32; y += 9) g.lineBetween(4, y, 26, y + 3);
   });
+  texture(scene, "tile-portcullis", TILE, TILE, (g) => {
+    g.fillStyle(0x242733, 0.9);
+    g.fillRect(2, 1, 28, 5);
+    g.fillRect(2, 27, 28, 4);
+    g.fillStyle(0x8e94a3, 1);
+    for (let x = 5; x < 30; x += 6) {
+      g.fillRect(x, 3, 3, 27);
+      g.fillStyle(0xc3c8d1, 0.72);
+      g.fillRect(x, 4, 1, 24);
+      g.fillStyle(0x8e94a3, 1);
+    }
+  });
   texture(scene, "spikes", TILE, 14, (g) => {
     g.fillStyle(0x3a363d, 1);
     g.fillRect(0, 11, 32, 3);

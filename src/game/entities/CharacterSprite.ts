@@ -355,11 +355,11 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
     this.swingCooldown = SWING_COOLDOWN_MS;
   }
 
-  /** Thief-only: true while overlapping a climbable tile. Set by the scene. */
+  /** True while overlapping a ladder, rope, or vine. Set by the scene. */
   touchingClimbable = false;
 
   get canClimb(): boolean {
-    return this.character.className === "thief" && this.touchingClimbable;
+    return this.touchingClimbable;
   }
 
   override destroy(fromScene?: boolean): void {

@@ -39,6 +39,11 @@ describe("dungeon library", () => {
     const b = generateGrid(DUNGEONS[0]!.pools, 42);
     expect(a.join("")).toBe(b.join(""));
   });
+
+  it("makes different run seeds materially change a starting layout", () => {
+    const layouts = new Set(Array.from({ length: 32 }, (_, seed) => dungeonAt(seed).grid.join("")));
+    expect(layouts.size).toBeGreaterThan(8);
+  });
 });
 
 describe("seeded run grids (property tests)", () => {
@@ -109,6 +114,13 @@ describe("seeded run grids (property tests)", () => {
     );
   });
 
+  it("draws vertical routes, breakable masonry, and portcullises from the expanded room pool", () => {
+    const terrain = Array.from({ length: 800 }, (_, seed) => dungeonAt(seed).grid.join("")).join("");
+    expect(terrain).toContain("|");
+    expect(terrain).toContain("%");
+    expect(terrain).toContain("+");
+  });
+
   it("rejects malformed grids", () => {
     const good = [...dungeonAt(0).grid];
     const noSpawn = good.map((row) => row.replace("P", "."));
@@ -118,7 +130,7 @@ describe("seeded run grids (property tests)", () => {
   });
 
   it("exposes a legal-tile alphabet the scene renderer agrees with", () => {
-    for (const ch of ".#%=|^P234gsrOcGIKtnFDb*qvh:") {
+    for (const ch of ".#%=|+^P234gsrOcGIKtnFDb*qvh:") {
       expect(LEGAL_TILES.has(ch), `tile ${ch}`).toBe(true);
     }
   });

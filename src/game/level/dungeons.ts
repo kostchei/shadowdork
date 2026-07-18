@@ -137,7 +137,7 @@ export type FeaturedTrapKind = FeaturedTrapSpec["kind"];
 
 const MONSTER_TILES = new Set(["g", "s", "r", "O"]);
 const RESCUE_TILES = new Set(["2", "3", "4"]);
-export const LEGAL_TILES = new Set([..."." , ..."#%=|^P234gsrOcGIKtnfFDb*qvh:"]);
+export const LEGAL_TILES = new Set([..."." , ..."#%=|+^P234gsrOcGIKtnfFDb*qvh:"]);
 
 export interface DungeonTheme {
   background: number;
@@ -300,7 +300,7 @@ function buildRoom1(g: GridBuilder, variant: number, npc?: string): void {
       g.put(19, 11, "t");
     }
     g.put(7, 14, "*");
-  } else {
+  } else if (variant === 3) {
     // Sunken Trench Entrance: spikes gap jump
     g.put(4, 14, "b");
     g.hline(6, 9, 12, "=");
@@ -311,6 +311,15 @@ function buildRoom1(g: GridBuilder, variant: number, npc?: string): void {
     if (npc) {
       g.put(15, 10, npc);
     }
+    g.put(19, 14, "t");
+  } else {
+    // Winch Gate: a climbable vine reaches the high shelf; the way onward is barred.
+    g.put(4, 14, "b");
+    g.hline(7, 10, 11, "=");
+    g.vline(10, 8, 13, "|");
+    g.hline(11, 15, 8, "=");
+    g.put(13, 7, "G");
+    g.put(17, 14, "+");
     g.put(19, 14, "t");
   }
   g.divider(21);
@@ -354,7 +363,7 @@ function buildRoom2(g: GridBuilder, variant: number, npc?: string): void {
     g.put(26, 14, "*");
     g.put(31, 14, "n");
     g.put(40, 14, "*");
-  } else {
+  } else if (variant === 3) {
     // Pillar Hall
     g.hline(23, 25, 12, "=");
     g.hline(27, 29, 10, "=");
@@ -367,6 +376,15 @@ function buildRoom2(g: GridBuilder, variant: number, npc?: string): void {
     g.put(25, 14, "g");
     g.put(30, 14, "s");
     g.put(39, 14, "t");
+  } else {
+    // Ropewell: a rise, a descent, and a vine route above the low passage.
+    g.hline(23, 26, 12, "=");
+    g.hline(28, 31, 9, "=");
+    g.vline(31, 6, 13, "|");
+    g.hline(33, 37, 6, "=");
+    g.hline(36, 40, 10, "=");
+    g.put(35, 5, "I");
+    g.put(39, 14, "n");
   }
   g.divider(42);
 }
@@ -406,7 +424,7 @@ function buildRoom3(g: GridBuilder, variant: number, npc?: string): void {
     }
     g.put(60, 14, "g");
     g.put(62, 14, "r");
-  } else {
+  } else if (variant === 3) {
     // Split-Level Setback
     g.hline(45, 49, 12, "=");
     g.vline(51, 12, 14, "%");
@@ -417,6 +435,14 @@ function buildRoom3(g: GridBuilder, variant: number, npc?: string): void {
     g.put(57, 14, "r");
     g.put(59, 14, "r");
     g.put(62, 14, "t");
+  } else {
+    // Crumbling Rise: break the masonry for the low road or climb to the cache.
+    g.hline(45, 49, 11, "=");
+    g.vline(49, 8, 13, "|");
+    g.hline(51, 55, 8, "=");
+    g.put(53, 7, "G");
+    g.vline(57, 12, 14, "%");
+    g.put(61, 14, "t");
   }
   g.divider(64);
 }
@@ -594,7 +620,7 @@ function buildRoom4(g: GridBuilder, variant: number, npc: string | undefined, ea
       g.put(81, 8, "I");
     }
     if (!easier) g.put(83, 14, "r");
-  } else {
+  } else if (variant === 3) {
     // Pit of the Beast
     g.put(74, 14, "O");
     g.hline(67, 69, 11, "=");
@@ -606,6 +632,14 @@ function buildRoom4(g: GridBuilder, variant: number, npc: string | undefined, ea
     } else {
       g.put(77, 14, "c");
     }
+  } else {
+    // Hoist Arena: a raised approach and portcullis make the boss room a siege.
+    g.hline(68, 72, 11, "=");
+    g.vline(72, 8, 13, "|");
+    g.hline(74, 78, 8, "=");
+    g.put(76, 7, "O");
+    g.put(80, 14, "+");
+    if (!easier) g.put(82, 14, "g");
   }
   g.divider(85);
 }
@@ -638,7 +672,7 @@ function buildRoom5(g: GridBuilder, variant: number): void {
     g.put(96, 8, "G");
     g.put(93, 14, "c");
     g.put(96, 14, "*");
-  } else {
+  } else if (variant === 3) {
     // Vault Chamber
     g.put(87, 14, "v");
     g.put(89, 14, "s");
@@ -647,6 +681,14 @@ function buildRoom5(g: GridBuilder, variant: number): void {
     g.put(93, 11, "K");
     g.put(95, 11, "I");
     g.put(97, 14, "c");
+  } else {
+    // High Vault: the reward is above the gate on a climbable vine route.
+    g.hline(87, 90, 12, "=");
+    g.vline(90, 8, 13, "|");
+    g.hline(92, 96, 8, "=");
+    g.put(94, 7, "K");
+    g.put(96, 7, "G");
+    g.put(89, 14, "+");
   }
   g.divider(98);
 }
@@ -824,11 +866,11 @@ const DUNGEON_BASES: readonly Omit<DungeonDefinition, "grid" | "traps">[] = [
     encounterMonsterId: "goblin",
     trapKinds: ["plate-gate", "counterweighted-lift", "rolling-stone", "collapsing-floor"],
     pools: {
-      room1: [0, 3],
-      room2: [0, 3],
-      room3: [0, 3],
-      room4: [0, 3],
-      room5: [0, 3],
+      room1: [0, 3, 4],
+      room2: [0, 3, 4],
+      room3: [0, 3, 4],
+      room4: [0, 3, 4],
+      room5: [0, 3, 4],
       sanctuary: ALL_SANCTUARIES,
     },
     theme: {
@@ -849,11 +891,11 @@ const DUNGEON_BASES: readonly Omit<DungeonDefinition, "grid" | "traps">[] = [
     encounterMonsterId: "skeleton",
     trapKinds: ["alternating-spikes", "dart-gallery", "undead-barrier"],
     pools: {
-      room1: [1, 3],
-      room2: [1, 3],
-      room3: [1, 3],
-      room4: [1, 3],
-      room5: [1, 3],
+      room1: [1, 3, 4],
+      room2: [1, 3, 4],
+      room3: [1, 3, 4],
+      room4: [1, 3, 4],
+      room5: [1, 3, 4],
       sanctuary: ALL_SANCTUARIES,
     },
     theme: {
@@ -874,11 +916,11 @@ const DUNGEON_BASES: readonly Omit<DungeonDefinition, "grid" | "traps">[] = [
     encounterMonsterId: "giant-rat",
     trapKinds: ["crusher-gallery", "light-runes", "flooded-chamber"],
     pools: {
-      room1: [2, 3],
-      room2: [2, 3],
-      room3: [2, 3],
-      room4: [2, 3],
-      room5: [2, 3],
+      room1: [2, 3, 4],
+      room2: [2, 3, 4],
+      room3: [2, 3, 4],
+      room4: [2, 3, 4],
+      room5: [2, 3, 4],
       sanctuary: ALL_SANCTUARIES,
     },
     theme: {
@@ -899,11 +941,11 @@ const DUNGEON_BASES: readonly Omit<DungeonDefinition, "grid" | "traps">[] = [
     encounterMonsterId: "skeleton",
     trapKinds: ["flooded-chamber", "light-runes", "undead-barrier", "counterweighted-lift"],
     pools: {
-      room1: [3],
-      room2: [3],
-      room3: [3],
-      room4: [3],
-      room5: [3],
+      room1: [3, 4],
+      room2: [3, 4],
+      room3: [3, 4],
+      room4: [3, 4],
+      room5: [3, 4],
       sanctuary: ALL_SANCTUARIES,
     },
     theme: {

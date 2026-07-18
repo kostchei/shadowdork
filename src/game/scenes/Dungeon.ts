@@ -102,6 +102,7 @@ export class DungeonScene extends Phaser.Scene {
 
   private walls!: Phaser.Physics.Arcade.StaticGroup;
   private weakWalls!: Phaser.Physics.Arcade.StaticGroup;
+  private portcullises!: Phaser.Physics.Arcade.StaticGroup;
   private climbTiles: Phaser.GameObjects.Rectangle[] = [];
   private spikes: Phaser.Physics.Arcade.Image[] = [];
   private monsters: MonsterSprite[] = [];
@@ -155,6 +156,7 @@ export class DungeonScene extends Phaser.Scene {
       this.registry.set("loadState", null); // Consume it
       
       this.registry.set("dungeonIndex", this.loadedState!.dungeonIndex);
+      this.registry.set("runSeed", this.loadedState!.runSeed ?? 0);
       
       const newCtx = new GameContext();
       newCtx.totalCoins = this.loadedState!.coinsBanked;
@@ -194,7 +196,10 @@ export class DungeonScene extends Phaser.Scene {
 
     const storedIndex = this.registry.get("dungeonIndex");
     const dungeonIndex = typeof storedIndex === "number" ? storedIndex : 0;
-    this.activeDungeon = dungeonAt(dungeonIndex);
+    const storedSeed = this.registry.get("runSeed");
+    const runSeed = typeof storedSeed === "number" ? storedSeed : 0;
+    const layoutSeed = (runSeed + dungeonIndex) >>> 0;
+    this.activeDungeon = dungeonAt(layoutSeed);
     this.currentReward = chooseDungeonReward(
       dungeonIndex,
       this.loadedState
@@ -216,10 +221,11 @@ export class DungeonScene extends Phaser.Scene {
     this.cameras.main.setZoom(RENDER_SCALE);
     this.cameras.main.setBounds(0, 0, DUNGEON_W * TILE, DUNGEON_H * TILE);
     this.cameras.main.setBackgroundColor(this.activeDungeon.theme.background);
-    this.createAtmosphere(dungeonIndex);
+    this.createAtmosphere(layoutSeed);
 
     this.walls = this.physics.add.staticGroup();
     this.weakWalls = this.physics.add.staticGroup();
+    this.portcullises = this.physics.add.staticGroup();
     this.party = new PartyManager(this.ctx);
     this.light = new LightSystem(this, this.ctx, this.activeDungeon.theme.darkness);
 
@@ -249,6 +255,7 @@ export class DungeonScene extends Phaser.Scene {
     this.monsterGroup = this.add.group(this.monsters);
     this.physics.add.collider(this.partyGroup, this.walls);
     this.physics.add.collider(this.partyGroup, this.weakWalls);
+    this.physics.add.collider(this.partyGroup, this.portcullises);
     this.physics.add.collider(this.partyGroup, this.partyGroup, undefined, (o1, o2) => {
       const s1 = o1 as CharacterSprite;
       const s2 = o2 as CharacterSprite;
@@ -270,6 +277,7 @@ export class DungeonScene extends Phaser.Scene {
     });
     this.physics.add.collider(this.monsterGroup, this.walls);
     this.physics.add.collider(this.monsterGroup, this.weakWalls);
+    this.physics.add.collider(this.monsterGroup, this.portcullises);
     for (const member of this.party.members) this.trapSystem.registerActor(member);
     for (const monster of this.monsters) this.trapSystem.registerActor(monster);
     for (const pickup of this.pickups) this.trapSystem.registerActor(pickup.sprite);
@@ -469,6 +477,11 @@ export class DungeonScene extends Phaser.Scene {
             this.walls.create(px, py, "tile-climb").setTint(theme.stoneTint).setDepth(2);
             const zone = this.add.rectangle(px - TILE, py, TILE, TILE, 0, 0);
             this.climbTiles.push(zone);
+            break;
+          }
+          case "+": {
+            const gate = this.portcullises.create(px, py, "tile-portcullis");
+            gate.setTint(theme.stoneTint).setDepth(6);
             break;
           }
           case "^": {
@@ -1254,6 +1267,21 @@ export class DungeonScene extends Phaser.Scene {
     const trapInteraction = this.trapSystem.findInteraction(leader);
     if (trapInteraction) return trapInteraction;
 
+    const gate = this.portcullises.getChildren().find((candidate) => {
+      const image = candidate as Phaser.Physics.Arcade.Image;
+      return image.active && Phaser.Math.Distance.Between(leader.x, leader.y, image.x, image.y) < TILE * 1.8;
+    }) as Phaser.Physics.Arcade.Image | undefined;
+    if (gate) {
+      return {
+        label: "raise the portcullis",
+        run: () => {
+          gate.destroy();
+          sfx.doorThump();
+          this.ctx.say(`${leader.character.name} heaves the portcullis open.`, "#d0c080");
+        },
+      };
+    }
+
     // 3. Disarm spikes (thief)
     if (leader.character.className === "thief") {
       const nearSpikes = this.spikes.filter(
@@ -1863,6 +1891,7 @@ export class DungeonScene extends Phaser.Scene {
       slotId,
       timestamp: Date.now(),
       dungeonIndex: this.registry.get("dungeonIndex") ?? 0,
+      runSeed: this.registry.get("runSeed") ?? 0,
       currentRoom: this.currentRoomIndex,
       hasCrown: this.hasCrown,
       kills: this.ctx.kills,
@@ -1904,7 +1933,11 @@ export class DungeonScene extends Phaser.Scene {
         .map((member) => serializeCharacter(member.character))
         .filter((member) => !member.dead);
       const nextState = nextDungeonSave(
-        { coinsBanked: this.ctx.totalCoins, messages: [...this.ctx.messages] },
+        {
+          coinsBanked: this.ctx.totalCoins,
+          messages: [...this.ctx.messages],
+          runSeed: this.registry.get("runSeed") ?? 0,
+        },
         dungeonIndex,
         survivors,
       );
@@ -1915,8 +1948,9 @@ export class DungeonScene extends Phaser.Scene {
       }
       this.registry.set("loadState", nextState);
     } else {
-      // A party wipe begins a fresh expedition in the next generated dungeon.
-      this.registry.set("dungeonIndex", nextIndex);
+      // A party wipe begins a genuinely fresh expedition, including a new layout seed.
+      this.registry.set("dungeonIndex", 0);
+      this.registry.set("runSeed", Math.floor(Math.random() * 0x1_0000_0000));
       this.registry.set("loadState", null);
       this.registry.set("ctx", new GameContext());
     }

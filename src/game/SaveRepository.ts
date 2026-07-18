@@ -181,7 +181,8 @@ export class SaveRepository {
     // Check critical fields
     if (typeof obj.slotId !== "number") return false;
     if (typeof obj.timestamp !== "number") return false;
-    if (typeof obj.dungeonIndex !== "number") return false;
+      if (typeof obj.dungeonIndex !== "number") return false;
+      if (obj.runSeed !== undefined && typeof obj.runSeed !== "number") return false;
     if (typeof obj.currentRoom !== "number") return false;
     if (typeof obj.hasCrown !== "boolean") return false;
     if (typeof obj.kills !== "number") return false;

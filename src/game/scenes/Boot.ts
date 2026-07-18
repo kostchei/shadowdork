@@ -74,7 +74,11 @@ export class BootScene extends Phaser.Scene {
           return;
         }
       }
-      this.registry.set("dungeonIndex", Math.floor(Math.random() * DUNGEONS.length));
+      // Campaign progression starts at dungeon 0 so its first reward is always
+      // appropriate for a new party.  The independent seed makes the actual
+      // dungeon type and its room selections fresh every time.
+      this.registry.set("dungeonIndex", 0);
+      this.registry.set("runSeed", Math.floor(Math.random() * 0x1_0000_0000));
       this.registry.set("ctx", new GameContext());
       this.scene.start("Dungeon");
     });

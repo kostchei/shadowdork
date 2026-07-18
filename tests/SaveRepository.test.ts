@@ -30,6 +30,7 @@ describe("SaveRepository", () => {
     slotId: 1,
     timestamp: 123456789,
     dungeonIndex: 2,
+    runSeed: 8128,
     currentRoom: 3,
     hasCrown: false,
     kills: 10,
@@ -72,6 +73,7 @@ describe("SaveRepository", () => {
     expect(loaded).not.toBeNull();
     expect(loaded!.slotId).toBe(1);
     expect(loaded!.coinsBanked).toBe(500);
+    expect(loaded!.runSeed).toBe(8128);
     expect((loaded as any).schemaVersion).toBe(SAVE_SCHEMA_VERSION);
   });
 
@@ -82,6 +84,7 @@ describe("SaveRepository", () => {
 
     const invalidSlot = { ...validSaveSlot, slotId: "not-a-number" };
     expect(SaveRepository.validateSaveSlot(invalidSlot)).toBe(false);
+    expect(SaveRepository.validateSaveSlot({ ...validSaveSlot, runSeed: "not-a-number" })).toBe(false);
 
     const corruptParty = { ...validSaveSlot, party: [{ name: "missing-fields" }] };
     expect(SaveRepository.validateSaveSlot(corruptParty)).toBe(false);

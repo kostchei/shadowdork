@@ -58,6 +58,9 @@ import {
 import { companionPartySnapshot, chooseCompanionRecruit, type CompanionCandidate, type CompanionClass } from "../systems/companion";
 import type { TopologyId } from "../level/topology";
 import type { Orientation } from "../level/embedding";
+import type { EnvironmentTextureKeys, VisualPalette, VisualSkin } from "../visual/model";
+import { parseVisualSkinId, visualSkinById } from "../visual/skins";
+import { ensureVisualSkinTextures } from "../visual/textures/materials";
 import { roomAt, roomAtTolerant } from "../level/geometry";
 import {
   canTraverseConnector,
@@ -122,6 +125,8 @@ export class DungeonScene extends Phaser.Scene {
   party!: PartyManager;
   light!: LightSystem;
   activeDungeon!: DungeonDefinition;
+  visualSkin?: VisualSkin;
+  private environmentTextures!: EnvironmentTextureKeys;
 
   private walls!: Phaser.Physics.Arcade.StaticGroup;
   private weakWalls!: Phaser.Physics.Arcade.StaticGroup;
@@ -205,7 +210,9 @@ export class DungeonScene extends Phaser.Scene {
     this.gameOver = false;
     this.won = false;
     this.gamePaused = false;
-    this.startPaused = true;
+    // A capture-only query flag keeps the normal title flow unchanged while
+    // allowing deterministic, unobscured art-direction screenshots.
+    this.startPaused = new URLSearchParams(window.location.search).get("autostart") !== "1";
     this.statsOverlayOpen = false;
     this.gearOverlayOpen = false;
     this.gearSelectionIndex = 0;
@@ -242,6 +249,13 @@ export class DungeonScene extends Phaser.Scene {
     const runSeed = typeof storedSeed === "number" ? storedSeed : 0;
     const layoutSeed = (runSeed + dungeonIndex) >>> 0;
     this.activeDungeon = this.resolveActiveDungeon(layoutSeed);
+    const requestedSkin = parseVisualSkinId(new URLSearchParams(window.location.search).get("skin"));
+    this.visualSkin = requestedSkin ? visualSkinById(requestedSkin) : undefined;
+    this.environmentTextures = ensureVisualSkinTextures(
+      this,
+      this.visualSkin,
+      `bg-${this.activeDungeon.theme.backdrop}`,
+    );
     this.lastRoomId = this.resolveLoadedRoomId();
     this.discoveredRoomIds.add(this.lastRoomId);
     this.currentReward = chooseDungeonReward(
@@ -266,14 +280,14 @@ export class DungeonScene extends Phaser.Scene {
     // The framebuffer is render-scaled; zooming keeps the same 960x540 world view.
     this.cameras.main.setZoom(RENDER_SCALE);
     this.cameras.main.setBounds(0, 0, worldW, worldH);
-    this.cameras.main.setBackgroundColor(this.activeDungeon.theme.background);
+    this.cameras.main.setBackgroundColor(this.presentationPalette.background);
     this.createAtmosphere(layoutSeed);
 
     this.walls = this.physics.add.staticGroup();
     this.weakWalls = this.physics.add.staticGroup();
     this.portcullises = this.physics.add.staticGroup();
     this.party = new PartyManager(this.ctx);
-    this.light = new LightSystem(this, this.ctx, this.activeDungeon.theme.darkness);
+    this.light = new LightSystem(this, this.ctx, this.presentationPalette.darkness);
 
     this.buildLevel();
     this.createConnectorTelegraphs();
@@ -294,7 +308,7 @@ export class DungeonScene extends Phaser.Scene {
       ],
       (x, y) => this.light.levelAt(x, y),
       (member) => this.snuffTorch(member),
-      this.activeDungeon.theme.accent,
+      this.presentationPalette.accent,
     );
     this.setupInput();
 
@@ -346,7 +360,7 @@ export class DungeonScene extends Phaser.Scene {
       .setVisible(false);
     this.leaderMarker = this.add
       .image(0, 0, "leader-marker")
-      .setTint(this.activeDungeon.theme.accent)
+      .setTint(this.presentationPalette.accent)
       .setDepth(939)
       .setVisible(false);
 
@@ -361,18 +375,28 @@ export class DungeonScene extends Phaser.Scene {
     });
 
     this.ctx.say(
-      `${this.activeDungeon.name}. ${this.activeDungeon.objective}. Watch your torch. ESC shows controls.`,
+      `${this.dungeonDisplayName}. ${this.activeDungeon.objective}. Watch your torch. ESC shows controls.`,
       "#f0e090",
     );
     this.cameras.main.fadeIn(450, 0, 0, 0);
 
-    this.physics.world.isPaused = true;
-    this.anims.pauseAll();
+    if (this.startPaused) {
+      this.physics.world.isPaused = true;
+      this.anims.pauseAll();
+    }
     this.scene.launch("Hud");
   }
 
   get awaitingStart(): boolean {
     return this.startPaused;
+  }
+
+  get presentationPalette(): VisualPalette {
+    return this.visualSkin?.palette ?? this.activeDungeon.theme;
+  }
+
+  get dungeonDisplayName(): string {
+    return this.visualSkin?.displayName ?? this.activeDungeon.name;
   }
 
   private nextPlebName(): string {
@@ -414,7 +438,7 @@ export class DungeonScene extends Phaser.Scene {
   private createAtmosphere(dungeonIndex: number): void {
     const worldW = this.activeDungeon.width * TILE;
     const worldH = this.activeDungeon.height * TILE;
-    const theme = this.activeDungeon.theme;
+    const theme = this.presentationPalette;
 
     this.add
       .tileSprite(0, 0, worldW, worldH, "bg-cavern")
@@ -425,7 +449,7 @@ export class DungeonScene extends Phaser.Scene {
       .setDepth(-30);
     // Themed math-built backdrop: columns, tentacle swirls, or aztec fractals.
     this.add
-      .tileSprite(0, 0, worldW, worldH, `bg-${theme.backdrop}`)
+      .tileSprite(0, 0, worldW, worldH, this.environmentTextures.backdrop)
       .setOrigin(0)
       .setScrollFactor(0.22, 0.08)
       .setTint(theme.stoneTint)
@@ -490,7 +514,9 @@ export class DungeonScene extends Phaser.Scene {
   }
 
   private buildLevel(): void {
-    const theme = this.activeDungeon.theme;
+    const theme = this.presentationPalette;
+    const textures = this.environmentTextures;
+    const foregroundTint = this.visualSkin ? textures.foregroundTint : theme.stoneTint;
     for (let y = 0; y < this.activeDungeon.height; y++) {
       const row = this.activeDungeon.grid[y]!;
       for (let x = 0; x < this.activeDungeon.width; x++) {
@@ -500,13 +526,13 @@ export class DungeonScene extends Phaser.Scene {
         switch (ch) {
           case "#":
             this.walls
-              .create(px, py, `tile-wall-${(x * 17 + y * 31) % 3}`)
-              .setTint(theme.stoneTint)
+              .create(px, py, textures.wall((x * 17 + y * 31) % 3))
+              .setTint(foregroundTint)
               .setDepth(1);
             break;
           case "%":
             {
-              const wall = this.weakWalls.create(px, py, "tile-weak").setTint(theme.stoneTint).setDepth(2);
+              const wall = this.weakWalls.create(px, py, textures.weakWall).setTint(foregroundTint).setDepth(2);
               const connector = this.activeDungeon.connectors?.find(
                 (entry) => entry.blocker?.x === x && entry.blocker?.y === y,
               );
@@ -516,8 +542,8 @@ export class DungeonScene extends Phaser.Scene {
             break;
           case "=": {
             // One-way platform: solid on top only, jump up through it.
-            const tile = this.walls.create(px, py - TILE / 2 + 6, "tile-platform");
-            tile.setTint(theme.stoneTint).setDepth(2);
+            const tile = this.walls.create(px, py - TILE / 2 + 6, textures.platform);
+            tile.setTint(foregroundTint).setDepth(2);
             const body = (tile as Phaser.Physics.Arcade.Image).body as Phaser.Physics.Arcade.StaticBody;
             body.checkCollision.down = false;
             body.checkCollision.left = false;
@@ -525,14 +551,14 @@ export class DungeonScene extends Phaser.Scene {
             break;
           }
           case "|": {
-            this.walls.create(px, py, "tile-climb").setTint(theme.stoneTint).setDepth(2);
+            this.walls.create(px, py, textures.climb).setTint(foregroundTint).setDepth(2);
             const zone = this.add.rectangle(px - TILE, py, TILE, TILE, 0, 0);
             this.climbTiles.push(zone);
             break;
           }
           case "+": {
-            const gate = this.portcullises.create(px, py, "tile-portcullis");
-            gate.setTint(theme.stoneTint).setDepth(6);
+            const gate = this.portcullises.create(px, py, textures.portcullis);
+            gate.setTint(foregroundTint).setDepth(6);
             const connector = this.activeDungeon.connectors?.find(
               (entry) => entry.blocker?.x === x && entry.blocker?.y === y,
             );
@@ -657,19 +683,19 @@ export class DungeonScene extends Phaser.Scene {
             break;
           }
           case "*":
-            this.add.image(px, py + 5, "deco-mushrooms").setDepth(3).setTint(theme.accent);
+            this.add.image(px, py + 5, textures.decorations.mushrooms).setDepth(3).setTint(this.visualSkin ? 0xffffff : theme.accent);
             break;
           case "q":
-            this.add.image(px, py + 9, "deco-bones").setDepth(3);
+            this.add.image(px, py + 9, textures.decorations.bones).setDepth(3);
             break;
           case "v":
-            this.add.image(px, py - 2, "deco-banner").setDepth(3).setTint(theme.accent);
+            this.add.image(px, py - 2, textures.decorations.banner).setDepth(3).setTint(this.visualSkin ? 0xffffff : theme.accent);
             break;
           case ":":
-            this.add.image(px, py - 7, "deco-stalactite").setDepth(3).setTint(theme.stoneTint);
+            this.add.image(px, py - 7, textures.decorations.stalactite).setDepth(3).setTint(this.visualSkin ? 0xffffff : theme.stoneTint);
             break;
           case "D": {
-            this.add.image(px, py - TILE / 2, "door").setDepth(5);
+            this.add.image(px, py - TILE / 2, textures.door).setDepth(5);
             this.door = { x: px, y: py };
             break;
           }

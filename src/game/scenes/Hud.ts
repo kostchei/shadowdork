@@ -87,7 +87,7 @@ export class HudScene extends Phaser.Scene {
 
     const w = GAME_W;
     const h = GAME_H;
-    const accent = this.dungeon.activeDungeon.theme.accent;
+    const accent = this.dungeon.presentationPalette.accent;
     const titleColor = `#${accent.toString(16).padStart(6, "0")}`;
 
     this.chrome = this.add.graphics().setDepth(990);
@@ -127,7 +127,7 @@ export class HudScene extends Phaser.Scene {
       .setDepth(1000);
 
     this.add
-      .text(w - 18, 13, this.dungeon.activeDungeon.name.toUpperCase(), {
+      .text(w - 18, 13, this.dungeon.dungeonDisplayName.toUpperCase(), {
         fontFamily: "Georgia, serif",
         fontSize: "19px",
         color: titleColor,
@@ -220,7 +220,7 @@ export class HudScene extends Phaser.Scene {
     if (this.startOverlay) return;
     const w = GAME_W;
     const h = GAME_H;
-    const accent = this.dungeon.activeDungeon.theme.accent;
+    const accent = this.dungeon.presentationPalette.accent;
     const accentColor = `#${accent.toString(16).padStart(6, "0")}`;
 
     const bg = this.add.rectangle(w / 2, h / 2, w, h, 0x020205, 0.82);
@@ -316,7 +316,7 @@ export class HudScene extends Phaser.Scene {
   }
 
   private drawChrome(memberCount: number): void {
-    const accent = this.dungeon.activeDungeon.theme.accent;
+    const accent = this.dungeon.presentationPalette.accent;
     const partyH = partyBoxHeight(memberCount);
     const logY = PARTY_BOX.y + partyH + 6;
     this.lastPartySize = memberCount;
@@ -345,7 +345,7 @@ export class HudScene extends Phaser.Scene {
   /** The talent roll gets a legible card instead of text floating over combat. */
   private levelUpCeremony(name: string, result: LevelUpResult): void {
     const w = GAME_W;
-    const accent = this.dungeon.activeDungeon.theme.accent;
+    const accent = this.dungeon.presentationPalette.accent;
     const panel = this.add.graphics();
     panel.fillStyle(0x05060a, 0.94).fillRoundedRect(-320, -35, 640, 78, 7);
     panel.lineStyle(2, accent, 0.9).strokeRoundedRect(-320, -35, 640, 78, 7);
@@ -384,7 +384,7 @@ export class HudScene extends Phaser.Scene {
     if (this.pauseOverlay) return;
     const w = GAME_W;
     const h = GAME_H;
-    const accent = this.dungeon.activeDungeon.theme.accent;
+    const accent = this.dungeon.presentationPalette.accent;
     const titleColor = `#${accent.toString(16).padStart(6, "0")}`;
 
     const bg = this.add.rectangle(w / 2, h / 2, w, h, 0x020205, 0.7);
@@ -611,7 +611,7 @@ export class HudScene extends Phaser.Scene {
     if (this.statsOverlay) return;
     const w = GAME_W;
     const h = GAME_H;
-    const accent = this.dungeon.activeDungeon.theme.accent;
+    const accent = this.dungeon.presentationPalette.accent;
     const titleColor = `#${accent.toString(16).padStart(6, "0")}`;
 
     const bg = this.add.rectangle(w / 2, h / 2, w, h, 0x020205, 0.7);
@@ -708,7 +708,7 @@ export class HudScene extends Phaser.Scene {
     if (this.gearOverlay) return;
     const w = GAME_W;
     const h = GAME_H;
-    const accent = this.dungeon.activeDungeon.theme.accent;
+    const accent = this.dungeon.presentationPalette.accent;
     const titleColor = `#${accent.toString(16).padStart(6, "0")}`;
 
     const bg = this.add.rectangle(w / 2, h / 2, w, h, 0x020205, 0.7);
@@ -820,7 +820,7 @@ export class HudScene extends Phaser.Scene {
         })
         .setOrigin(0.5),
       this.add
-        .text(w / 2, h / 2 - 62, this.dungeon.activeDungeon.name, {
+        .text(w / 2, h / 2 - 62, this.dungeon.dungeonDisplayName, {
           ...UI_STYLE,
           fontFamily: "Georgia, serif",
           fontSize: "15px",
@@ -890,7 +890,7 @@ export class HudScene extends Phaser.Scene {
       this.hpBars.fillStyle(0x1f2128, 1).fillRoundedRect(203, y + 3, 74, 12, 3);
       this.hpBars.fillStyle(hpColor, 1).fillRoundedRect(205, y + 5, 70 * ratio, 8, 2);
       if (isLeader && !c.dead) {
-        this.hpBars.lineStyle(1, this.dungeon.activeDungeon.theme.accent, 0.9);
+        this.hpBars.lineStyle(1, this.dungeon.presentationPalette.accent, 0.9);
         this.hpBars.strokeRoundedRect(202, y + 2, 76, 14, 3);
       }
     }

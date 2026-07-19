@@ -1,8 +1,20 @@
 # Cursed Scroll Environment Re-skin Audit and Implementation Plan
 
-Status: proposed  
+Status: implementation in progress
 Scope: presentation only; no combat, traversal, progression, encounter, or save-rule changes  
 Reviewed: 2026-07-19
+
+## Implementation checkpoint - 2026-07-19
+
+The first vertical slice is now implemented behind an explicit development override, so ordinary runs retain their current presentation until the wider matrix is ready.
+
+- Milestone 0 is partially complete: `?skin=<visual-skin-id>` selects a skin and `?autostart=1` removes the opening character overlay for unobscured captures. The fixed three-seed, torch-on/off matrix and capture automation remain to do.
+- Milestone 1's visual-only model and eighteen declarations are implemented in `src/game/visual/model.ts` and `src/game/visual/skins.ts`. Selection is deterministic and does not consume rules RNG; the override is opt-in rather than part of normal generation.
+- Milestone 2 has one playable vertical slice: `iron-fortress`. It replaces the visible foreground with irregular dark-basalt masonry, iron platforms and gates, fortress doors, magma-lit depth, crenels, banners, racks, gongs, and fortress-specific HUD color/title treatment. Domain warping, lip/contact shadow, and crevice-grime utilities are shared procedural primitives.
+- Collision tiles, bodies, topology, objectives, encounters, traps, rewards, movement, saves, and rules timing are untouched. The full automated suite passes (286 tests), and the production build succeeds.
+- Browser QA at `?nl=0&skin=iron-fortress&autostart=1` confirms that the fortress reads through the torch-lit foreground and reports no browser warnings or errors.
+
+The Red Sands faction split remains explicit: this slice depicts Gaspar's salamander-held basalt-and-iron castle. Malik's duergar-held black-granite `burning-mines` and the outdoor `djurum-approach` are separately declared skins and are the next two Red Sands implementations; they must not reuse the fortress dressing.
 
 ## Decision
 
@@ -12,12 +24,12 @@ The next art pass should therefore introduce six visual zone packs with three sk
 
 ## Source and provenance note
 
-The three concepts listed under each scroll in `various_dungeon_research.md` are project-created extrapolations inspired by each zine's region. They are not three canon dungeons printed in each Cursed Scroll. Treat them as Shadowdork art-direction targets and do not describe them in-game or in documentation as official Shadowdark locations.
+Most of the three concepts listed under each scroll in `various_dungeon_research.md` are project-created extrapolations inspired by each zine's region. They are not three canon dungeons printed in each Cursed Scroll. Treat those concepts as Shadowdork art-direction targets and do not describe them in-game or in documentation as official Shadowdark locations. The Red Sands pack is an exception in this plan: its three skins now follow the actual spatial layers and faction territories of *Fortress of the Burning Brothers*.
 
 The first three local PDFs establish these canon visual anchors:
 
 - **Cursed Scroll 1: Diablerie**: black forest, misty bog, mossy standing stones, marrow-tree roots, wet and slimy caves, and the wax-like dissolving masonry of Bittermold Keep. Its included dungeon is *The Hideous Halls of Mugdulblub*.
-- **Cursed Scroll 2: Red Sands**: red mountains, windblown valleys, dunes, salt flats, desert fortresses, mines, forgeworks, brass-domed cities, and sand-buried ruins. Its included dungeon is *Fortress of the Burning Brothers*.
+- **Cursed Scroll 2: Red Sands**: red mountains, windblown valleys, dunes, salt flats, desert fortresses, mines, forgeworks, brass-domed cities, and sand-buried ruins. Its included dungeon is *Fortress of the Burning Brothers*. The adventure has three distinct visual layers: the Djurum/Howling Caves approach; Gaspar's dark-basalt and black-iron fortress occupied by salamanders; and Malik's pitch-dark black-granite mines and forgeworks occupied by enslaved duergar. Magma, orange glow, ash, and oppressive heat visually unite the latter two without making them the same place.
 - **Cursed Scroll 3: Midnight Sun**: ice-rimed islands, fjords, snowbound peaks, smoky longhouses, runes, sea caves, tombs, and deep dverg works. Its included dungeon is *Hoard of the Sea Wolf King*.
 
 For Scrolls 4-6, only the repo research and public setting descriptions were available during this audit. Their reliable zone-level anchors are:
@@ -59,9 +71,9 @@ Score legend: **0 absent**, **1 incidental resemblance**, **2 partial motif**, *
 | Diablerie / Rot-Bramble Maze | Mold Warrens palette | 0 | No roots, thorns, hedges, wet bark, or forest enclosure. |
 | Diablerie / Sunken Keep of Mugdulblub | Drowned Angle water mood; generic stone | 1 | Darkness and flood mechanics suggest dampness, but no slime, sagging masonry, algae, or melting-wax stone. |
 | Diablerie / Willowman's Hollow | Natural Caverns backdrop | 1 | Cave massing exists; roots, ghostly bark, hanging moss, and nightmare silhouettes do not. |
-| Red Sands / Brass Ziggurat of the Efreet | Ember Crypt stepped backdrop and orange palette | 2 | The clearest current match, but it lacks brass surfaces, sandstone, heat shimmer, sand ingress, and fire-bound ornament. |
-| Red Sands / Canyon of the Ras-Godai | Tall procedural layouts | 1 | Verticality exists mechanically; no red cliff strata, rope bridges, ledges, sky slit, or windblown grit. |
-| Red Sands / Sunken Bazaar | None | 0 | No buried arches, awnings, collapsed stalls, pottery, coins in sand, or occluded desert light. |
+| Red Sands / Djurum and Howling Caves Approach | Ember palette; generic cavern entrance | 0 | No red desert, wind-cut cave mouth, salt dust, sandstorm shelter, howling stone, or distant black fortress silhouette. |
+| Red Sands / Gaspar's Iron Fortress | Ember orange glow and generic masonry | 1 | Fire color is present, but there are no dark-basalt buildings, black-iron crenellations, towers, peaked roofs, gongs, iron dwarf faces, or magma-split courtyard. |
+| Red Sands / Malik's Burning Mines | Ember warmth and common braziers | 1 | Heat is suggested, but there are no cramped black-granite tunnels, ore veins, forge ash, duergar workings, massive furnaces, ingots, iron trees, or hammering industrial depth. |
 | Midnight Sun / Rime-Caked Sea Caves | Natural Caverns and flooded rooms | 1 | Cave geometry is reusable, but there is no ice material, frozen surf, blue translucency, icicles, or frost bloom. |
 | Midnight Sun / Tomb of the Frost Jarl | Gloom masonry and bones | 0 | No longship ribs, burial mound, runestones, shields, carved beams, or glacial enclosure. |
 | Midnight Sun / Dverg Forges | Ember warmth | 1 | Fire color exists, but no forge architecture, anvils, ducts, chains, slag, metalwork, or volcanic vents. |
@@ -74,7 +86,7 @@ Score legend: **0 absent**, **1 incidental resemblance**, **2 partial motif**, *
 | City of Masks / Rooftop Scamper | None | 0 | No roof tiles, skyline, chimneys, clocktower, gargoyles, laundry, windows, or moonlit drop. |
 | City of Masks / Sunken Thieves' Guild | Flooded chamber | 1 | Water exists as a rule, not as a sewer/aqueduct visual language. |
 | City of Masks / Temple of the Hidden Face | Gloom columns and shrine | 1 | Classical architecture is a weak base; masks, silk, mirrors, chandeliers, estate walls, hidden seams, and sacrificial undercroft are absent. |
-| **Total** | **Four palette/backdrop families** | **17 / 54 (31%)** | **0 coherent kits; 4 partial motifs; 14 absent or incidental.** |
+| **Total** | **Four palette/backdrop families** | **16 / 54 (30%)** | **0 coherent kits; 3 partial motifs; 15 absent or incidental.** |
 
 The current work should not be discarded. It supplies reusable composition, lighting, and procedural-drawing infrastructure. The required change is to move visual identity from a single distant backdrop into every lit layer of the scene.
 
@@ -130,13 +142,63 @@ Build parameterized procedural material generators rather than eighteen unrelate
 |---|---|
 | Wet dissolving stone | Mugdulblub keep, cenote, sewer guild |
 | Bark, root, and thorn | Rot-Bramble, Willowman's Hollow, canopy village |
-| Sandstone, brass, and buried plaster | Brass ziggurat, canyon, sunken bazaar |
+| Wind-cut red stone and desert scree | Djurum/Howling Caves approach |
+| Dark basalt and blackened iron | Gaspar's Iron Fortress |
+| Flinty black granite, ore, and forge metal | Malik's burning mines and forgeworks |
 | Ice, runestone, and carved timber | Sea caves, frost-jarl tomb, dverg forge |
 | Basalt and jungle masonry | Basalt ziggurat, cenote |
 | Raw cavern, fungus, and abyssal masonry | Library chasm, fungal grotto, sea-fort |
 | Roof tile, stucco, dressed canal stone, and opulent interior | All City of Masks skins |
 
 The generator should output wall variants, edges/caps, platforms, weak walls, climb surfaces, gates, doors, and optional floor overlays from the same material parameters. This prevents the current failure where a thematic backdrop sits behind generic brick.
+
+### Procedural Asset Generation & Mathematical Engine
+
+To achieve the physical, hand-painted aesthetic seen in reference artwork and top-tier 2D games, assets must not use clean straight lines or flat color fills. All procedural material generators in `src/game/visual/textures/` must implement three core mathematical passes: **Domain Warped Non-Perfect Edges**, **Lip Shadow & Overhang Occlusion**, and **Random Crevice Grime Noise**.
+
+#### 1. Non-Perfect Edges via Domain Warping
+Straight rectangle/grid geometry is passed through a multi-octave 2D Simplex noise vector warp field prior to evaluating shape boundaries:
+
+$$\mathbf{P}' = \mathbf{P} + \eta \cdot \begin{pmatrix} \text{Simplex}(f \mathbf{P} + \mathbf{o}_x) \\ \text{Simplex}(f \mathbf{P} + \mathbf{o}_y) \end{pmatrix}$$
+
+- **Parameters**: $\eta \approx 2.0 - 5.0\text{px}$ warp amplitude; $f \approx 0.05$ frequency.
+- **Tile Lattice Jitter**: Individual tile seeds receive random positional offset $\mathbf{\delta}_{ij} \sim \mathcal{N}(0, \sigma^2)$ and rotation angle $\theta_{ij} \in [-\theta_{\text{max}}, \theta_{\text{max}}]$ so no two tiles are strictly parallel.
+
+#### 2. Lip Shadow & Contact Occlusion (Shadow from the Lip)
+Overlapping layers (e.g. roof tiles, stepped stone ledges, iron plates, shingles) feature cast shadows and undercut contact shadows along their bottom lip:
+
+- **Directional Cast Shadow Vector**:
+  $$\mathbf{S}_{\text{offset}} = \frac{z_{\text{lip}}}{\tan\theta_{\text{light}}} (\cos\phi_{\text{light}}, \sin\phi_{\text{light}})$$
+- **Soft Ambient Lip Undercut (Contact AO)**:
+  $$AO_{\text{lip}}(y) = 1.0 - \alpha_{\text{lip}} \cdot \exp\left( -\frac{(y - y_{\text{lip}})^2}{2 \sigma_{\text{lip}}^2} \right)$$
+  This produces a dark crisp contact shadow right along the joint line under the overhanging lip.
+
+#### 3. Random Rough Shadows & Crevice Grime
+Dark dirt, aging, and micro-shadows accumulate in concave corners and chipped surface divots:
+
+- **Curvature Occlusion Mask**: Derived from heightmap normal field divergence $\kappa = \nabla \cdot \mathbf{N}$:
+  $$\text{Occlusion}_{\text{crevice}}(\mathbf{P}) = \text{clamp}(-\kappa \cdot k_{\text{dirt}}, 0, 1)$$
+- **Fractal Rough Shadow Overlay**:
+  $$\text{RoughShadow}(\mathbf{P}) = \text{Occlusion}_{\text{crevice}}(\mathbf{P}) \times \sum_{m=0}^{M} \frac{1}{2^m} \left| \text{Simplex}(2^m f \mathbf{P}) \right|$$
+
+#### 4. Geometry Math for Key Missing Assets
+
+- **Rectangular Shingles & U-Shaped Barrel Tiles (`rooftop-scamper`)**:
+  - *Rectangular Chamfered Profile*: Height $z_{\text{rect}} = h_{\text{max}} \cdot \text{clamp}(-\text{SDF}_{\text{box}}(\mathbf{P}')/w_{\text{bevel}}, 0, 1)^\gamma$ with $\gamma \approx 0.6$ for convex lip curvature.
+  - *U-Shaped (Spanish/Mission) Tiles*: Semi-cylindrical arc cross section $z_{\text{barrel}}(x) = R \sqrt{1 - (2(x-x_0)/w - 1)^2}$ staggered in alternating convex cap and concave trough columns with bottom-lip overhang shadows onto lower rows.
+- **Wet & Dissolving Masonry (`mugdulblub-keep`, `sunken-thieves-guild`)**:
+  - *Melting Block Joints*: Smooth minimum function $s_{\text{min}}(a, b, k) = -\ln(e^{-ka} + e^{-kb})/k$ to round block corners into sagging wax-like mortar.
+  - *Slime Streaks*: Vertical decay exponential noise $\text{Slime}(x, y) = \text{clamp}(\text{Simplex}(f_x x, f_y y) - 0.2, 0, 1) \cdot e^{-\text{fract}(y)}$.
+- **Wind-Cut Sandstone & Scree (`djurum-approach`)**:
+  - *Horizontal Strata*: 1D FBM height step evaluation with horizontally stretched anisotropic noise ($f_x \ll f_y$) to produce flaking sedimentary ledges.
+- **Dark Basalt & Blackened Iron (`iron-fortress`, `overgrown-basalt-ziggurat`)**:
+  - *Polygonal Columns*: 2D Hexagonal Voronoi cell distance fields with sharp linear bevel edges.
+  - *Metallic Edge Rims*: Specular rim shading $I_{\text{rim}} = (1.0 - \mathbf{N} \cdot \mathbf{V})^\beta$.
+- **Bark, Roots & Thorns (`rot-bramble`, `willowman-hollow`, `canopy-village`)**:
+  - *Parametric Root Tubes*: 3D cylindrical curves with radial FBM displacement.
+  - *Thorns*: Cone SDF spikes spawned where Voronoi cell noise peaks exceed threshold $\tau$.
+- **Glacial Ice & Translucent Rock (`rime-sea-caves`)**:
+  - *Ice Depth*: Subsurface color shift based on Voronoi edge distance $d_{\text{voronoi}}(\mathbf{P})$ and sharp icicle SDFs.
 
 ## Art direction for each skin
 
@@ -145,9 +207,9 @@ The generator should output wall variants, edges/caps, platforms, weak walls, cl
 | `rot-bramble` | Interlocked black roots and thorn walls; hedge tunnels close around the route | Wet leaves, bone charms, sliced vines, low mist, drifting gnats |
 | `mugdulblub-keep` | Sagging blocks with rounded, melting edges; flooded undercroft silhouette | Algae curtains, slime drips, globby mortar, warped banners, slow bubbles |
 | `willowman-hollow` | Vast pale roots forming arches and ribs; tree hollow recedes behind rooms | Hanging moss, knotted faces, root hairs, ghost motes, distant elongated shadow |
-| `brass-ziggurat` | Sandstone courses with brass plates; stepped pyramid and furnace voids | Braziers, snake reliefs, chains, urns, sand trickles, heat shimmer |
-| `ras-godai-canyon` | Red layered cliff faces and narrow carved ledges; sky slit above | Rope lashings, prayer strips, assassin marks, grit gusts, circling bird shadows |
-| `sunken-bazaar` | Half-buried plaster arches and collapsed stalls; dunes invade interiors | Awnings, jars, scales, cages, scattered coins, falling sand curtains |
+| `djurum-approach` | Wind-cut red rock, salt-crusted cave mouths, and sandy ledges; the black fortress appears far inside the cathedral cavern | Abandoned camp gear, caravan scraps, warning marks, cave dust, grit gusts, wavering heat, distant orange magma glow |
+| `iron-fortress` | Dark-basalt buildings, blackened-iron walls and barbed crenels, towers, peaked roofs, and a courtyard divided by magma | Brass alarm gongs, iron ladders, dwarf-face doors, portcullises, weapon racks, nightmare tack, blue-black incense, sparks and heat shimmer |
+| `burning-mines` | Cramped flinty black-granite tunnels opening onto magma, furnace halls, and ore-cut caverns | Gold and iron veins, mine carts and buckets, anvils, ingots, grates, chains, iron trees, forge ash, steam, ember drift, rhythmic hammer silhouettes |
 | `rime-sea-caves` | Blue-black rock glazed in translucent ice; frozen surf and sea-mouth silhouette | Icicles, fish bones, ropes, frost crystals, breath haze, harmless ice sparkle |
 | `frost-jarl-tomb` | Runestone and longship ribs entombed in glacier walls | Shields, carved prow, grave goods, frozen banners, snow sift, cold bloom |
 | `dverg-forges` | Hewn mountain stone reinforced by dark metal; vents and forge stacks | Anvils, rails, chains, molds, slag piles, ember drift, steam puffs |
@@ -185,14 +247,15 @@ Deliverable: architectural separation with no intentional visual or mechanical c
 ### Milestone 2 - Move identity into lit foreground materials
 
 1. Extract environment drawing out of the monolithic `src/game/textures.ts` into `src/game/visual/textures/`.
-2. Implement material generators for wall centers, edge/cap variants, platforms, weak walls, climb surfaces, gates, and doors.
-3. Update `DungeonScene.buildLevel()` to request semantic keys such as `wall`, `platform`, `climb`, `gate`, and `door` from the active skin.
-4. Generate only the selected skin at scene load, plus shared characters/items/effects, to avoid paying startup and texture-memory costs for all eighteen.
-5. Keep physics bodies and tile coordinates identical.
+2. Create `src/game/visual/textures/math.ts` containing the reusable procedural math utilities: domain warping, Simplex vector fields, SDF bevel profiles, directional cast shadows, lip contact AO, curvature divergence calculation, and crevice dirt overlays.
+3. Implement material generators in `src/game/visual/textures/materials.ts` using `math.ts` for wall centers, edge/cap variants, roof tiles (U-shaped barrel and rectangular shingles), platforms, weak walls, climb surfaces, gates, and doors.
+4. Update `DungeonScene.buildLevel()` to request semantic keys such as `wall`, `platform`, `climb`, `gate`, `door`, and `roof` from the active skin.
+5. Generate only the selected skin at scene load, plus shared characters/items/effects, to avoid paying startup and texture-memory costs for all eighteen.
+6. Keep physics bodies and tile coordinates identical.
 
-Deliverable: one fully dressed vertical slice per zone pack (six skins), each readable in the torch-lit foreground.
+Deliverable: one fully dressed vertical slice per zone pack (six skins), each readable in the torch-lit foreground with non-perfect edges, lip shadows, and crevice grime.
 
-Recommended vertical slices: `mugdulblub-keep`, `brass-ziggurat`, `rime-sea-caves`, `overgrown-basalt-ziggurat`, `nuln-fungal-grottos`, and `rooftop-scamper`.
+Recommended vertical slices: `mugdulblub-keep`, `iron-fortress`, `rime-sea-caves`, `overgrown-basalt-ziggurat`, `nuln-fungal-grottos`, and `rooftop-scamper`.
 
 ### Milestone 3 - Add connector and prop vocabularies
 
@@ -235,7 +298,8 @@ Deliverable: production-ready selection across all eighteen skins.
 | `src/game/textures.ts` | Shrink to shared character, monster, pickup, and effect texture registration. |
 | `src/game/visual/model.ts` | Visual-only type contracts. |
 | `src/game/visual/skins.ts` | Eighteen declarative skin records and deterministic selection. |
-| `src/game/visual/textures/materials.ts` | Parameterized foreground material generators. |
+| `src/game/visual/textures/math.ts` | Procedural math engine: 2D domain warping, SDF heightfields, lip contact AO, directional shadow displacement, normal divergence curvature, and FBM crevice grime. |
+| `src/game/visual/textures/materials.ts` | Parameterized foreground material generators using `math.ts` (rectangular/U-tiles, wet stone, sandstone, basalt, roots, ice). |
 | `src/game/visual/textures/backdrops.ts` | Large silhouettes and parallax layers. |
 | `src/game/visual/textures/props.ts` | Prop and connector generators. |
 | `src/game/visual/atmosphere.ts` | Cosmetic overlays, particles, and harmless water treatment. |

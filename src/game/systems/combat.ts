@@ -5,7 +5,7 @@
  */
 
 import Phaser from "phaser";
-import { monsterAttackRoll, moraleCheck, type CheckResult, type ItemDef } from "../../engine";
+import { getBaseRole, monsterAttackRoll, moraleCheck, type CheckResult, type ItemDef } from "../../engine";
 import { item } from "../../data";
 import type { GameContext } from "../context";
 import { RENDER_SCALE } from "../display";
@@ -55,17 +55,41 @@ export function buildAttackContext(
   attacker: CharacterSprite,
   target: MonsterSprite,
   light: LightSystem,
+  ctx?: GameContext,
+  scene?: Phaser.Scene,
 ): AttackContext {
   const advantage: string[] = [];
   const disadvantage: string[] = [];
 
   if (attacker.y + 20 < target.y) advantage.push("high ground");
-  // Backstab: thief striking a monster facing away.
+
+  // Backstab: Thief getting behind a monster (unaware or engaged with another player)
+  const isThief = getBaseRole(attacker.character.className) === "thief";
   const targetFacing = target.flipX ? -1 : 1;
   const attackerBehind = Math.sign(attacker.x - target.x) === -targetFacing;
-  if (attacker.character.className === "thief" && attackerBehind && target.aiState === "patrol") {
-    advantage.push("backstab");
+
+  if (isThief && attackerBehind) {
+    const unawareOrFlanked = target.aiState === "patrol" || target.targetPlayer !== attacker;
+    if (unawareOrFlanked) {
+      if (ctx) {
+        // DEX check vs DC 15 with advantage for Thief
+        const check = ctx.engine.check({
+          actor: attacker.character,
+          stat: "DEX",
+          dc: 15,
+          kind: "stat",
+          advantage: true,
+        });
+        if (check.success) {
+          advantage.push("backstab");
+          if (scene) floatText(scene, attacker.x, attacker.y - 32, "BACKSTAB!", "#70d070", 14);
+        }
+      } else {
+        advantage.push("backstab");
+      }
+    }
   }
+
   if (!attacker.grounded) disadvantage.push("airborne");
   if (light.levelAt(attacker.x, attacker.y) === "dark") disadvantage.push("darkness");
 
@@ -176,7 +200,7 @@ export function meleeSwing(deps: MeleeDeps, attacker: CharacterSprite): SwingOut
     )[0];
   if (!target) return { swung: true };
 
-  const posCtx = buildAttackContext(attacker, target, light);
+  const posCtx = buildAttackContext(attacker, target, light, ctx, scene);
   // Backstab: advantage AND extra weapon dice (1 + half level), per RAW.
   const backstab = posCtx.advantage.includes("backstab");
   const result = ctx.engine.attack({

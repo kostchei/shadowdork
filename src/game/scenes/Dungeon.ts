@@ -415,6 +415,7 @@ export class DungeonScene extends Phaser.Scene {
       (member) => this.snuffTorch(member),
       this.presentationPalette.accent,
     );
+    this.trapSystem.onDisarmedCoins = (x, y) => this.spawnPickup("coins", x, y);
     this.setupInput();
 
     // Colliders
@@ -1552,7 +1553,7 @@ export class DungeonScene extends Phaser.Scene {
       .setAlpha(0.88 + 0.12 * Math.sin(time / 180));
   }
 
-  /** Floating "E — do the thing" prompt above the leader. */
+  /** Floating "E — do the thing" prompt above the leader or hover info at mouse pointer. */
   private updateInteractPrompt(): void {
     const leader = this.party.leader;
     const interaction = leader.alive ? this.findInteraction(leader) : null;
@@ -1562,7 +1563,16 @@ export class DungeonScene extends Phaser.Scene {
         .setPosition(leader.x, leader.y - 42)
         .setVisible(true);
     } else {
-      this.interactPrompt.setVisible(false);
+      const pointer = this.input.activePointer;
+      const hoverInfo = pointer ? this.trapSystem.getHoverInfo(pointer.worldX, pointer.worldY) : null;
+      if (hoverInfo) {
+        this.interactPrompt
+          .setText(hoverInfo)
+          .setPosition(pointer.worldX, pointer.worldY - 24)
+          .setVisible(true);
+      } else {
+        this.interactPrompt.setVisible(false);
+      }
     }
   }
 

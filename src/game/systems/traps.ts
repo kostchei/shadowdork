@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { DC } from "../../engine";
+import { DC, getBaseRole } from "../../engine";
 import type { FeaturedTrapSpec, TilePoint } from "../level/dungeons";
 import type { GameContext } from "../context";
 import type { CharacterSprite } from "../entities/CharacterSprite";
@@ -35,6 +35,7 @@ interface AlternatingSpikesRuntime {
   bankB: SpikeBankRuntime;
   mechanism: Phaser.GameObjects.Rectangle;
   disabled: boolean;
+  disarmDc: 9 | 12 | 15;
 }
 
 interface CrusherRuntime {
@@ -45,6 +46,7 @@ interface CrusherRuntime {
   disabled: boolean;
   bracedBy: CharacterSprite | null;
   bracedIndex: number | null;
+  disarmDc: 9 | 12 | 15;
 }
 
 interface DartRuntime {
@@ -55,6 +57,7 @@ interface DartRuntime {
   lastShotAt: number;
   lastUpdateAt: number;
   disabled: boolean;
+  disarmDc: 9 | 12 | 15;
 }
 
 interface LiftRuntime {
@@ -291,28 +294,75 @@ export class TrapSystem {
       }
     }
 
-    if (member.character.className !== "thief") return null;
-
     for (const runtime of this.spikeTraps) {
       if (!runtime.disabled && this.near(member, runtime.spec.mechanism)) {
-        return this.disarmInteraction(member, "alternating spikes", () => {
-          runtime.disabled = true;
-          runtime.mechanism.setFillStyle(0x4f6b59).setAngle(45);
-          this.setSpikeBank(runtime.bankA, "safe");
-          this.setSpikeBank(runtime.bankB, "safe");
-        });
+        return this.disarmInteraction(
+          member,
+          "alternating spikes",
+          runtime.disarmDc,
+          runtime.mechanism.x,
+          runtime.mechanism.y,
+          () => {
+            runtime.disabled = true;
+            runtime.mechanism.setFillStyle(0x4f6b59).setAngle(45);
+            this.setSpikeBank(runtime.bankA, "safe");
+            this.setSpikeBank(runtime.bankB, "safe");
+          },
+        );
       }
     }
 
     for (const runtime of this.crushers) {
       if (!runtime.disabled && this.near(member, runtime.spec.mechanism)) {
-        return this.disarmInteraction(member, "stone presses", () => {
-          runtime.disabled = true;
-          runtime.mechanism.setFillStyle(0x4f6b59).setAngle(45);
-        });
+        return this.disarmInteraction(
+          member,
+          "stone presses",
+          runtime.disarmDc,
+          runtime.mechanism.x,
+          runtime.mechanism.y,
+          () => {
+            runtime.disabled = true;
+            runtime.mechanism.setFillStyle(0x4f6b59).setAngle(45);
+          },
+        );
       }
     }
 
+    for (const runtime of this.dartTraps) {
+      if (!runtime.disabled && this.near(member, runtime.spec.switch)) {
+        return this.disarmInteraction(
+          member,
+          "dart mechanism",
+          runtime.disarmDc,
+          runtime.mechanism.x,
+          runtime.mechanism.y,
+          () => {
+            runtime.disabled = true;
+            runtime.mechanism.setFillStyle(0x4f6b59).setAngle(45);
+          },
+        );
+      }
+    }
+
+    return null;
+  }
+
+  getHoverInfo(x: number, y: number): string | null {
+    for (const runtime of this.spikeTraps) {
+      if (!runtime.disabled && Phaser.Math.Distance.Between(x, y, runtime.mechanism.x, runtime.mechanism.y) < TILE * 1.5) {
+        return `[DISARM TRAP DC ${runtime.disarmDc}]`;
+      }
+    }
+    for (const runtime of this.crushers) {
+      if (!runtime.disabled && Phaser.Math.Distance.Between(x, y, runtime.mechanism.x, runtime.mechanism.y) < TILE * 1.5) {
+        return `[DISARM TRAP DC ${runtime.disarmDc}]`;
+      }
+    }
+    for (const runtime of this.dartTraps) {
+      if (!runtime.disabled && Phaser.Math.Distance.Between(x, y, runtime.mechanism.x, runtime.mechanism.y) < TILE * 1.5) {
+        return `[DISARM TRAP DC ${runtime.disarmDc}]`;
+      }
+    }
     return null;
   }
 
@@ -389,6 +439,7 @@ export class TrapSystem {
       bankB: bank(spec.bankB),
       mechanism: this.createMechanism(spec.mechanism, 0xc35b56),
       disabled: false,
+      disarmDc: ([9, 12, 15] as const)[this.spikeTraps.length % 3]!,
     });
   }
 
@@ -409,6 +460,7 @@ export class TrapSystem {
       disabled: false,
       bracedBy: null,
       bracedIndex: null,
+      disarmDc: ([9, 12, 15] as const)[this.crushers.length % 3]!,
     });
   }
 
@@ -424,6 +476,7 @@ export class TrapSystem {
       lastShotAt: -Infinity,
       lastUpdateAt: this.scene.time.now,
       disabled: false,
+      disarmDc: ([9, 12, 15] as const)[this.dartTraps.length % 3]!,
     });
   }
 
@@ -859,22 +912,33 @@ export class TrapSystem {
   private disarmInteraction(
     member: CharacterSprite,
     label: string,
+    dc: number,
+    x: number,
+    y: number,
     onSuccess: () => void,
   ): TrapInteraction {
+    const isThief = getBaseRole(member.character.className) === "thief";
     return {
-      label: `disarm the ${label}`,
+      label: `disarm the ${label} (DC ${dc}${isThief ? " with adv" : ""})`,
       run: () => {
         const result = this.ctx.engine.check({
           actor: member.character,
           stat: "DEX",
-          dc: DC.NORMAL,
+          dc,
           kind: "stat",
+          advantage: isThief,
         });
         if (result.success) {
           onSuccess();
-          this.ctx.say(`${member.character.name} disables the ${label}.`, "#65d48a");
+          this.onDisarmedCoins?.(x, y);
+          floatText(this.scene, x, y - 18, "DISARMED! +COINS", "#65d48a", 15);
+          this.ctx.say(
+            `${member.character.name} disarms the ${label} (rolled ${result.total} vs DC ${dc}) and recovers coins!`,
+            "#65d48a",
+          );
         } else {
-          this.ctx.say(`Disarm failed (rolled ${result.total} vs DC ${DC.NORMAL}).`, "#d07070");
+          floatText(this.scene, member.x, member.y - 18, `Disarm failed (${result.total} vs DC ${dc})`, "#d07070");
+          this.ctx.say(`Disarm failed (rolled ${result.total} vs DC ${dc}).`, "#d07070");
         }
       },
     };

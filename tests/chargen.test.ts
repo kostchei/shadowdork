@@ -172,4 +172,12 @@ describe("character generation rules", () => {
     expect(wizard.wieldedWeapon?.id).toBe("dagger");
     expect(wizard.inventory.has("staff")).toBe(false);
   });
+
+  it("equips Thief with shortbow and 2 daggers for ranged and dual melee", () => {
+    const engine = makeEngine(42);
+    const thief = createCharacter(engine, "t1", "Shadow", "thief");
+    expect(thief.wieldedWeapon?.id).toBe("dagger");
+    expect(thief.inventory.has("shortbow")).toBe(true);
+    expect(thief.inventory.count("dagger")).toBe(1);
+  });
 });

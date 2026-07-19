@@ -1577,6 +1577,194 @@ function generateNulnFungalGrottos(scene: Phaser.Scene): void {
   });
 }
 
+function generateLibrariansChasm(scene: Phaser.Scene): void {
+  const p = "skin-librarians-chasm";
+
+  // Wall variants (0..2)
+  for (let variant = 0; variant < 3; variant++) {
+    texture(scene, `${p}-wall-${variant}`, TILE, TILE, (g) => {
+      // Abyssal mahogany / dark slate base
+      g.fillStyle(0x0e0c14, 1);
+      g.fillRect(0, 0, 32, 32);
+
+      const seed = 600 + variant * 16;
+      const tL = domainWarp({ x: 1, y: 1 }, seed, 1.5, 0.1);
+      const tR = domainWarp({ x: 31, y: 1 }, seed + 1, 1.5, 0.1);
+      const bR = domainWarp({ x: 31, y: 31 }, seed + 2, 1.5, 0.1);
+      const bL = domainWarp({ x: 1, y: 31 }, seed + 3, 1.5, 0.1);
+      const points = [tL, tR, bR, bL].map((pt) => new Phaser.Geom.Point(pt.x, pt.y));
+
+      const baseColor = variant === 0 ? 0x1b1824 : variant === 1 ? 0x221e2d : 0x292436;
+      castPolygonShadow(g, points, 3.0, 0.65);
+      g.fillStyle(baseColor, 1);
+      g.fillPoints(points, true);
+      sdfBevelField(g, 2, 2, 28, 28, 2.5, seed, baseColor);
+      g.lineStyle(1, 0x473e57, 0.85); g.strokePoints(points, true);
+
+      // Bookshelf shelf inset with colorful leather book spines
+      g.fillStyle(0x110e17, 0.95); g.fillRect(4, 14, 24, 12);
+      g.fillStyle(0x3d271d, 1); g.fillRect(4, 24, 24, 2); // Wood shelf ledge
+
+      // Book spines on shelf
+      const bookColors = [0x8c2b2b, 0x2b598c, 0x2b8c45, 0x8c752b, 0x602b8c];
+      for (let bx = 5; bx < 26; bx += 4) {
+        const c = bookColors[(bx + variant * 3) % bookColors.length] ?? 0x8c2b2b;
+        g.fillStyle(c, 1); g.fillRect(bx, 15, 3, 9);
+        g.fillStyle(0xe6c875, 0.8); g.fillRect(bx, 17, 3, 1); // Gold foil stripe
+      }
+    });
+  }
+
+  // Platform (32x12): Archive bridge planking with hanging chain supports
+  texture(scene, `${p}-platform`, TILE, 12, (g) => {
+    g.fillStyle(0x0b0912, 1); g.fillRect(0, 2, 32, 10);
+    g.fillStyle(0x2d2018, 1); g.fillRect(0, 0, 32, 4); // Dark wood planks
+    g.fillStyle(0xd9ab55, 0.85); for (let x = 3; x < 32; x += 8) g.fillRect(x, 2, 2, 1); // Brass studs
+    // Hanging chain brackets under platform
+    g.lineStyle(1.5, 0x4a4354, 0.9);
+    g.lineBetween(4, 4, 4, 12); g.lineBetween(28, 4, 28, 12);
+  });
+
+  // Weak Wall (32x32): Crumbling bookcase wall with falling paper scrolls and warm light
+  texture(scene, `${p}-weak`, TILE, TILE, (g) => {
+    g.fillStyle(0x0e0c14, 1); g.fillRect(0, 0, 32, 32);
+    g.fillStyle(0x1f1a28, 1); g.fillRect(2, 2, 28, 28);
+    g.lineStyle(2, 0xffa726, 0.95);
+    g.beginPath(); g.moveTo(4, 4); g.lineTo(14, 14); g.lineTo(8, 22); g.lineTo(26, 28); g.strokePath();
+    g.lineStyle(1, 0xfff3e0, 0.95);
+    g.beginPath(); g.moveTo(4, 4); g.lineTo(14, 14); g.lineTo(8, 22); g.lineTo(26, 28); g.strokePath();
+    // Loose parchment scrolls
+    g.fillStyle(0xeadab9, 0.9);
+    g.fillRect(12, 12, 6, 3); g.fillRect(18, 20, 5, 3);
+  });
+
+  // Climb (32x32): Chained library rolling ladder with brass rungs
+  texture(scene, `${p}-climb`, TILE, TILE, (g) => {
+    g.fillStyle(0x0e0c14, 1); g.fillRect(0, 0, 32, 32);
+    // Vertical dark mahogany rails
+    g.fillStyle(0x281a13, 1); g.fillRect(5, 0, 5, 32); g.fillRect(22, 0, 5, 32);
+    g.fillStyle(0x4a3a2d, 1); g.fillRect(6, 0, 2, 32); g.fillRect(23, 0, 2, 32);
+    // Brass rungs
+    for (let y = 3; y < 32; y += 8) {
+      g.fillStyle(0xcda851, 1); g.fillRect(6, y, 20, 3);
+      g.fillStyle(0xffecb3, 0.9); g.fillRect(7, y, 18, 1);
+    }
+  });
+
+  // Portcullis (32x32): Heavy iron archive grate with brass lockwork
+  texture(scene, `${p}-portcullis`, TILE, TILE, (g) => {
+    g.fillStyle(0x0a0810, 0.95); g.fillRect(1, 1, 30, 6); g.fillRect(1, 25, 30, 5);
+    for (let x = 4; x < 30; x += 6) {
+      g.fillStyle(0x231d2b, 1); g.fillRect(x, 2, 4, 27);
+      g.fillStyle(0x564966, 0.85); g.fillRect(x + 1, 3, 1, 23);
+      // Brass lock caps
+      g.fillStyle(0xd4af37, 0.95); g.fillRect(x, 14, 4, 2);
+    }
+  });
+
+  // Door (32x64): Monumental archive portal framed by bookshelf arches
+  texture(scene, `${p}-door`, TILE, TILE * 2, (g) => {
+    g.fillStyle(0x09070f, 1); g.fillRect(1, 5, 30, 60);
+    g.fillStyle(0x231913, 1); g.fillRect(4, 8, 24, 56);
+    g.fillStyle(0x423024, 1); g.fillRect(4, 20, 24, 4); g.fillRect(4, 43, 24, 4);
+    // Central brass keyhole crest & book medallion
+    g.fillStyle(0xd4af37, 0.95); g.fillCircle(16, 33, 7);
+    g.fillStyle(0x1a120d, 1); g.fillCircle(16, 33, 4);
+    g.fillStyle(0xffe082, 0.95); g.fillRect(15, 30, 2, 6);
+  });
+
+  // Backdrop (320x180): Monumental vertical library abyss with hanging index stacks
+  texture(scene, `${p}-backdrop`, 320, 180, (g) => {
+    // Deep abyssal void background
+    g.fillStyle(0x06050a, 1); g.fillRect(0, 0, 320, 180);
+    g.fillStyle(0x120d1c, 0.8); g.fillRect(0, 60, 320, 120);
+
+    // Cavern roof book arches
+    g.fillStyle(0x181224, 1);
+    for (let x = 0; x < 320; x += 32) {
+      const h = 20 + Math.abs(latticeNoise(x, 11, 145)) * 35;
+      g.fillTriangle(x, 0, x + 32, 0, x + 16, h);
+    }
+
+    // Colossal multi-tier library book stacks (vertical towers)
+    for (const stack of [{ x: 15, w: 60, h: 100 }, { x: 130, w: 70, h: 120 }, { x: 240, w: 65, h: 95 }]) {
+      const y = 160 - stack.h;
+      g.fillStyle(0x1c1529, 1); g.fillRect(stack.x, y, stack.w, stack.h);
+      // Bookshelf lines across towers
+      g.fillStyle(0x3d281c, 1);
+      for (let sy = y + 15; sy < y + stack.h; sy += 22) g.fillRect(stack.x + 2, sy, stack.w - 4, 3);
+      // Warm yellow windows/lamps on stacks
+      g.fillStyle(0xffb74d, 0.7);
+      for (let sy = y + 22; sy < y + stack.h - 10; sy += 22) {
+        g.fillRect(stack.x + 10, sy, 4, 6); g.fillRect(stack.x + stack.w - 14, sy, 4, 6);
+      }
+    }
+
+    // Hanging iron chains across the abyss
+    g.lineStyle(1.5, 0x4a4354, 0.85);
+    g.lineBetween(0, 45, 320, 45);
+    g.lineBetween(0, 95, 320, 95);
+
+    // Warm candle / oil lamp lights
+    for (const lx of [80, 210]) {
+      g.lineStyle(1, 0x6e637d, 0.8); g.lineBetween(lx, 45, lx, 75);
+      g.fillStyle(0x231d2b, 1); g.fillRect(lx - 4, 75, 8, 8);
+      g.fillStyle(0xffa726, 0.95); g.fillCircle(lx, 79, 3);
+      g.fillStyle(0xffffff, 0.9); g.fillCircle(lx, 79, 1);
+    }
+
+    // Floating paper / parchment motes in air
+    g.fillStyle(0xedd9b4, 0.85);
+    for (let mote = 0; mote < 15; mote++) {
+      const mx = Math.abs(latticeNoise(mote, 3, 51)) * 300 + 10;
+      const my = Math.abs(latticeNoise(mote, 8, 92)) * 120 + 30;
+      g.fillRect(mx, my, 2, 3);
+    }
+
+    // Abyssal index floor shadow
+    g.fillStyle(0x06050a, 0.95); g.fillRect(0, 160, 320, 20);
+  });
+
+  // Decorations:
+  // gong (30x24): Scholar's lectern with an open illuminated tome
+  texture(scene, `${p}-gong`, 30, 24, (g) => {
+    g.fillStyle(0x2d1f18, 1); g.fillRect(12, 12, 6, 10); // Pillar
+    g.fillRect(8, 20, 14, 4); // Base
+    g.fillTriangle(6, 12, 24, 12, 15, 6); // Slanted deck
+    // Open illuminated book
+    g.fillStyle(0xeadbb7, 0.95); g.fillRect(5, 5, 20, 6);
+    g.fillStyle(0x2b598c, 1); g.fillRect(14, 5, 2, 6); // Spine
+  });
+
+  // rack (30x18): Archive scroll rack filled with rolled parchment & leather volumes
+  texture(scene, `${p}-rack`, 30, 18, (g) => {
+    g.fillStyle(0x281a13, 1); g.fillRect(2, 12, 26, 5); // Shelf
+    g.fillStyle(0xe5c687, 0.95);
+    for (let rx = 5; rx < 25; rx += 5) {
+      g.fillCircle(rx, 9, 2.5); g.fillStyle(0x8c2b2b, 1); g.fillRect(rx - 1, 7, 2, 4); g.fillStyle(0xe5c687, 0.95);
+    }
+  });
+
+  // banner (18x40): Deep velvet scholar banner with astronomical glyphs
+  texture(scene, `${p}-banner`, 18, 40, (g) => {
+    g.fillStyle(0x423024, 1); g.fillRect(0, 0, 18, 3);
+    g.fillStyle(0x351b47, 1); g.fillRect(2, 3, 14, 30);
+    g.fillTriangle(2, 33, 16, 33, 9, 39);
+    g.fillStyle(0xffca28, 0.95); g.fillCircle(9, 16, 5);
+    g.fillStyle(0x351b47, 1); g.fillCircle(9, 16, 3);
+    g.fillStyle(0xffca28, 0.9); g.fillCircle(9, 16, 1);
+  });
+
+  // crenel (30x35): Chained brass oil lantern emitting a warm flame glow
+  texture(scene, `${p}-crenel`, 30, 35, (g) => {
+    g.lineStyle(1.5, 0x4a4354, 0.9); g.lineBetween(15, 0, 15, 12);
+    g.fillStyle(0x231d2b, 1); g.fillRect(8, 12, 14, 18);
+    g.fillStyle(0xd4af37, 1); g.fillRect(8, 12, 14, 3); g.fillRect(8, 27, 14, 3);
+    g.fillStyle(0xffb74d, 0.95); g.fillCircle(15, 20, 4);
+    g.fillStyle(0xffffff, 0.9); g.fillCircle(15, 20, 1.5);
+  });
+}
+
 function generateRooftopScamper(scene: Phaser.Scene): void {
   const p = "skin-rooftop-scamper";
   for (let variant = 0; variant < 2; variant++) {
@@ -1792,6 +1980,9 @@ export function ensureVisualSkinTextures(
   } else if (skin.id === "nuln-fungal-grottos") {
     prefix = "skin-nuln-fungal-grottos";
     generateNulnFungalGrottos(scene);
+  } else if (skin.id === "librarians-chasm") {
+    prefix = "skin-librarians-chasm";
+    generateLibrariansChasm(scene);
   } else if (skin.id === "rooftop-scamper") {
     prefix = "skin-rooftop-scamper";
     wallVariantCount = 2;

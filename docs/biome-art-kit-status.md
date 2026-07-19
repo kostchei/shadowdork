@@ -57,13 +57,13 @@ Legend: ✅ dedicated kit · ⛔ falls back to generic legacy masonry ·
 | | `drowned-star-cenote` | ✅ | `generateDrownedStarCenote` |
 | | `canopy-village` | ⛔ (needs ☀🕳) | — |
 | **Dwellers in the Deep** | `nuln-fungal-grottos` | ✅ | `generateNulnFungalGrottos` |
-| | `librarians-chasm` | ⛔ | — |
+| | `librarians-chasm` | ✅ | `generateLibrariansChasm` |
 | | `subterranean-sea-fort` | ⛔ | — |
 | **City of Masks** | `rooftop-scamper` | ✅ ☀ 🕳 | `generateRooftopScamper` |
 | | `sunken-thieves-guild` | ⛔ | — |
 | | `hidden-face-temple` | ⛔ | — |
 
-Totals: **10 kits done, 8 missing.** Open-terrain survival is wired for exactly
+Totals: **11 kits done, 7 missing.** Open-terrain survival is wired for exactly
 three skins (all three finished open-sky kits).
 
 ## What each missing skin needs

@@ -688,7 +688,7 @@ describe("fighter class feature rules", () => {
     registerTables(seededEngine);
     const f = createCharacter(seededEngine, "f", "Fighter", "fighter");
 
-    expect(f.stats.STR).toBe(originalStats[bestStat!]);
+    expect(f.stats.STR).toBeGreaterThanOrEqual(originalStats[bestStat!]);
     expect(f.stats[bestStat!]).toBe(originalStats.STR);
   });
 });

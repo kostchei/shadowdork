@@ -172,7 +172,7 @@ export class Character {
   }
 
   mod(stat: StatName): number {
-    return statModifier(this.stats[stat]) + sumStatBonus(this.effects, stat);
+    return statModifier(this.stats[stat]);
   }
 
   get maxHp(): number {
@@ -262,7 +262,12 @@ export class Character {
             bestStat = s;
           }
         }
+        this.stats[bestStat] = Math.min(20, this.stats[bestStat] + h.bonus);
         return { kind: "statBonus" as const, stat: bestStat, bonus: h.bonus };
+      }
+      if (h.kind === "statBonus") {
+        this.stats[h.stat] = Math.min(20, this.stats[h.stat] + h.bonus);
+        return h;
       }
       if (h.kind === "armorAcBonusChoice") {
         const armorId = this.wornArmor ? this.wornArmor.id : (this.className === "thief" ? "leather-armor" : "chainmail");

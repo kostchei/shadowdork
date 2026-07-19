@@ -71,7 +71,7 @@ export interface SaveSlot {
   npcInteractionStates?: Record<string, "unmet" | "heard" | "resolved" | "hostile-npc" | "hostile-allies" | "departed">;
   /** Stable ids of rooms revealed on the compact expedition map. */
   discoveredRoomIds?: string[];
-  /** Remaining real-time pressure in open terrain; absent for older saves and enclosed dungeons. */
+  /** @deprecated Legacy open-terrain timeout value. Ignored when loading. */
   survivalRemainingMs?: number;
   /** Open-terrain danger track and progress toward its next travel-and-kill trigger. */
   /** @deprecated Party-wide counters, replaced by per-character {@link dangerFails}. */

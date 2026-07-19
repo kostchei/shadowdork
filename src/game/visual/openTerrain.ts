@@ -3,12 +3,6 @@ import type { VisualSkinId } from "./model";
 
 export type OpenSurfaceTileRole = "surface-edge" | "support" | "overhang" | "hidden-ceiling";
 
-export interface OpenTerrainSurvivalPressure {
-  label: string;
-  failureTitle: string;
-  failureMessage: string;
-}
-
 export type DangerToken = "flag" | "sun" | "poison" | "snowflake";
 export type DangerSaveStat = "DEX" | "CHA" | "CON" | "WIS";
 
@@ -17,6 +11,9 @@ export interface OpenTerrainDangerRule {
   icon: string;
   saveStats?: readonly [DangerSaveStat, DangerSaveStat];
   encounter?: string;
+  /** Third-person clause for a single member lost to the hazard, e.g. "is seized by the City Watch". */
+  casualty: string;
+  /** Shown only when the hazard downs the last standing member. */
   failureTitle: string;
   failureMessage: string;
 }
@@ -97,6 +94,7 @@ export function dangerRuleForSkin(
         token: "flag",
         icon: "⚑",
         saveStats: ["DEX", "CHA"],
+        casualty: "is seized by the City Watch",
         failureTitle: "THE CITY WATCH TAKES YOU",
         failureMessage: "Four watch patrols converge. There is nowhere left to run.",
       };
@@ -105,6 +103,7 @@ export function dangerRuleForSkin(
         ? {
             token: "sun",
             icon: "☀",
+            casualty: "collapses from thirst",
             failureTitle: "YOU DIE OF THIRST",
             failureMessage: "Four stretches beneath the merciless sun exhaust your water.",
           }
@@ -113,6 +112,7 @@ export function dangerRuleForSkin(
             icon: "💧",
             saveStats: ["DEX", "CON"],
             encounter: "A hidden snake or scorpion strikes from the dark sand.",
+            casualty: "succumbs to the desert venom",
             failureTitle: "VENOM TAKES YOU",
             failureMessage: "The fourth dose of desert venom stops the expedition.",
           };
@@ -121,6 +121,7 @@ export function dangerRuleForSkin(
         token: "snowflake",
         icon: "❄",
         saveStats: ["WIS", "CON"],
+        casualty: "freezes and falls",
         failureTitle: "YOU FREEZE TO DEATH",
         failureMessage: "The fourth mark of exposure is the last. The ice claims you.",
       };
@@ -130,6 +131,7 @@ export function dangerRuleForSkin(
         icon: "🍃",
         saveStats: ["DEX", "CON"],
         encounter: "Swarming botflies or poisonous jungle flora sting from the dense foliage.",
+        casualty: "is overcome by jungle fever",
         failureTitle: "JUNGLE MIASMA TAKES YOU",
         failureMessage: "The humid toxic jungle fever collapses the expedition.",
       };
@@ -139,51 +141,13 @@ export function dangerRuleForSkin(
         icon: "🌫",
         saveStats: ["CON", "WIS"],
         encounter: "Choking spores and thorn traps erupt from the Gloaming underbrush.",
+        casualty: "is smothered by the black fog",
         failureTitle: "THE BLACK FOG CLAIMS YOU",
         failureMessage: "The choking mist of the Gloaming smothers your breath.",
       };
     default:
       return undefined;
   }
-}
-
-const SURVIVAL_PRESSURES: Partial<Record<VisualSkinId, OpenTerrainSurvivalPressure>> = {
-  "rooftop-scamper": {
-    label: "CITY WATCH",
-    failureTitle: "THE CITY WATCH TAKES YOU",
-    failureMessage: "Lanterns surround the rooftop. The City Watch has caught you.",
-  },
-  "djurum-approach": {
-    label: "THIRST",
-    failureTitle: "YOU DIE OF THIRST",
-    failureMessage: "Your water is gone. The desert takes the expedition.",
-  },
-  "rime-sea-caves": {
-    label: "EXPOSURE",
-    failureTitle: "YOU FREEZE TO DEATH",
-    failureMessage: "The cold finally reaches your bones. The ice claims the expedition.",
-  },
-  "canopy-village": {
-    label: "MIASMA",
-    failureTitle: "JUNGLE MIASMA TAKES YOU",
-    failureMessage: "The tropical jungle miasma claims the expedition.",
-  },
-  "rot-bramble": {
-    label: "BLACK FOG",
-    failureTitle: "THE BLACK FOG CLAIMS YOU",
-    failureMessage: "The suffocating mist of the Gloaming smothers the expedition.",
-  },
-};
-
-export function survivalPressureForSkin(
-  skinId: VisualSkinId | undefined,
-): OpenTerrainSurvivalPressure | undefined {
-  return skinId ? SURVIVAL_PRESSURES[skinId] : undefined;
-}
-
-export function openTerrainSurvivalDurationMs(torchMs: number): number {
-  if (torchMs <= 0) throw new Error("Torch duration must be positive");
-  return torchMs * 2;
 }
 
 const isTerrainMass = (grid: readonly string[], x: number, y: number): boolean => {

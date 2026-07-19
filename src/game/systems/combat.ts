@@ -329,7 +329,7 @@ export function monsterSwing(
     ctx.engine.dice,
     monster.def,
     target.character.ac,
-    inDark && monster.def.darkvision ? "advantage" : "normal",
+    inDark ? "advantage" : "normal",
   );
   if (result.hit) {
     // Staff Sunder Ability: if target is wielding a staff in 2 hands when hit, sacrifice/destroy staff to block all hit damage!

@@ -71,15 +71,12 @@ import {
 import { ensureVisualSkinTextures } from "../visual/textures/materials";
 import {
   openSurfaceTileRole,
-  openTerrainSurvivalDurationMs,
   dangerRuleForSkin,
   openTerrainDangerDc,
   OPEN_TERRAIN_DANGER_DISTANCE_TILES,
   OPEN_TERRAIN_MAX_FLAGS,
   safeZonePresentation,
   selectOpenTerrainRoomRoles,
-  survivalPressureForSkin,
-  type OpenTerrainSurvivalPressure,
 } from "../visual/openTerrain";
 import { roomAt, roomAtTolerant } from "../level/geometry";
 import {
@@ -111,8 +108,6 @@ import {
 const RETALIATE_WINDOW_MS = 4000;
 /** Gold granted when a companion vault reward cannot recruit (full or duplicate class). */
 const COMPANION_SUBSTITUTE_GOLD = 500;
-const SURVIVAL_TIMER_ID = "open-terrain-survival";
-
 /** Compact-map marker precedence: player > landmark beat > plain room > empty. */
 function mapMarkerPriority(marker: string): number {
   if (marker === "@") return 3;
@@ -158,7 +153,6 @@ export class DungeonScene extends Phaser.Scene {
   private openSkyDaytime = false;
   private undergroundRoomId?: string;
   private safeZoneId?: string;
-  private survivalPressure?: OpenTerrainSurvivalPressure;
   private terminalGameOverTitle = "THE DARK CLAIMS YOU";
   /** Danger-track fails accrued this zone, keyed by character.id. Resets in shelter. */
   private dangerFails = new Map<string, number>();
@@ -351,7 +345,6 @@ export class DungeonScene extends Phaser.Scene {
       : {};
     this.undergroundRoomId = openTerrainRooms.undergroundRoomId;
     this.safeZoneId = openTerrainRooms.safeZoneRoomId;
-    this.survivalPressure = survivalPressureForSkin(this.visualSkin?.id);
     this.lastRoomId = this.resolveLoadedRoomId();
     this.discoveredRoomIds.add(this.lastRoomId);
     this.currentReward = chooseDungeonReward(
@@ -394,8 +387,6 @@ export class DungeonScene extends Phaser.Scene {
         : 0.84,
     );
     this.shadows = new ShadowSystem(this, this.light);
-    this.startSurvivalTimer();
-
     this.buildLevel();
     this.createSafeZoneVignette(layoutSeed);
     this.createConnectorTelegraphs();
@@ -485,11 +476,8 @@ export class DungeonScene extends Phaser.Scene {
       spawnWave: (monsterId, count, x) => this.spawnEncounterWave(monsterId, count, x),
     });
 
-    const deadline = this.survivalPressure
-      ? ` ${this.survivalPressure.label}: ${Math.ceil(openTerrainSurvivalDurationMs(this.ctx.engine.config.torchMs) / 60_000)} minutes.`
-      : "";
     this.ctx.say(
-      `${this.dungeonDisplayName}. ${this.activeDungeon.objective}.${deadline} Watch your torch. ESC shows controls.`,
+      `${this.dungeonDisplayName}. ${this.activeDungeon.objective}. Watch your torch. ESC shows controls.`,
       "#f0e090",
     );
     this.cameras.main.fadeIn(450, 0, 0, 0);
@@ -551,14 +539,6 @@ export class DungeonScene extends Phaser.Scene {
 
   get gameOverTitle(): string {
     return this.terminalGameOverTitle;
-  }
-
-  get survivalClock(): { label: string; remainingMs: number } | undefined {
-    if (!this.survivalPressure) return undefined;
-    const remainingMs = this.ctx.engine.clock.hasTimer(SURVIVAL_TIMER_ID)
-      ? this.ctx.engine.clock.timerRemaining(SURVIVAL_TIMER_ID)
-      : 0;
-    return { label: this.survivalPressure.label, remainingMs };
   }
 
   get dangerTrack(): { icon: string; count: number; maximum: number } | undefined {
@@ -666,21 +646,6 @@ export class DungeonScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(4);
   }
 
-  private startSurvivalTimer(): void {
-    if (!this.survivalPressure) return;
-    const restored = this.loadedState?.survivalRemainingMs;
-    const duration = restored === undefined
-      ? openTerrainSurvivalDurationMs(this.ctx.engine.config.torchMs)
-      : Math.max(1, restored);
-    this.ctx.engine.clock.addTimer(SURVIVAL_TIMER_ID, duration, () => {
-      if (this.won || this.gameOver) return;
-      this.gameOver = true;
-      this.terminalGameOverTitle = this.survivalPressure!.failureTitle;
-      this.ctx.say(this.survivalPressure!.failureMessage, "#ff6159");
-      this.ctx.events.emit("gameover");
-    });
-  }
-
   private updateOpenTerrainDanger(currentRoom: string): void {
     const rule = dangerRuleForSkin(this.visualSkin?.id, this.openSkyDaytime);
     if (!rule) return;
@@ -749,9 +714,12 @@ export class DungeonScene extends Phaser.Scene {
       const next = fails + 1;
       this.dangerFails.set(actor.id, Math.min(next, OPEN_TERRAIN_MAX_FLAGS));
       if (next >= OPEN_TERRAIN_MAX_FLAGS) {
-        this.terminalGameOverTitle = rule.failureTitle;
-        this.ctx.say(`${actor.name}: ${rule.failureMessage}`, "#ff6159");
+        // One member is lost to the hazard — the run continues while others
+        // stand. Only a casualty that empties the party shows the themed
+        // game-over screen; the wipe itself is handled by checkEndConditions.
+        this.ctx.say(`${actor.name} ${rule.casualty}.`, "#ff6159");
         this.ctx.engine.damageCharacter(actor, actor.hp);
+        if (this.party.allDownOrDead()) this.terminalGameOverTitle = rule.failureTitle;
       }
     }
   }
@@ -2453,7 +2421,7 @@ export class DungeonScene extends Phaser.Scene {
     sfx.deathKnell(m.def.undead, this.spatial(m));
     floatText(this, m.x, m.y - 10, "slain", "#c0c0c0");
     this.ctx.kills++;
-    if (this.survivalPressure && this.currentRoomId !== this.safeZoneId) {
+    if (dangerRuleForSkin(this.visualSkin?.id, this.openSkyDaytime) && this.currentRoomId !== this.safeZoneId) {
       this.dangerKillPending = true;
     }
     this.dropLoot(m);
@@ -3068,10 +3036,9 @@ export class DungeonScene extends Phaser.Scene {
       openedConnectorIds: [...this.openedConnectors],
       npcInteractionStates: Object.fromEntries(this.npcInteractionStates),
       discoveredRoomIds: [...this.discoveredRoomIds],
-      survivalRemainingMs: this.survivalClock?.remainingMs,
-      dangerFails: this.survivalPressure ? Object.fromEntries(this.dangerFails) : undefined,
-      dangerDistancePx: this.survivalPressure ? this.dangerDistancePx : undefined,
-      dangerKillPending: this.survivalPressure ? this.dangerKillPending : undefined,
+      dangerFails: dangerRuleForSkin(this.visualSkin?.id, this.openSkyDaytime) ? Object.fromEntries(this.dangerFails) : undefined,
+      dangerDistancePx: dangerRuleForSkin(this.visualSkin?.id, this.openSkyDaytime) ? this.dangerDistancePx : undefined,
+      dangerKillPending: dangerRuleForSkin(this.visualSkin?.id, this.openSkyDaytime) ? this.dangerKillPending : undefined,
       hasCrown: this.hasCrown,
       kills: this.ctx.kills,
       coinsBanked: this.ctx.totalCoins,

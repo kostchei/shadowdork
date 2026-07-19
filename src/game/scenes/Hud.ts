@@ -1053,16 +1053,11 @@ export class HudScene extends Phaser.Scene {
     const objective = this.dungeon.hasCrown
       ? "REWARD CLAIMED - REACH THE EXIT"
       : `VAULT REWARD: ${this.dungeon.rewardLabel.toUpperCase()}`;
-    const survival = this.dungeon.survivalClock;
-    const survivalSeconds = survival ? Math.ceil(survival.remainingMs / 1000) : 0;
     const danger = this.dungeon.dangerTrack;
     const dangerIcons = danger
       ? `${danger.icon.repeat(danger.count)}${"·".repeat(danger.maximum - danger.count)}`
       : "";
-    const deadline = survival
-      ? `${survival.label} ${dangerIcons} ${Math.floor(survivalSeconds / 60)}:${String(survivalSeconds % 60).padStart(2, "0")}`
-      : "";
-    this.objectiveText.setText(deadline ? `${deadline}  |  ${objective}` : objective);
+    this.objectiveText.setText(dangerIcons ? `${dangerIcons}  |  ${objective}` : objective);
     this.objectiveText.setColor(this.dungeon.hasCrown ? "#72d887" : "#e3c56d");
 
     const region = roomAtTolerant(

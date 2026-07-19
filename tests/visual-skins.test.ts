@@ -15,14 +15,12 @@ import {
 } from "../src/game/visual/textures/math";
 import {
   openSurfaceTileRole,
-  openTerrainSurvivalDurationMs,
   dangerRuleForSkin,
   openTerrainDangerDc,
   OPEN_TERRAIN_MAX_FLAGS,
   safeZonePresentation,
   selectOpenTerrainRoomRoles,
   selectUndergroundRoomId,
-  survivalPressureForSkin,
 } from "../src/game/visual/openTerrain";
 
 vi.mock("phaser", () => ({
@@ -262,19 +260,6 @@ describe("open-surface terrain support", () => {
     expect(selectUndergroundRoomId(regions, 7)).toBe("legacy-2");
     expect(selectUndergroundRoomId(regions, 7)).toBe(selectUndergroundRoomId(regions, 7));
     expect(selectUndergroundRoomId([], 7)).toBeUndefined();
-  });
-
-  it("assigns the advertised survival pressure only to the three open biomes", () => {
-    expect(survivalPressureForSkin("rooftop-scamper")?.label).toBe("CITY WATCH");
-    expect(survivalPressureForSkin("djurum-approach")?.failureTitle).toBe("YOU DIE OF THIRST");
-    expect(survivalPressureForSkin("rime-sea-caves")?.failureTitle).toBe("YOU FREEZE TO DEATH");
-    expect(survivalPressureForSkin("iron-fortress")).toBeUndefined();
-    expect(survivalPressureForSkin(undefined)).toBeUndefined();
-  });
-
-  it("sets open-terrain survival time to exactly two torch durations", () => {
-    expect(openTerrainSurvivalDurationMs(180_000)).toBe(360_000);
-    expect(() => openTerrainSurvivalDurationMs(0)).toThrow(/positive/);
   });
 
   it("escalates danger checks from DC 9 to 12 and then 15", () => {

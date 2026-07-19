@@ -1,7 +1,7 @@
 import type { Alignment } from "../engine";
 import { characterTitle } from "../engine";
 import type { SaveSlot, SavedCharacter } from "./state";
-import type { ZonePackId } from "./visual/model";
+import type { VisualSkinId, ZonePackId } from "./visual/model";
 import { resolveSkinForZone } from "./visual/skins";
 import { classDef, plebNameForSeed, spellsForClass } from "../data";
 
@@ -190,26 +190,45 @@ export function progressFromSavedParty(party: readonly SavedCharacter[]): PartyP
   }));
 }
 
+import { pickSkinForScrollRun } from "./biomeChoice";
+
 export function nextDungeonSave(
   current: Pick<SaveSlot, "coinsBanked" | "messages" | "runSeed">,
   dungeonIndex: number,
   party: SavedCharacter[],
   chosenZone: ZonePackId,
+  vaultsInScrollOrTs?: number,
+  vaultsCompletedInScroll?: number,
+  skinHistoryInScroll?: VisualSkinId[],
   timestamp = Date.now(),
 ): SaveSlot {
+  let vaultsInScroll: number | undefined;
+  let ts = timestamp;
+  if (
+    typeof vaultsInScrollOrTs === "number" &&
+    vaultsCompletedInScroll === undefined &&
+    skinHistoryInScroll === undefined &&
+    vaultsInScrollOrTs > 100
+  ) {
+    ts = vaultsInScrollOrTs;
+  } else {
+    vaultsInScroll = vaultsInScrollOrTs;
+  }
+
   const nextIndex = dungeonIndex + 1;
-  // Resolve the skin from the next layout seed so returning to a scroll can
-  // surface a different one of its three skins. Must match the layout seed the
-  // Dungeon scene derives on entry: (runSeed + dungeonIndex).
   const layoutSeed = ((current.runSeed ?? 0) + nextIndex) >>> 0;
-  const skin = resolveSkinForZone(chosenZone, layoutSeed);
+  const skin = pickSkinForScrollRun(chosenZone, skinHistoryInScroll ?? [], layoutSeed);
+  const updatedHistory = [...(skinHistoryInScroll ?? []), skin.id];
   return {
     ...current,
     slotId: 0,
-    timestamp,
+    timestamp: ts,
     dungeonIndex: nextIndex,
     runSeed: current.runSeed,
     zone: chosenZone,
+    vaultsInScroll,
+    vaultsCompletedInScroll,
+    skinHistoryInScroll: updatedHistory,
     skinId: skin.id,
     currentRoom: 1,
     hasCrown: false,

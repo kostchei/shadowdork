@@ -51,6 +51,12 @@ export interface SaveSlot {
   runSeed?: number;
   /** The cursed-scroll biome the party is currently in; absent in saves from before biome choice. */
   zone?: ZonePackId;
+  /** Total number of vaults (1d6) in the current Cursed Scroll destination run. */
+  vaultsInScroll?: number;
+  /** Number of vaults completed so far in this scroll run. */
+  vaultsCompletedInScroll?: number;
+  /** Visual skins used so far in this scroll run (max 2x per skin). */
+  skinHistoryInScroll?: VisualSkinId[];
   /** The specific visual skin resolved within that scroll for this dungeon. */
   skinId?: VisualSkinId;
   /** Region id of the room last occupied, e.g. "room-3" or "sanctuary". */

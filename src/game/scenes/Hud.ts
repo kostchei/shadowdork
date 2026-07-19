@@ -17,7 +17,7 @@ import { TILE } from "../textures";
 import type { DungeonScene } from "./Dungeon";
 import { SaveRepository } from "../SaveRepository";
 import { speak } from "../audio/voice";
-import { zonePackInfo } from "../visual/skins";
+import { skinsForZone, zonePackInfo } from "../visual/skins";
 
 const UI_STYLE = {
   fontFamily: '"Trebuchet MS", Arial, sans-serif',
@@ -861,13 +861,12 @@ export class HudScene extends Phaser.Scene {
     this.overlay.setDepth(2000);
   }
 
-  /** Victory overlay: party summary plus the 1d6 cursed-scroll descent choice. */
+  /** Victory overlay: party summary, vault progress, or 1d6 cursed-scroll destination choice. */
   private showWinOverlay(): void {
     if (this.overlay) return;
     const w = GAME_W;
     const h = GAME_H;
     const offer = this.dungeon.biomeOffer;
-    if (!offer) throw new Error("Cannot show the victory overlay without a biome offer");
 
     const parts = this.dungeon.party.members.map((member) => {
       const c = member.character;
@@ -878,10 +877,13 @@ export class HudScene extends Phaser.Scene {
     const runIndex = this.registry.get("dungeonIndex");
     const summary = `Reward ${this.dungeon.rewardLabel}  |  Coins ${this.ctx.totalCoins}  |  Kills ${this.ctx.kills}  |  Run seed ${runIndex}`;
 
+    const mainTitle = offer ? "DESTINATION COMPLETED" : "VAULT CLEARED!";
+    const subPrompt = offer ? "CHOOSE YOUR NEXT DESTINATION" : `Vault ${this.dungeon.vaultsCompletedInScroll} of ${this.dungeon.vaultsInScroll} in ${this.dungeon.activeZoneName}`;
+
     const items: Phaser.GameObjects.GameObject[] = [
       this.add.rectangle(w / 2, h / 2, w, h, 0x020205, 0.92),
       this.add
-        .text(w / 2, h / 2 - 156, "THE REWARD IS YOURS", {
+        .text(w / 2, h / 2 - 156, mainTitle, {
           fontFamily: "Georgia, serif",
           fontSize: "30px",
           color: "#ffd45f",
@@ -905,7 +907,7 @@ export class HudScene extends Phaser.Scene {
         .text(w / 2, h / 2 - 40, summary, { ...DATA_STYLE, fontSize: "11px", color: "#9fa5b1" })
         .setOrigin(0.5),
       this.add
-        .text(w / 2, h / 2 - 12, "CHOOSE YOUR DESTINATION", {
+        .text(w / 2, h / 2 - 12, subPrompt, {
           ...UI_STYLE,
           fontSize: "16px",
           color: "#f0eee9",
@@ -921,39 +923,58 @@ export class HudScene extends Phaser.Scene {
         .setOrigin(0.5),
     ];
 
-    // Lay the offered scrolls out in a centered row; up to six fit the 960 view.
-    const count = offer.zones.length;
-    const cardW = Math.min(150, Math.floor((w - 40) / count));
-    const rowW = cardW * count;
-    const startX = (w - rowW) / 2 + cardW / 2;
-    this.biomeCards = offer.zones.map((zone, index) => {
-      const info = zonePackInfo(zone);
-      const card = this.add
-        .text(startX + index * cardW, h / 2 + 52, `${index + 1}. ${info.scrollName}\n${info.flavor}`, {
-          ...DATA_STYLE,
-          fontSize: "10px",
-          align: "center",
-          lineSpacing: 4,
-          wordWrap: { width: cardW - 14 },
-        })
-        .setOrigin(0.5);
-      items.push(card);
-      return card;
-    });
-    this.applyBiomeSelectionTint();
+    if (offer) {
+      // Lay the offered scrolls out in a centered row; up to six fit the 960 view.
+      const count = offer.zones.length;
+      const cardW = Math.min(150, Math.floor((w - 40) / count));
+      const rowW = cardW * count;
+      const startX = (w - rowW) / 2 + cardW / 2;
+      this.biomeCards = offer.zones.map((zone, index) => {
+        const info = zonePackInfo(zone);
+        const skins = skinsForZone(zone);
+        const biomes = skins.map((s) => `• ${s.displayName}`).join("\n");
+        const card = this.add
+          .text(
+            startX + index * cardW,
+            h / 2 + 52,
+            `${index + 1}. ${info.scrollName}\n${info.flavor}\n\nBIOMES:\n${biomes}`,
+            {
+              ...DATA_STYLE,
+              fontSize: "9px",
+              align: "center",
+              lineSpacing: 3,
+              wordWrap: { width: cardW - 10 },
+            },
+          )
+          .setOrigin(0.5);
+        items.push(card);
+        return card;
+      });
+      this.applyBiomeSelectionTint();
 
-    const prompt = count > 1
-      ? "◄ ► or 1-6 to choose   •   R to descend"
-      : "R to descend";
-    items.push(
-      this.add
-        .text(w / 2, h / 2 + 128, prompt, {
-          ...UI_STYLE,
-          fontSize: "15px",
-          color: "#d4b65f",
-        })
-        .setOrigin(0.5),
-    );
+      const prompt = count > 1
+        ? "◄ ► or 1-6 to choose   •   R to descend"
+        : "R to descend";
+      items.push(
+        this.add
+          .text(w / 2, h / 2 + 128, prompt, {
+            ...UI_STYLE,
+            fontSize: "15px",
+            color: "#d4b65f",
+          })
+          .setOrigin(0.5),
+      );
+    } else {
+      items.push(
+        this.add
+          .text(w / 2, h / 2 + 80, "Press R to descend to the next vault", {
+            ...UI_STYLE,
+            fontSize: "16px",
+            color: "#ffd45f",
+          })
+          .setOrigin(0.5),
+      );
+    }
 
     this.overlay = this.add.container(0, 0, items);
     this.overlay.setDepth(2000);

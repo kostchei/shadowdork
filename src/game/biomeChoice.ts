@@ -1,5 +1,44 @@
-import type { ZonePackId } from "./visual/model";
-import { ZONE_PACKS } from "./visual/skins";
+import type { VisualSkin, VisualSkinId, ZonePackId } from "./visual/model";
+import { skinsForZone, ZONE_PACKS } from "./visual/skins";
+
+function hashSeed(seed: number): number {
+  let value = seed >>> 0;
+  value ^= value >>> 16;
+  value = Math.imul(value, 0x7feb352d);
+  value ^= value >>> 15;
+  value = Math.imul(value, 0x846ca68b);
+  value ^= value >>> 16;
+  return value >>> 0;
+}
+
+/** Roll 1d6 (1..6) for the number of vaults to play in a Cursed Scroll destination. */
+export function rollVaultCountForScroll(seed: number): number {
+  return 1 + (hashSeed(seed ^ 0x3c6ef35f) % 6);
+}
+
+/**
+ * Pick a biome (skin) within the current Cursed Scroll, enforcing that each
+ * biome is used a maximum of 2x during the scroll run.
+ */
+export function pickSkinForScrollRun(
+  zone: ZonePackId,
+  skinHistory: readonly VisualSkinId[],
+  seed: number,
+): VisualSkin {
+  const allSkins = skinsForZone(zone);
+  const counts = new Map<VisualSkinId, number>();
+  for (const s of allSkins) counts.set(s.id, 0);
+  for (const id of skinHistory) {
+    counts.set(id, (counts.get(id) ?? 0) + 1);
+  }
+
+  // Filter to biomes used fewer than 2 times
+  let available = allSkins.filter((s) => (counts.get(s.id) ?? 0) < 2);
+  if (available.length === 0) available = [...allSkins];
+
+  const index = hashSeed(seed) % available.length;
+  return available[index]!;
+}
 
 /**
  * The descent choice presented after clearing a dungeon: a 1d6 number of

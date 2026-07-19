@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rollBiomeOffer } from "../src/game/biomeChoice";
+import { pickSkinForScrollRun, rollBiomeOffer, rollVaultCountForScroll } from "../src/game/biomeChoice";
 import { ZONE_PACKS } from "../src/game/visual/skins";
 
 describe("rollBiomeOffer", () => {
@@ -51,5 +51,30 @@ describe("rollBiomeOffer", () => {
     expect(() => rollBiomeOffer(-1, 0)).toThrow();
     expect(() => rollBiomeOffer(1.5, 0)).toThrow();
     expect(() => rollBiomeOffer(0, 1.5)).toThrow();
+  });
+});
+
+describe("rollVaultCountForScroll", () => {
+  it("returns 1d6 vaults (between 1 and 6)", () => {
+    for (let seed = 0; seed < 500; seed++) {
+      const count = rollVaultCountForScroll(seed);
+      expect(count).toBeGreaterThanOrEqual(1);
+      expect(count).toBeLessThanOrEqual(6);
+    }
+  });
+});
+
+describe("pickSkinForScrollRun", () => {
+  it("enforces max 2x usage per biome skin within a scroll destination", () => {
+    const zone = "diablerie";
+    const history: ("rot-bramble" | "mugdulblub-keep" | "willowman-hollow")[] = [
+      "rot-bramble",
+      "rot-bramble",
+    ];
+    // rot-bramble is at 2 uses, so pickSkinForScrollRun must pick mugdulblub-keep or willowman-hollow
+    for (let seed = 0; seed < 50; seed++) {
+      const skin = pickSkinForScrollRun(zone, history, seed);
+      expect(skin.id).not.toBe("rot-bramble");
+    }
   });
 });

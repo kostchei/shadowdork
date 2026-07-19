@@ -59,7 +59,7 @@ import {
 import { companionPartySnapshot, chooseCompanionRecruit, type CompanionCandidate, type CompanionClass } from "../systems/companion";
 import type { TopologyId } from "../level/topology";
 import type { Orientation } from "../level/embedding";
-import type { EnvironmentTextureKeys, VisualPalette, VisualSkin } from "../visual/model";
+import type { EnvironmentTextureKeys, VisualPalette, VisualSkin, VisualSkinId, ZonePackId } from "../visual/model";
 import {
   parseVisualSkinId,
   visualSkinById,
@@ -95,7 +95,12 @@ import {
   progressFromSavedParty,
   type DungeonReward,
 } from "../progression";
-import { rollBiomeOffer, type BiomeOffer } from "../biomeChoice";
+import {
+  pickSkinForScrollRun,
+  rollBiomeOffer,
+  rollVaultCountForScroll,
+  type BiomeOffer,
+} from "../biomeChoice";
 
 /**
  * How long after being hit a character keeps swinging back. Monsters attack
@@ -195,6 +200,19 @@ export class DungeonScene extends Phaser.Scene {
   private dyingLabels = new Map<string, Phaser.GameObjects.Text>();
   private gameOver = false;
   won = false;
+  /** The current Cursed Scroll destination zone pack. */
+  activeZone: ZonePackId = "diablerie";
+  /** Total number of vaults (1d6) in the current scroll destination. */
+  vaultsInScroll = 1;
+  /** Number of vaults completed so far in this scroll destination. */
+  vaultsCompletedInScroll = 0;
+  /** History of visual skins used in the current scroll destination (max 2x per skin). */
+  skinHistoryInScroll: VisualSkinId[] = [];
+
+  get activeZoneName(): string {
+    return zonePackInfo(this.activeZone).scrollName;
+  }
+
   /** The descent choice rolled on victory; the HUD renders it as scroll cards. */
   biomeOffer: BiomeOffer | null = null;
   /** Which offered scroll is currently highlighted. */
@@ -296,6 +314,12 @@ export class DungeonScene extends Phaser.Scene {
     const runSeed = typeof storedSeed === "number" ? storedSeed : 0;
     const layoutSeed = (runSeed + dungeonIndex) >>> 0;
     this.activeDungeon = this.resolveActiveDungeon(layoutSeed);
+
+    this.activeZone = this.loadedState?.zone ?? zoneForRun(runSeed);
+    this.vaultsInScroll = this.loadedState?.vaultsInScroll ?? rollVaultCountForScroll(runSeed);
+    this.vaultsCompletedInScroll = this.loadedState?.vaultsCompletedInScroll ?? 0;
+    this.skinHistoryInScroll = [...(this.loadedState?.skinHistoryInScroll ?? [])];
+
     const requestedSkin = parseVisualSkinId(new URLSearchParams(window.location.search).get("skin"));
     if (requestedSkin) {
       // A dev/QA override always wins so the regression matrix stays reachable.
@@ -303,12 +327,13 @@ export class DungeonScene extends Phaser.Scene {
     } else if (this.loadedState?.skinId) {
       // A save from the biome-choice era carries the exact skin it advanced into.
       this.visualSkin = visualSkinById(this.loadedState.skinId);
-    } else if (!this.loadedState) {
-      // A fresh campaign starts in a random scroll; the skin within it is seeded.
-      this.visualSkin = resolveSkinForZone(zoneForRun(runSeed), layoutSeed);
     } else {
-      // A legacy save predating biome choice keeps the original four-theme look.
-      this.visualSkin = undefined;
+      // Pick a skin within the current scroll, respecting the max 2x per biome rule.
+      const chosenSkin = pickSkinForScrollRun(this.activeZone, this.skinHistoryInScroll, layoutSeed);
+      this.visualSkin = chosenSkin;
+      if (!this.skinHistoryInScroll.includes(chosenSkin.id)) {
+        this.skinHistoryInScroll.push(chosenSkin.id);
+      }
     }
     this.openSkyDaytime = (layoutSeed & 1) === 0;
     this.environmentTextures = ensureVisualSkinTextures(
@@ -1996,8 +2021,15 @@ export class DungeonScene extends Phaser.Scene {
           this.won = true;
           const dungeonIndex = this.registry.get("dungeonIndex") ?? 0;
           const runSeed = this.registry.get("runSeed") ?? 0;
-          this.biomeOffer = rollBiomeOffer(dungeonIndex, runSeed);
-          this.biomeSelectionIndex = 0;
+          const nextCompleted = this.vaultsCompletedInScroll + 1;
+          if (nextCompleted >= this.vaultsInScroll) {
+            // Destination Cursed Scroll completed! Roll 1d6 Destination Choices
+            this.biomeOffer = rollBiomeOffer(dungeonIndex, runSeed);
+            this.biomeSelectionIndex = 0;
+          } else {
+            // Still in progress in this Cursed Scroll
+            this.biomeOffer = null;
+          }
           this.ctx.events.emit("won");
         },
       };
@@ -2921,7 +2953,10 @@ export class DungeonScene extends Phaser.Scene {
       timestamp: Date.now(),
       dungeonIndex: this.registry.get("dungeonIndex") ?? 0,
       runSeed: this.registry.get("runSeed") ?? 0,
-      zone: this.visualSkin?.zone,
+      zone: this.activeZone,
+      vaultsInScroll: this.vaultsInScroll,
+      vaultsCompletedInScroll: this.vaultsCompletedInScroll,
+      skinHistoryInScroll: [...this.skinHistoryInScroll],
       skinId: this.visualSkin?.id,
       roomId: this.currentRoomId,
       activatedRequirementIds: [...this.activatedRequirements],
@@ -2974,9 +3009,21 @@ export class DungeonScene extends Phaser.Scene {
     const nextIndex = dungeonIndex + 1;
 
     if (this.won) {
-      if (!this.biomeOffer) throw new Error("Cannot advance: no biome offer was rolled on victory");
-      const chosenZone = this.biomeOffer.zones[this.biomeSelectionIndex];
-      if (!chosenZone) throw new Error("Biome selection index is out of range");
+      const runSeed = this.registry.get("runSeed") ?? 0;
+      let chosenZone = this.activeZone;
+      let nextVaultsInScroll = this.vaultsInScroll;
+      let nextVaultsCompleted = this.vaultsCompletedInScroll + 1;
+      let nextSkinHistory = [...this.skinHistoryInScroll];
+
+      if (this.biomeOffer) {
+        // Scroll Destination completed! User chose next destination scroll
+        chosenZone = this.biomeOffer.zones[this.biomeSelectionIndex]!;
+        if (!chosenZone) throw new Error("Biome selection index is out of range");
+        nextVaultsInScroll = rollVaultCountForScroll((runSeed + nextIndex) >>> 0);
+        nextVaultsCompleted = 0;
+        nextSkinHistory = [];
+      }
+
       // Descending to the next dungeon levels every surviving party member once.
       this.grantDescentLevels();
       const survivors = this.party.members
@@ -2986,11 +3033,14 @@ export class DungeonScene extends Phaser.Scene {
         {
           coinsBanked: this.ctx.totalCoins,
           messages: [...this.ctx.messages],
-          runSeed: this.registry.get("runSeed") ?? 0,
+          runSeed,
         },
         dungeonIndex,
         survivors,
         chosenZone,
+        nextVaultsInScroll,
+        nextVaultsCompleted,
+        nextSkinHistory,
       );
       try {
         SaveRepository.save(0, nextState);

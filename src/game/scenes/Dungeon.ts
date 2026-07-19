@@ -1593,16 +1593,27 @@ export class DungeonScene extends Phaser.Scene {
       return;
     }
 
-    // Thief climbing
+    // Ladder climbing: sticky hold on contact until up/down input or walking off
     leader.touchingClimbable = this.climbTiles.some(
       (z) => Math.abs(z.x - leader.x) <= TILE && Math.abs(z.y - leader.y) <= TILE * 1.5,
     );
     const body = leader.body as Phaser.Physics.Arcade.Body;
-    if (leader.canClimb && (up || leader.climbing)) {
-      leader.climbing = true;
-      body.setAllowGravity(false);
-      leader.setVelocityY(up ? -120 : 60);
-      if (!leader.touchingClimbable || body.blocked.down) {
+    const downInput = (this.keys.S && this.keys.S.isDown) || (this.keys.DOWN && this.keys.DOWN.isDown);
+
+    if (leader.touchingClimbable) {
+      const isGrounded = body.blocked.down;
+      if (!isGrounded || up || downInput || leader.climbing) {
+        leader.climbing = true;
+        body.setAllowGravity(false);
+        if (up) {
+          leader.setVelocityY(-120);
+        } else if (downInput) {
+          leader.setVelocityY(120);
+        } else {
+          // Stationary sticky hold on ladder until up or down arrow is hit
+          leader.setVelocityY(0);
+        }
+      } else if (leader.climbing) {
         leader.climbing = false;
         body.setAllowGravity(true);
       }

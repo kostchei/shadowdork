@@ -421,6 +421,284 @@ function generateIronFortress(scene: Phaser.Scene): void {
   });
 }
 
+function generateBurningMines(scene: Phaser.Scene): void {
+  const p = "skin-burning-mines";
+  
+  // Wall variants (0..2)
+  for (let variant = 0; variant < 3; variant++) {
+    texture(scene, `${p}-wall-${variant}`, TILE, TILE, (g) => {
+      // Dark granite/basalt rock base
+      g.fillStyle(0x111216, 1);
+      g.fillRect(0, 0, 32, 32);
+
+      // Chiseled dark granite block structure
+      basaltBlock(g, 1, 1, 30, 30, 28 + variant * 5);
+      g.fillStyle(0x1e2129, 0.85);
+      g.fillRect(2, 2, 28, 13);
+      g.fillRect(2, 16, 28, 14);
+
+      // Mine cut highlights (subtle copper/gold specks and dark soot)
+      g.fillStyle(0x383e4c, 0.6);
+      g.fillRect(3, 3, 12, 1);
+      g.fillRect(16, 17, 12, 1);
+
+      // Fiery ore veins / magma cracks running through wall
+      if (variant === 0) {
+        // Diagonal magma seam with hot core
+        g.lineStyle(2, 0xd44000, 0.9);
+        g.beginPath(); g.moveTo(2, 6); g.lineTo(12, 14); g.lineTo(8, 22); g.lineTo(24, 30); g.strokePath();
+        g.lineStyle(1, 0xffa000, 0.95);
+        g.beginPath(); g.moveTo(3, 6); g.lineTo(12, 14); g.lineTo(9, 22); g.lineTo(24, 30); g.strokePath();
+        // Gold ore flecks
+        g.fillStyle(0xe5a00d, 0.9);
+        g.fillRect(14, 8, 2, 2); g.fillRect(20, 18, 2, 2);
+      } else if (variant === 1) {
+        // Horizontal ore cut with glowing embers
+        g.lineStyle(2, 0xc83200, 0.85);
+        g.beginPath(); g.moveTo(0, 16); g.lineTo(14, 15); g.lineTo(32, 17); g.strokePath();
+        g.lineStyle(1, 0xff7700, 0.95);
+        g.beginPath(); g.moveTo(0, 16); g.lineTo(14, 15); g.lineTo(32, 17); g.strokePath();
+        g.fillStyle(0xffd000, 0.85);
+        g.fillRect(6, 15, 3, 1); g.fillRect(22, 16, 3, 1);
+        // Copper ore nodes
+        g.fillStyle(0xc27828, 0.9);
+        g.fillRect(4, 6, 3, 2); g.fillRect(25, 24, 2, 2);
+      } else {
+        // Branching volcanic veins
+        g.lineStyle(2, 0xdd4800, 0.9);
+        g.beginPath(); g.moveTo(16, 0); g.lineTo(14, 12); g.lineTo(26, 20); g.lineTo(20, 32); g.strokePath();
+        g.beginPath(); g.moveTo(14, 12); g.lineTo(4, 24); g.strokePath();
+        g.lineStyle(1, 0xffbe00, 0.95);
+        g.beginPath(); g.moveTo(16, 0); g.lineTo(14, 12); g.lineTo(26, 20); g.lineTo(20, 32); g.strokePath();
+        g.fillStyle(0xffea60, 0.8);
+        g.fillRect(14, 12, 2, 2); g.fillRect(5, 23, 2, 2);
+      }
+
+      // Soot / ash shading at bottom edge
+      g.fillStyle(0x08090b, 0.6);
+      g.fillRect(0, 30, 32, 2);
+    });
+  }
+
+  // Platform (32x12): Mine shaft iron grate over glowing furnace rim
+  texture(scene, `${p}-platform`, TILE, 12, (g) => {
+    // Dark iron beam framework
+    g.fillStyle(0x0f1014, 1); g.fillRect(0, 2, 32, 10);
+    g.fillStyle(0x2d313b, 1); g.fillRect(0, 0, 32, 4);
+    g.fillStyle(0x565c6b, 0.85); g.fillRect(0, 0, 32, 1);
+    // Industrial iron rivets
+    g.fillStyle(0x8a92a3, 0.8);
+    for (let x = 3; x < 32; x += 7) g.fillRect(x, 2, 2, 1);
+    // Mine grate slots
+    g.fillStyle(0x0a0b0e, 0.9);
+    for (let x = 2; x < 32; x += 4) g.fillRect(x, 4, 2, 5);
+    // Glowing heat rim along bottom lip
+    g.fillStyle(0xd63e04, 0.9); g.fillRect(0, 9, 32, 2);
+    g.fillStyle(0xff9100, 0.75);
+    for (let x = 1; x < 32; x += 6) g.fillRect(x, 10, 3, 1);
+    g.fillStyle(0x050608, lipShadowAlpha(1, 0.9, 2)); g.fillRect(0, 11, 32, 1);
+  });
+
+  // Weak Wall (32x32): Fractured mine wall with high-heat lava bursting through
+  texture(scene, `${p}-weak`, TILE, TILE, (g) => {
+    g.fillStyle(0x0e0f13, 1); g.fillRect(0, 0, 32, 32);
+    basaltBlock(g, 1, 1, 30, 30, 33);
+    // Intense bright magma fissures
+    g.lineStyle(3, 0xd43200, 0.95);
+    g.beginPath(); g.moveTo(4, 2); g.lineTo(15, 12); g.lineTo(10, 22); g.lineTo(18, 30); g.strokePath();
+    g.beginPath(); g.moveTo(15, 12); g.lineTo(28, 16); g.lineTo(24, 28); g.strokePath();
+    g.lineStyle(1, 0xffeb3b, 1);
+    g.beginPath(); g.moveTo(4, 2); g.lineTo(15, 12); g.lineTo(10, 22); g.lineTo(18, 30); g.strokePath();
+    g.beginPath(); g.moveTo(15, 12); g.lineTo(28, 16); g.lineTo(24, 28); g.strokePath();
+    // Magma hot spots
+    g.fillStyle(0xffffff, 0.9);
+    g.fillCircle(15, 12, 2); g.fillCircle(28, 16, 1.5);
+  });
+
+  // Climb (32x32): Forged iron mine ladder with heat-tempered rungs
+  texture(scene, `${p}-climb`, TILE, TILE, (g) => {
+    g.fillStyle(0x16181e, 1); g.fillRect(0, 0, 32, 32);
+    // Heavy vertical iron rails
+    g.fillStyle(0x090a0d, 1); g.fillRect(5, 0, 5, 32); g.fillRect(22, 0, 5, 32);
+    g.fillStyle(0x3e4452, 1); g.fillRect(6, 0, 2, 32); g.fillRect(23, 0, 2, 32);
+    g.fillStyle(0x737b8c, 0.7); g.fillRect(7, 0, 1, 32); g.fillRect(24, 0, 1, 32);
+    // Heat-glowing rungs
+    for (let y = 3; y < 32; y += 8) {
+      g.fillStyle(0x942200, 1); g.fillRect(6, y, 20, 4);
+      g.fillStyle(0xe65100, 1); g.fillRect(7, y + 1, 18, 2);
+      g.fillStyle(0xffb74d, 0.9); g.fillRect(8, y + 1, 16, 1);
+    }
+  });
+
+  // Portcullis (32x32): Heavy spiked iron mine gate with heat blistered bars
+  texture(scene, `${p}-portcullis`, TILE, TILE, (g) => {
+    g.fillStyle(0x090a0d, 0.95); g.fillRect(1, 1, 30, 6); g.fillRect(1, 25, 30, 5);
+    // Crossbeam rivets
+    g.fillStyle(0x4a505e, 0.8);
+    for (let x = 3; x < 30; x += 6) { g.fillRect(x, 3, 2, 2); g.fillRect(x, 27, 2, 2); }
+    // Vertical forged bars with fiery heat spikes
+    for (let x = 4; x < 30; x += 6) {
+      g.fillStyle(0x22252c, 1); g.fillRect(x, 2, 4, 27);
+      g.fillStyle(0x5a6273, 0.85); g.fillRect(x + 1, 3, 1, 23);
+      // Heat glow on bottom half
+      g.fillStyle(0xdd3600, 0.85); g.fillRect(x, 20, 4, 9);
+      g.fillStyle(0xff9800, 0.9); g.fillRect(x + 1, 22, 2, 7);
+      g.fillStyle(0x121418, 1); g.fillTriangle(x, 29, x + 4, 29, x + 2, 32);
+    }
+  });
+
+  // Door (32x64): Blast furnace door with glowing intake grates
+  texture(scene, `${p}-door`, TILE, TILE * 2, (g) => {
+    // Outer arch frame
+    g.fillStyle(0x08090b, 1); g.fillRect(1, 4, 30, 60);
+    g.fillStyle(0x1d2028, 1); g.fillRect(3, 6, 26, 56);
+    // Inner iron panels
+    g.fillStyle(0x121419, 1); g.fillRect(5, 9, 22, 24); g.fillRect(5, 35, 22, 25);
+    // Iron banding and rivets
+    g.fillStyle(0x363b47, 1); g.fillRect(3, 7, 26, 3); g.fillRect(3, 31, 26, 4); g.fillRect(3, 58, 26, 3);
+    g.fillStyle(0x737b8c, 0.8);
+    for (const y of [8, 32, 59]) { g.fillRect(6, y, 2, 2); g.fillRect(15, y, 2, 2); g.fillRect(24, y, 2, 2); }
+
+    // Dual furnace glowing air intake grates
+    for (const cy of [15, 41]) {
+      g.fillStyle(0x0a0b0d, 1); g.fillRect(8, cy, 16, 12);
+      g.fillStyle(0xd83800, 1); g.fillRect(9, cy + 1, 14, 10);
+      g.fillStyle(0xffab00, 0.95); g.fillRect(10, cy + 3, 12, 6);
+      g.fillStyle(0xffffff, 0.9); g.fillRect(12, cy + 5, 8, 2);
+      // Iron grate bars over flame
+      g.fillStyle(0x1a1d24, 1);
+      for (let bx = 11; bx <= 21; bx += 4) g.fillRect(bx, cy, 2, 12);
+    }
+    // Heavy central locking wheel
+    g.fillStyle(0x2d323e, 1); g.fillCircle(16, 33, 5);
+    g.fillStyle(0x606878, 0.9); g.fillCircle(16, 33, 2);
+  });
+
+  // Backdrop (320x180): Subterranean mine vault & magma cascades
+  texture(scene, `${p}-backdrop`, 320, 180, (g) => {
+    // Pitch black cavern ceiling down to deep red/orange furnace haze
+    g.fillStyle(0x0a090c, 1); g.fillRect(0, 0, 320, 180);
+    g.fillStyle(0x260905, 0.75); g.fillRect(0, 80, 320, 100);
+    g.fillStyle(0x521206, 0.65); g.fillRect(0, 130, 320, 50);
+
+    // Rough chiseled cavern roof stalactites
+    g.fillStyle(0x13151b, 1);
+    for (let x = 0; x < 320; x += 28) {
+      const h = 25 + Math.abs(latticeNoise(x, 5, 89)) * 45;
+      g.fillTriangle(x, 0, x + 28, 0, x + 14, h);
+    }
+
+    // Heavy iron support arches framing the mine shaft
+    g.lineStyle(8, 0x181a22, 1);
+    g.beginPath(); g.arc(80, 120, 70, Math.PI * 1.1, Math.PI * 1.9); g.strokePath();
+    g.beginPath(); g.arc(240, 120, 70, Math.PI * 1.1, Math.PI * 1.9); g.strokePath();
+    g.lineStyle(2, 0x3d4352, 0.7);
+    g.beginPath(); g.arc(80, 120, 70, Math.PI * 1.1, Math.PI * 1.9); g.strokePath();
+    g.beginPath(); g.arc(240, 120, 70, Math.PI * 1.1, Math.PI * 1.9); g.strokePath();
+
+    // Tiered basalt mine ledges and stone structures
+    g.fillStyle(0x181a20, 1);
+    g.fillRect(15, 100, 75, 80);
+    g.fillRect(230, 105, 80, 75);
+    g.fillRect(110, 135, 100, 45);
+
+    // Glowing magma falls / cascades pouring down the center rockface
+    g.fillStyle(0xc83200, 0.95);
+    g.fillRect(150, 65, 8, 85);
+    g.fillRect(168, 75, 6, 75);
+    g.fillStyle(0xff8800, 0.9);
+    g.fillRect(152, 68, 4, 82);
+    g.fillRect(169, 77, 3, 73);
+    g.fillStyle(0xffeb3b, 0.85);
+    g.fillRect(153, 75, 2, 70);
+
+    // Molten magma pool at the base with bright breaking heat lines
+    g.fillStyle(0x942200, 1); g.fillRect(0, 150, 320, 30);
+    g.fillStyle(0xe65100, 0.95); g.fillRect(0, 153, 320, 27);
+    g.fillStyle(0xffa726, 0.85);
+    for (let x = 0; x < 320; x += 14) {
+      const y = 154 + Math.abs(latticeNoise(x, 12, 147)) * 8;
+      g.fillRect(x, y, 10, 2);
+    }
+    g.fillStyle(0xffffff, 0.75);
+    for (let x = 8; x < 320; x += 35) g.fillRect(x, 158 + (x % 7), 12, 1);
+
+    // Hanging mine lanterns with glowing fires
+    for (const lanternX of [70, 250]) {
+      g.lineStyle(1, 0x5a6273, 0.8); g.lineBetween(lanternX, 40, lanternX, 85);
+      g.fillStyle(0x14161c, 1); g.fillRect(lanternX - 4, 85, 8, 10);
+      g.fillStyle(0xff9800, 1); g.fillCircle(lanternX, 90, 3);
+      g.fillStyle(0xffeb3b, 0.9); g.fillCircle(lanternX, 90, 1.5);
+    }
+
+    // Ore cart tracks along upper ledge
+    g.lineStyle(1, 0x4a505e, 0.85);
+    g.lineBetween(15, 100, 90, 100);
+    g.lineBetween(230, 105, 310, 105);
+    // Ore cart silhouette on left ledge
+    g.fillStyle(0x0b0c0f, 1); g.fillRect(40, 91, 16, 9);
+    g.fillStyle(0xffb74d, 0.85); g.fillRect(42, 89, 12, 3); // Ore pile
+  });
+
+  // Decorations:
+  // gong (30x24): Heavy anvil on ash block with red-hot ingot
+  texture(scene, `${p}-gong`, 30, 24, (g) => {
+    // Ash/stone base
+    g.fillStyle(0x181a20, 1); g.fillRect(4, 18, 22, 6);
+    // Anvil shape
+    g.fillStyle(0x323745, 1); g.fillRect(9, 10, 12, 8); // pillar
+    g.fillRect(6, 6, 18, 5); // top deck
+    g.fillTriangle(6, 6, 2, 6, 6, 10); // horn
+    g.fillStyle(0x606878, 0.85); g.fillRect(6, 6, 18, 1);
+    // Red-hot glowing ingot on anvil deck
+    g.fillStyle(0xdb3a00, 1); g.fillRect(11, 3, 8, 3);
+    g.fillStyle(0xffa700, 0.95); g.fillRect(12, 4, 6, 1);
+  });
+
+  // rack (30x18): Mine cart loaded with glowing raw ore
+  texture(scene, `${p}-rack`, 30, 18, (g) => {
+    // Iron rails
+    g.lineStyle(1, 0x404654, 1); g.lineBetween(1, 16, 29, 16);
+    // Wheels
+    g.fillStyle(0x22252e, 1); g.fillCircle(7, 15, 2.5); g.fillCircle(23, 15, 2.5);
+    // Cart tub
+    g.fillStyle(0x181a20, 1); g.fillRect(4, 6, 22, 8);
+    g.fillStyle(0x383e4b, 1); g.fillRect(4, 6, 22, 1); g.fillRect(4, 13, 22, 1);
+    // Glowing gold/copper ore payload
+    g.fillStyle(0xd97706, 1); g.fillCircle(11, 5, 3); g.fillCircle(15, 4, 3.5); g.fillCircle(19, 5, 3);
+    g.fillStyle(0xf59e0b, 0.95); g.fillCircle(11, 4, 1.5); g.fillCircle(15, 3, 2); g.fillCircle(19, 4, 1.5);
+  });
+
+  // banner (18x40): Soot-stained leather banner with fiery emblem
+  texture(scene, `${p}-banner`, 18, 40, (g) => {
+    // Iron hanging bar
+    g.fillStyle(0x383e4b, 1); g.fillRect(0, 0, 18, 3);
+    // Soot-stained leather cloth
+    g.fillStyle(0x261612, 1); g.fillRect(2, 3, 14, 30);
+    g.fillTriangle(2, 33, 16, 33, 9, 39);
+    // Fiery mine brand / emblem
+    g.fillStyle(0xd94300, 0.95); g.fillTriangle(9, 8, 4, 22, 14, 22);
+    g.fillStyle(0xffab00, 0.9); g.fillTriangle(9, 12, 6, 20, 12, 20);
+    g.fillStyle(0xffffff, 0.85); g.fillCircle(9, 17, 1.5);
+  });
+
+  // crenel (30x35): Industrial iron exhaust vent / furnace chimney emitting sparks
+  texture(scene, `${p}-crenel`, 30, 35, (g) => {
+    // Vent housing
+    g.fillStyle(0x14161c, 1); g.fillRect(5, 12, 20, 23);
+    g.fillStyle(0x2c313e, 1); g.fillRect(3, 8, 24, 4);
+    g.fillStyle(0x525b6c, 0.85); g.fillRect(3, 8, 24, 1);
+    // Glowing vent interior grate
+    g.fillStyle(0xd83800, 0.95); g.fillRect(8, 16, 14, 15);
+    g.fillStyle(0xffaa00, 0.9); g.fillRect(10, 18, 10, 11);
+    g.fillStyle(0x14161c, 1);
+    for (let y = 17; y < 31; y += 4) g.fillRect(8, y, 14, 2);
+    // Embers / sparks rising
+    g.fillStyle(0xffd54f, 0.9);
+    g.fillRect(8, 5, 2, 2); g.fillRect(18, 3, 2, 2); g.fillRect(14, 1, 1.5, 1.5);
+  });
+}
+
 function generateMugdulblubKeep(scene: Phaser.Scene): void {
   const p = "skin-mugdulblub-keep";
   for (let variant = 0; variant < 3; variant++) {
@@ -1120,6 +1398,9 @@ export function ensureVisualSkinTextures(
   if (skin.id === "iron-fortress") {
     prefix = "skin-iron-fortress";
     generateIronFortress(scene);
+  } else if (skin.id === "burning-mines") {
+    prefix = "skin-burning-mines";
+    generateBurningMines(scene);
   } else if (skin.id === "mugdulblub-keep") {
     prefix = "skin-mugdulblub-keep";
     generateMugdulblubKeep(scene);

@@ -135,8 +135,11 @@ export function deserializeCharacter(state: SavedCharacter, engine: Engine): Cha
   c.effects = state.effects.map((e) => ({ ...e }));
   c.shieldStowed = state.shieldStowed;
 
-  // Restore inventory
+  // Restore inventory (stripping legacy unused starter items if present)
   for (const itemState of state.inventory) {
+    if (itemState.itemId === "iron-spikes" || itemState.itemId === "grappling-hook" || itemState.itemId === "rope") {
+      continue;
+    }
     c.inventory.add(item(itemState.itemId), itemState.qty, true);
   }
 

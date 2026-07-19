@@ -160,11 +160,13 @@ export class DungeonScene extends Phaser.Scene {
   private safeZoneId?: string;
   private survivalPressure?: OpenTerrainSurvivalPressure;
   private terminalGameOverTitle = "THE DARK CLAIMS YOU";
-  private dangerFlags = 0;
-  private dangerChecks = 0;
+  /** Danger-track fails accrued this zone, keyed by character.id. Resets in shelter. */
+  private dangerFails = new Map<string, number>();
   private dangerDistancePx = 0;
   private dangerKillPending = false;
   private dangerLastLeaderPos?: { x: number; y: number };
+  /** Floating per-character danger markers, keyed by character.id. */
+  private dangerMarkers = new Map<string, Phaser.GameObjects.Text>();
 
   private walls!: Phaser.Physics.Arcade.StaticGroup;
   private weakWalls!: Phaser.Physics.Arcade.StaticGroup;
@@ -266,11 +268,12 @@ export class DungeonScene extends Phaser.Scene {
 
     this.gameOver = false;
     this.terminalGameOverTitle = "THE DARK CLAIMS YOU";
-    this.dangerFlags = this.loadedState?.dangerFlags ?? 0;
-    this.dangerChecks = this.loadedState?.dangerChecks ?? 0;
+    this.dangerFails = new Map(Object.entries(this.loadedState?.dangerFails ?? {}));
     this.dangerDistancePx = this.loadedState?.dangerDistancePx ?? 0;
     this.dangerKillPending = this.loadedState?.dangerKillPending ?? false;
     this.dangerLastLeaderPos = undefined;
+    for (const marker of this.dangerMarkers.values()) marker.destroy();
+    this.dangerMarkers = new Map();
     this.won = false;
     this.biomeOffer = null;
     this.biomeSelectionIndex = 0;
@@ -415,7 +418,9 @@ export class DungeonScene extends Phaser.Scene {
       (member) => this.snuffTorch(member),
       this.presentationPalette.accent,
     );
-    this.trapSystem.onDisarmedCoins = (x, y) => this.spawnPickup("coins", x, y);
+    this.trapSystem.onDisarmedCoins = (x, y) => {
+      this.addPickup(x, y, "coins", this.ctx.engine.dice.roll("1d6"));
+    };
     this.setupInput();
 
     // Colliders
@@ -558,7 +563,12 @@ export class DungeonScene extends Phaser.Scene {
 
   get dangerTrack(): { icon: string; count: number; maximum: number } | undefined {
     const rule = dangerRuleForSkin(this.visualSkin?.id, this.openSkyDaytime);
-    return rule ? { icon: rule.icon, count: this.dangerFlags, maximum: OPEN_TERRAIN_MAX_FLAGS } : undefined;
+    if (!rule) return undefined;
+    let worst = 0;
+    for (const member of this.party.members) {
+      worst = Math.max(worst, this.dangerFails.get(member.character.id) ?? 0);
+    }
+    return { icon: rule.icon, count: worst, maximum: OPEN_TERRAIN_MAX_FLAGS };
   }
 
   get safeZoneRoomId(): string | undefined {
@@ -679,11 +689,12 @@ export class DungeonScene extends Phaser.Scene {
     this.dangerLastLeaderPos = { x: leader.x, y: leader.y };
 
     if (currentRoom === this.safeZoneId) {
-      if (this.dangerFlags > 0 || this.dangerChecks > 0 || this.dangerKillPending) {
+      const hadDanger = this.dangerKillPending
+        || [...this.dangerFails.values()].some((fails) => fails > 0);
+      if (hadDanger) {
         this.ctx.say("Shelter clears the expedition's danger track.", "#72d887");
       }
-      this.dangerFlags = 0;
-      this.dangerChecks = 0;
+      this.dangerFails.clear();
       this.dangerDistancePx = 0;
       this.dangerKillPending = false;
       return;
@@ -702,36 +713,46 @@ export class DungeonScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * A shared kill-and-travel trigger fires one save per living party member.
+   * Each character rolls against a DC that escalates with their own accrued
+   * fails, so danger is tracked and displayed per character. A character who
+   * reaches the max is taken down by the hazard; the party wipe is handled by
+   * the normal end-condition check.
+   */
   private resolveOpenTerrainDanger(rule: NonNullable<ReturnType<typeof dangerRuleForSkin>>): void {
-    const checkIndex = this.dangerChecks++;
-    const dc = openTerrainDangerDc(checkIndex);
     this.dangerDistancePx = 0;
     this.dangerKillPending = false;
+    if (rule.encounter) this.ctx.say(rule.encounter, "#e3c56d");
 
-    let avoided = false;
-    if (rule.saveStats) {
-      const actor = this.party.leader.character;
-      const stat = rule.saveStats.reduce((best, candidate) =>
-        actor.mod(candidate) > actor.mod(best) ? candidate : best,
-      ) as StatName;
-      if (rule.encounter) this.ctx.say(rule.encounter, "#e3c56d");
-      const result = this.ctx.engine.check({ actor, stat, dc, kind: "stat" });
-      avoided = result.success;
-      this.ctx.say(
-        `${actor.name}: ${stat} ${result.total} vs DC ${dc} — ${avoided ? "danger avoided" : `${rule.icon} gained`}.`,
-        avoided ? "#72d887" : "#ff9c4a",
-      );
-    } else {
-      this.ctx.say(`The journey takes its toll: ${rule.icon} gained.`, "#ff9c4a");
-    }
-    if (avoided) return;
+    for (const member of this.party.aliveMembers()) {
+      const actor = member.character;
+      const fails = this.dangerFails.get(actor.id) ?? 0;
+      const dc = openTerrainDangerDc(fails);
 
-    this.dangerFlags++;
-    if (this.dangerFlags >= OPEN_TERRAIN_MAX_FLAGS) {
-      this.gameOver = true;
-      this.terminalGameOverTitle = rule.failureTitle;
-      this.ctx.say(rule.failureMessage, "#ff6159");
-      this.ctx.events.emit("gameover");
+      let avoided = false;
+      if (rule.saveStats) {
+        const stat = rule.saveStats.reduce((best, candidate) =>
+          actor.mod(candidate) > actor.mod(best) ? candidate : best,
+        ) as StatName;
+        const result = this.ctx.engine.check({ actor, stat, dc, kind: "stat" });
+        avoided = result.success;
+        this.ctx.say(
+          `${actor.name}: ${stat} ${result.total} vs DC ${dc} — ${avoided ? "danger avoided" : `${rule.icon} gained`}.`,
+          avoided ? "#72d887" : "#ff9c4a",
+        );
+      } else {
+        this.ctx.say(`${actor.name}: the journey takes its toll — ${rule.icon} gained.`, "#ff9c4a");
+      }
+      if (avoided) continue;
+
+      const next = fails + 1;
+      this.dangerFails.set(actor.id, Math.min(next, OPEN_TERRAIN_MAX_FLAGS));
+      if (next >= OPEN_TERRAIN_MAX_FLAGS) {
+        this.terminalGameOverTitle = rule.failureTitle;
+        this.ctx.say(`${actor.name}: ${rule.failureMessage}`, "#ff6159");
+        this.ctx.engine.damageCharacter(actor, actor.hp);
+      }
     }
   }
 
@@ -950,7 +971,7 @@ export class DungeonScene extends Phaser.Scene {
           }
           case "g":
           case "s":
-          case "r":
+          case "r": {
             const bossId = this.activeDungeon.bossMonsterId ?? "gloom-ogre";
             const defId = { g: "goblin", s: "skeleton", r: "giant-rat", O: bossId }[ch];
             // One morale group per room: a leader in the room commands all of it.
@@ -1348,6 +1369,7 @@ export class DungeonScene extends Phaser.Scene {
     this.updatePickups();
     this.updateSpikes(time);
     this.updateDying();
+    this.updateDangerMarkers();
     this.updatePartyCombat(time);
     for (const m of this.party.members) m.tick(delta);
     // Cast shadows follow the nearest light — projected after movement settles.
@@ -2833,6 +2855,43 @@ export class DungeonScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * Float a small tally above each character showing how many danger-track
+   * fails they carry this zone. Cleared when the tally resets in shelter or the
+   * character dies.
+   */
+  private updateDangerMarkers(): void {
+    const rule = dangerRuleForSkin(this.visualSkin?.id, this.openSkyDaytime);
+    for (const m of this.party.members) {
+      const id = m.character.id;
+      const fails = this.dangerFails.get(id) ?? 0;
+      const marker = this.dangerMarkers.get(id);
+      if (rule && fails > 0 && !m.character.dead) {
+        const text = rule.icon.repeat(fails);
+        if (marker) {
+          marker.setPosition(m.x, m.y - 46).setText(text).setVisible(true);
+        } else {
+          this.dangerMarkers.set(
+            id,
+            this.add
+              .text(m.x, m.y - 46, text, {
+                fontFamily: "monospace",
+                fontSize: "13px",
+                color: "#ff9c4a",
+                stroke: "#000",
+                strokeThickness: 3,
+                resolution: RENDER_SCALE,
+              })
+              .setOrigin(0.5, 1)
+              .setDepth(949),
+          );
+        }
+      } else if (marker) {
+        marker.setVisible(false);
+      }
+    }
+  }
+
   private checkLevelUps(): void {
     for (const m of this.party.members) {
       const c = m.character;
@@ -3010,8 +3069,7 @@ export class DungeonScene extends Phaser.Scene {
       npcInteractionStates: Object.fromEntries(this.npcInteractionStates),
       discoveredRoomIds: [...this.discoveredRoomIds],
       survivalRemainingMs: this.survivalClock?.remainingMs,
-      dangerFlags: this.survivalPressure ? this.dangerFlags : undefined,
-      dangerChecks: this.survivalPressure ? this.dangerChecks : undefined,
+      dangerFails: this.survivalPressure ? Object.fromEntries(this.dangerFails) : undefined,
       dangerDistancePx: this.survivalPressure ? this.dangerDistancePx : undefined,
       dangerKillPending: this.survivalPressure ? this.dangerKillPending : undefined,
       hasCrown: this.hasCrown,

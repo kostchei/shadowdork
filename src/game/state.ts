@@ -74,8 +74,12 @@ export interface SaveSlot {
   /** Remaining real-time pressure in open terrain; absent for older saves and enclosed dungeons. */
   survivalRemainingMs?: number;
   /** Open-terrain danger track and progress toward its next travel-and-kill trigger. */
+  /** @deprecated Party-wide counters, replaced by per-character {@link dangerFails}. */
   dangerFlags?: number;
+  /** @deprecated Party-wide counters, replaced by per-character {@link dangerFails}. */
   dangerChecks?: number;
+  /** Per-character danger-track fails accrued this zone, keyed by character id. */
+  dangerFails?: Record<string, number>;
   dangerDistancePx?: number;
   dangerKillPending?: boolean;
   hasCrown: boolean;

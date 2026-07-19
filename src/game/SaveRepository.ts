@@ -199,6 +199,12 @@ export class SaveRepository {
     if (obj.survivalRemainingMs !== undefined && (typeof obj.survivalRemainingMs !== "number" || obj.survivalRemainingMs < 0)) return false;
     if (obj.dangerFlags !== undefined && (!Number.isInteger(obj.dangerFlags) || obj.dangerFlags < 0 || obj.dangerFlags > 4)) return false;
     if (obj.dangerChecks !== undefined && (!Number.isInteger(obj.dangerChecks) || obj.dangerChecks < 0)) return false;
+    if (obj.dangerFails !== undefined) {
+      if (!obj.dangerFails || typeof obj.dangerFails !== "object" || Array.isArray(obj.dangerFails)) return false;
+      if (!Object.values(obj.dangerFails).every((fails) =>
+        Number.isInteger(fails) && (fails as number) >= 0 && (fails as number) <= 4,
+      )) return false;
+    }
     if (obj.dangerDistancePx !== undefined && (typeof obj.dangerDistancePx !== "number" || obj.dangerDistancePx < 0)) return false;
     if (obj.dangerKillPending !== undefined && typeof obj.dangerKillPending !== "boolean") return false;
     if (typeof obj.hasCrown !== "boolean") return false;

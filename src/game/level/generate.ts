@@ -245,15 +245,25 @@ function tryBuild(seed: number, candidate: number, opts: GenerateOptions): Abstr
   const requirements: Requirement[] = [];
   const connections: DungeonConnection[] = [];
 
+  // Edges routed through a shared junction cell cannot own an independent physical
+  // blocker: closing one would wall off every sibling edge crossing the same arm.
+  // They must therefore stay open passages and are excluded from every gating,
+  // decorating, and degree-capping decision below.
+  const junctionEdgeIds = new Set(
+    embedding.edges.filter((e) => e.viaJunction).map((e) => `conn-${e.edge[0]}-${e.edge[1]}`),
+  );
+  const isJunctionEdge = (a: number, b: number) => junctionEdgeIds.has(`conn-${a}-${b}`);
+
   // Choose at most one gated edge, placing its key/switch on the entrance side so
   // it can never lock itself away.
   const gateEdgeIndex = connRng.next() < 0.35 ? connRng.between(0, form.edges.length - 1) : -1;
   const redundant = redundantEdges(form);
   // Decorate at most one redundant edge (optional route) so validator branches for
   // class shortcuts, secrets, and one-way edges are exercised without stranding.
+  const decorateCandidates = redundant.filter(([a, b]) => !isJunctionEdge(a, b));
   const decorateEdge =
-    redundant.length > 0 && connRng.next() < 0.5
-      ? connRng.pick(redundant)
+    decorateCandidates.length > 0 && connRng.next() < 0.5
+      ? connRng.pick(decorateCandidates)
       : null;
 
   embedding.edges.forEach((embEdge, index) => {
@@ -269,7 +279,7 @@ function tryBuild(seed: number, candidate: number, opts: GenerateOptions): Abstr
       classFavoured: false,
     };
 
-    if (index === gateEdgeIndex) {
+    if (index === gateEdgeIndex && !embEdge.viaJunction) {
       const nearSide = undirectedReach(form, entrance, embEdge.edge);
       const keyNode = connRng.pick([...nearSide]);
       const useSwitch = connRng.next() < 0.5;
@@ -307,10 +317,14 @@ function tryBuild(seed: number, candidate: number, opts: GenerateOptions): Abstr
   });
 
   // Dense forms may describe more potential adjacency than should be readable at
-  // once. Close only redundant edges until every room has at most three initially
-  // open connections; the universal route remains intact.
+  // once. Close only redundant, non-junction edges until every room has at most
+  // three initially open connections; the universal route remains intact. Junction
+  // edges are exempt: the hub already consolidates a room's many logical links into
+  // a single physical exit, and closing a junction edge would block its siblings.
   if (form.tier === 3) {
-    const optionalIds = new Set(redundant.map(([a, b]) => `conn-${a}-${b}`));
+    const optionalIds = new Set(
+      redundant.filter(([a, b]) => !isJunctionEdge(a, b)).map(([a, b]) => `conn-${a}-${b}`),
+    );
     const initiallyOpen = (connection: DungeonConnection) =>
       connection.state === "open" || connection.state === "guarded" || connection.state === "one-way";
     const openDegree = new Map<string, number>();

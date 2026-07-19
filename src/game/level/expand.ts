@@ -197,6 +197,12 @@ function expandedConnector(
 ): ExpandedConnector {
   const vertical = path.some((p, i) => i > 0 && p.column === path[i - 1]!.column && p.row !== path[i - 1]!.row);
   const closed = conn.state === "locked" || conn.state === "switched" || conn.state === "secret" || conn.state === "breakable";
+  // A junction edge shares its arm with every sibling crossing the same hub cell, so
+  // a physical blocker on it would wall off nominally-open routes. Generation must
+  // never close one; fail loudly rather than emit a self-contradicting layout.
+  if (conn.kind === "junction" && closed) {
+    throw new Error(`Junction connector ${conn.id} is ${conn.state}; junction edges must stay open`);
+  }
   return {
     id: conn.id,
     fromRoomId: conn.fromRoomId,

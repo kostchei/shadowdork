@@ -204,6 +204,8 @@ export function validatePhysicalDungeon(dungeon: DungeonDefinition): PhysicalVal
       connector.waypoints.some((point) => point.x === junction.tile.x && point.y === junction.tile.y),
     );
     if (touching.length < 2) diagnostics.push(`unrouted-junction:${junction.id}`);
+    // A blocker on any shared arm walls off its siblings; junction edges must stay open.
+    if (touching.some((connector) => connector.blocker)) diagnostics.push(`blocked-junction:${junction.id}`);
   }
   validateCompletionSearch(dungeon, diagnostics);
   return { ok: diagnostics.length === 0, diagnostics };

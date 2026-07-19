@@ -102,19 +102,26 @@ describe("abstract dungeon generation", () => {
     }
   });
 
-  it("limits the staged dense topology to three initially traversable exits per room", () => {
+  it("keeps junction edges open and caps non-junction exits per room at three", () => {
     for (let seed = 0; seed < 100; seed++) {
       const dungeon = generateAbstractDungeon(seed, { topology: "kite", orientation: "identity" });
+      // A junction edge shares its physical arm with its siblings, so it can never be
+      // gated or hidden — doing so would wall off the open routes crossing the same cell.
+      for (const connection of dungeon.connections) {
+        if (connection.kind === "junction") {
+          expect(connection.state, `${connection.id} state`).toBe("open");
+          expect(connection.direction, `${connection.id} direction`).toBe("two-way");
+        }
+      }
+      // Excluding the shared hub, no room exposes more than three open exits.
       const degree = new Map<string, number>();
       for (const connection of dungeon.connections) {
+        if (connection.kind === "junction") continue;
         if (connection.state === "secret" || connection.state === "locked" || connection.state === "switched") continue;
         degree.set(connection.fromRoomId, (degree.get(connection.fromRoomId) ?? 0) + 1);
         degree.set(connection.toRoomId, (degree.get(connection.toRoomId) ?? 0) + 1);
       }
-      expect(Math.max(...dungeon.rooms.map((room) => degree.get(room.id) ?? 0))).toBeLessThanOrEqual(3);
-      expect(dungeon.connections.some((connection) =>
-        connection.state === "secret" || connection.state === "locked" || connection.state === "switched",
-      )).toBe(true);
+      expect(Math.max(0, ...dungeon.rooms.map((room) => degree.get(room.id) ?? 0))).toBeLessThanOrEqual(3);
     }
   });
 

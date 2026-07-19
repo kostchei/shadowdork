@@ -185,6 +185,28 @@ describe("tile expansion", () => {
     expect(routedThroughJunction.length).toBeGreaterThanOrEqual(3);
   });
 
+  it("never stamps a blocker on a shared junction arm", () => {
+    for (const orientation of ORIENTATIONS) {
+      for (let seed = 0; seed < 60; seed++) {
+        const expanded = expandDungeon(
+          generateAbstractDungeon(seed, { topology: "kite", orientation }),
+        );
+        const report = validatePhysicalDungeon(expanded);
+        expect(report.diagnostics, `kite ${orientation} seed ${seed}`).not.toContain(
+          `blocked-junction:${expanded.junctions![0]!.id}`,
+        );
+        for (const junction of expanded.junctions ?? []) {
+          const touching = (expanded.connectors ?? []).filter((connector) =>
+            connector.waypoints.some((point) => point.x === junction.tile.x && point.y === junction.tile.y),
+          );
+          for (const connector of touching) {
+            expect(connector.blocker, `${connector.id} @ ${orientation}/${seed}`).toBeUndefined();
+          }
+        }
+      }
+    }
+  });
+
   it("rejects a physical layout whose connector directions block reward/exit", () => {
     const expanded = expandDungeon(
       generateAbstractDungeon(11, { topology: "railroad", orientation: "identity" }),

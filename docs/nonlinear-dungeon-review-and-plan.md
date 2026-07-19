@@ -129,10 +129,14 @@ functions so they can be unit-tested for correct persisted state, and to shrink 
       junction arm is ever blocked, for every seed/orientation.
 - [x] A6. `tsc --noEmit` + full test suite green (241 passing).
 
-### Checkpoint H — Pure NPC-outcome resolution module  `[ ]`
-- [ ] Extract outcome resolution (trade/betrayal/reveal/revelation/companion) into a pure
-      state-transition module returning effects, independent of Phaser.
-- [ ] Unit tests for each outcome's state transition.
+### Checkpoint H — Pure NPC-outcome resolution module  `[x]`
+- [x] Extract outcome resolution (trade/betrayal/reveal/revelation/companion/warning) into
+      a pure state-transition module (`level/npcInteraction.ts`) returning an ordered
+      `NpcAction[]` for the scene to apply, independent of Phaser. `DungeonScene`'s
+      `advanceNpcInteraction` now builds an inventory snapshot, calls the pure resolver, and
+      dispatches each action via a small `applyNpcAction` switch.
+- [x] Unit tests for every outcome's state transition and effect ordering
+      (`tests/npcInteraction.test.ts`, 17 cases). Full suite green (258 passing).
 
 ### Checkpoint B — Persist betrayal  `[ ]`
 - [ ] Persist spawned-ambusher state (or a `betrayalSpawned` flag) and restore on reload.

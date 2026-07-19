@@ -48,6 +48,7 @@ import {
 } from "../level/dungeons";
 import { expandDungeon } from "../level/expand";
 import { generateAbstractDungeon, type GenerateOptions } from "../level/generate";
+import { resolveNpcInteraction, type NpcAction } from "../level/npcInteraction";
 import type { TopologyId } from "../level/topology";
 import type { Orientation } from "../level/embedding";
 import { roomAt, roomAtTolerant } from "../level/geometry";
@@ -1527,58 +1528,50 @@ export class DungeonScene extends Phaser.Scene {
 
   private advanceNpcInteraction(npc: TalkableNpc, leader: CharacterSprite): void {
     const { spec } = npc;
-    const state = this.npcInteractionStates.get(spec.id) ?? "unmet";
-    if (state === "unmet") {
-      this.npcInteractionStates.set(spec.id, "heard");
-      this.ctx.say(`${spec.name}, ${spec.role}: “${spec.introduction}”`, "#e8c878");
-      this.saveToSlot(0);
-      return;
-    }
-    if (state === "resolved") {
-      this.ctx.say(`${spec.name}: “${spec.resolution}”`, "#c8b888");
-      return;
-    }
+    const inventory = leader.character.inventory;
+    const actions = resolveNpcInteraction({
+      spec,
+      state: this.npcInteractionStates.get(spec.id) ?? "unmet",
+      leaderName: leader.character.name,
+      inventory: {
+        hasRation: inventory.has("ration"),
+        canAddTorch: inventory.canAdd(item("torch")),
+        canAddGem: inventory.canAdd(item("gem")),
+      },
+    });
+    for (const action of actions) this.applyNpcAction(action, npc, leader);
+  }
 
-    if (spec.outcome === "give-torch") {
-      const torch = item("torch");
-      if (leader.character.inventory.canAdd(torch)) {
-        leader.character.inventory.add(torch);
-        this.ctx.say(`${spec.name} gives ${leader.character.name} a torch.`, "#d0e080");
-      } else {
-        this.ctx.say(`${leader.character.name} has no room for the offered torch.`, "#e0c060");
-        return;
-      }
-    } else if (spec.outcome === "reveal-route") {
-      if (this.openNpcTargetConnector(spec.targetConnectorId, false)) {
-        this.ctx.say(`${spec.name} reveals and opens a concealed route.`, "#d0e080");
-      }
-    } else if (spec.outcome === "revelation") {
-      if (this.openNpcTargetConnector(spec.targetConnectorId, true)) {
-        this.ctx.say(`${spec.name}'s phrase releases a distant mechanism.`, "#d0e080");
-      }
-    } else if (spec.outcome === "trade") {
-      if (!leader.character.inventory.has("ration")) {
-        this.ctx.say(`${spec.name} still wants one ration for the gem.`, "#e0c060");
-        return;
-      }
-      const gem = item("gem");
-      if (!leader.character.inventory.canAdd(gem)) {
-        this.ctx.say(`${leader.character.name} needs inventory space for the gem.`, "#e0c060");
-        return;
-      }
-      leader.character.inventory.remove("ration", 1);
-      leader.character.inventory.add(gem);
-      this.ctx.say(`${leader.character.name} trades a ration for a gem.`, "#d0e080");
-    } else if (spec.outcome === "betrayal") {
-      this.spawnNpcBetrayal(npc);
-    } else if (spec.outcome === "companion-eligible") {
-      this.ctx.say(`${spec.name} will join if the vault's reward calls for a companion.`, "#d0e080");
+  /** Execute one resolved NPC action against live scene state. */
+  private applyNpcAction(action: NpcAction, npc: TalkableNpc, leader: CharacterSprite): void {
+    switch (action.type) {
+      case "say":
+        this.ctx.say(action.text, action.color);
+        break;
+      case "grant-item":
+        leader.character.inventory.add(item(action.itemId));
+        break;
+      case "consume-item":
+        leader.character.inventory.remove(action.itemId, action.count);
+        break;
+      case "open-connector":
+        if (this.openNpcTargetConnector(action.connectorId, action.operateRequirement)) {
+          this.ctx.say(action.successText, action.successColor);
+        }
+        break;
+      case "spawn-betrayal":
+        this.spawnNpcBetrayal(npc);
+        break;
+      case "set-state":
+        this.npcInteractionStates.set(npc.spec.id, action.state);
+        break;
+      case "mark-resolved":
+        npc.marker.setText("·").setColor("#8a8068");
+        break;
+      case "persist":
+        this.saveToSlot(0);
+        break;
     }
-
-    this.npcInteractionStates.set(spec.id, "resolved");
-    npc.marker.setText("·").setColor("#8a8068");
-    this.ctx.say(`${spec.name}: “${spec.resolution}”`, "#e8c878");
-    this.saveToSlot(0);
   }
 
   private openNpcTargetConnector(connectorId: string | undefined, operateRequirement: boolean): boolean {

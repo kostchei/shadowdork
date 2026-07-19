@@ -1,6 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { VISUAL_SKINS, parseVisualSkinId, visualSkinById, visualSkinForRun } from "../src/game/visual/skins";
 import { creviceGrime, domainWarp, fbm, latticeNoise, lipShadowAlpha, valueNoise } from "../src/game/visual/textures/math";
+
+vi.mock("phaser", () => ({
+  default: {
+    Geom: {
+      Point: class Point {
+        constructor(public x: number, public y: number) {}
+      },
+    },
+  },
+}));
+
 
 describe("visual skin catalog", () => {
   it("defines six complete three-skin zone packs", () => {
@@ -62,5 +73,76 @@ describe("procedural texture math", () => {
     expect(lipShadowAlpha(-1)).toBe(0);
     expect(lipShadowAlpha(0)).toBeGreaterThan(lipShadowAlpha(2));
     expect(lipShadowAlpha(2)).toBeGreaterThan(lipShadowAlpha(5));
+  });
+});
+
+describe("ensureVisualSkinTextures", () => {
+  it("generates unique skin textures for all six vertical slice lead skins", async () => {
+    const { ensureVisualSkinTextures } = await import("../src/game/visual/textures/materials");
+    const leadSkinIds = [
+      "iron-fortress",
+      "mugdulblub-keep",
+      "rime-sea-caves",
+      "overgrown-basalt-ziggurat",
+      "nuln-fungal-grottos",
+      "rooftop-scamper",
+    ] as const;
+
+    for (const skinId of leadSkinIds) {
+      const generatedKeys = new Set<string>();
+      const mockScene = {
+        textures: {
+          exists: (key: string) => generatedKeys.has(key),
+        },
+        add: {
+          graphics: () => ({
+            fillStyle: () => {},
+            fillRect: () => {},
+            fillCircle: () => {},
+            fillTriangle: () => {},
+            fillPoints: () => {},
+            lineStyle: () => {},
+            beginPath: () => {},
+            moveTo: () => {},
+            lineTo: () => {},
+            strokePath: () => {},
+            strokeRect: () => {},
+            strokePoints: () => {},
+            lineBetween: () => {},
+            arc: () => {},
+            generateTexture: (key: string) => { generatedKeys.add(key); },
+            destroy: () => {},
+          }),
+        },
+      } as unknown as import("phaser").Scene;
+
+      const skinRecord = visualSkinById(skinId);
+      const keys = ensureVisualSkinTextures(mockScene, skinRecord, "backdrop-temple");
+      const wallVariantCount = skinId === "rooftop-scamper" ? 2 : 3;
+      expect(keys.wall(0)).toBe(`skin-${skinId}-wall-0`);
+      expect(keys.wall(1)).toBe(`skin-${skinId}-wall-1`);
+      expect(keys.wall(wallVariantCount)).toBe(`skin-${skinId}-wall-0`);
+      expect(keys.platform).toBe(`skin-${skinId}-platform`);
+      expect(keys.weakWall).toBe(`skin-${skinId}-weak`);
+      expect(keys.climb).toBe(`skin-${skinId}-climb`);
+      expect(keys.portcullis).toBe(`skin-${skinId}-portcullis`);
+      expect(keys.door).toBe(`skin-${skinId}-door`);
+      expect(keys.backdrop).toBe(`skin-${skinId}-backdrop`);
+      expect(keys.decorations.mushrooms).toBe(`skin-${skinId}-gong`);
+      expect(keys.decorations.bones).toBe(`skin-${skinId}-rack`);
+      expect(keys.decorations.banner).toBe(`skin-${skinId}-banner`);
+      expect(keys.decorations.stalactite).toBe(`skin-${skinId}-crenel`);
+      const expectedKeys = new Set([
+        ...Array.from({ length: wallVariantCount }, (_, variant) => `skin-${skinId}-wall-${variant}`),
+        keys.platform,
+        keys.weakWall,
+        keys.climb,
+        keys.portcullis,
+        keys.door,
+        keys.backdrop,
+        ...Object.values(keys.decorations),
+      ]);
+      expect(generatedKeys).toEqual(expectedKeys);
+    }
   });
 });

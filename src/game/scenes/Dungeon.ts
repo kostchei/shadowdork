@@ -526,7 +526,7 @@ export class DungeonScene extends Phaser.Scene {
         switch (ch) {
           case "#":
             this.walls
-              .create(px, py, textures.wall((x * 17 + y * 31) % 3))
+              .create(px, py, textures.wall(x * 17 + y * 31))
               .setTint(foregroundTint)
               .setDepth(1);
             break;

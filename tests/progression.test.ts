@@ -48,8 +48,9 @@ function saved(id: string, className: string, dead = false): SavedCharacter {
 describe("campaign rewards", () => {
   it("gives a solo first run one companion, not the whole party", () => {
     const reward = chooseDungeonReward(0, [fighter]);
-    expect(reward).toMatchObject({ kind: "companion", className: "thief" });
+    expect(reward.kind).toBe("companion");
     if (reward.kind !== "companion") throw new Error("Expected a companion reward");
+    expect(["thief", "priest", "wizard"]).toContain(reward.className);
     expect(isPlebName(reward.name)).toBe(true);
     expect(reward.title).toContain(reward.name);
   });
@@ -92,10 +93,10 @@ describe("campaign rewards", () => {
   });
 
   it("turns an unusable spell reward into the next missing caster", () => {
-    expect(chooseDungeonReward(4, [fighter, thief])).toMatchObject({
-      kind: "companion",
-      className: "priest",
-    });
+    const reward = chooseDungeonReward(4, [fighter, thief]);
+    expect(reward.kind).toBe("companion");
+    if (reward.kind !== "companion") throw new Error("Expected a companion reward");
+    expect(["priest", "wizard"]).toContain(reward.className);
   });
 
   it("does not offer duplicate companions and falls back to gold", () => {

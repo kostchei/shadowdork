@@ -514,16 +514,120 @@ function drawMonsterFrame(g: Phaser.GameObjects.Graphics, id: string, type: "idl
     g.fillTriangle(27, y(20), 31, y(20), 29, y(25));
     g.fillStyle(0x9d6b3e, 1);
     g.fillRect(2, y(32), 40, 5);
+  } else if (id === "cave-creeper") {
+    g.fillStyle(0x42384a, 1);
+    g.fillEllipse(15, y(12), 22, 14);
+    g.fillStyle(0x655473, 1);
+    g.fillRect(3, y(8), 6, 3);
+    g.fillRect(3, y(13), 6, 3);
+    g.fillRect(21, y(8), 6, 3);
+    g.fillRect(21, y(13), 6, 3);
+    g.fillStyle(0xdeda6b, 1);
+    g.fillRect(10, y(9), 2, 2);
+    g.fillRect(18, y(9), 2, 2);
+  } else if (id === "giant-spider") {
+    g.fillStyle(0x2b1d24, 1);
+    g.fillCircle(16, y(15), 10);
+    g.fillStyle(0x4a2c35, 1);
+    g.fillCircle(16, y(7), 6);
+    g.fillStyle(0x1a1217, 1);
+    g.fillRect(2, y(6), 9, 2);
+    g.fillRect(21, y(6), 9, 2);
+    g.fillRect(1, y(11), 9, 2);
+    g.fillRect(22, y(11), 9, 2);
+    g.fillRect(3, y(16), 9, 2);
+    g.fillRect(20, y(16), 9, 2);
+    g.fillRect(5, y(21), 8, 2);
+    g.fillRect(19, y(21), 8, 2);
+    g.fillStyle(0xdb3535, 1);
+    g.fillRect(13, y(6), 2, 2);
+    g.fillRect(17, y(6), 2, 2);
+  } else if (id === "thief-rogue") {
+    g.fillStyle(0x1d473d, 1);
+    g.fillTriangle(6, y(13), 12, y(1), 18, y(13));
+    g.fillRect(7, y(12), 10, 15);
+    g.fillStyle(0x201b20, 1);
+    g.fillRect(9, y(8), 6, 3);
+    g.fillStyle(0xe6d27b, 1);
+    g.fillRect(10, y(9), 2, 1);
+    g.fillRect(13, y(9), 2, 1);
+    g.fillStyle(0xd4d8de, 1);
+    g.fillRect(3, y(15), 2, 8);
+    g.fillRect(19, y(15), 2, 8);
+  } else if (id === "giant-scorpion") {
+    g.fillStyle(0x7a4d29, 1);
+    g.fillRect(10, y(12), 14, 12);
+    g.fillStyle(0x9e683b, 1);
+    g.fillRect(2, y(14), 7, 5);
+    g.fillRect(25, y(14), 7, 5);
+    g.fillRect(15, y(4), 4, 8);
+    g.fillStyle(0xded247, 1);
+    g.fillRect(16, y(1), 3, 3);
+  } else if (id === "sea-nymph") {
+    g.fillStyle(0x1d5c56, 1);
+    g.fillTriangle(6, y(10), 12, y(1), 18, y(10));
+    g.fillStyle(0x4bb5ad, 1);
+    g.fillRect(9, y(7), 6, 8);
+    g.fillStyle(0xe07989, 1);
+    g.fillRect(8, y(15), 8, 12);
+    g.fillStyle(0x201b20, 1);
+    g.fillRect(10, y(9), 1, 2);
+    g.fillRect(13, y(9), 1, 2);
+  } else {
+    g.fillStyle(0x5a4d6e, 1);
+    g.fillRect(4, y(6), 16, 18);
+    g.fillStyle(0xdeda6b, 1);
+    g.fillRect(7, y(9), 3, 3);
+    g.fillRect(14, y(9), 3, 3);
   }
 }
 
 function monsterTextures(scene: Phaser.Scene): void {
-  const monsters = ["goblin", "skeleton", "giant-rat", "gloom-ogre"];
+  const monsters = [
+    "goblin",
+    "skeleton",
+    "giant-rat",
+    "gloom-ogre",
+    "cave-creeper",
+    "giant-spider",
+    "thief-rogue",
+    "giant-scorpion",
+    "sea-nymph",
+    "bittermold",
+    "bogthorn",
+    "bandit",
+    "ras-godai",
+    "draugr",
+    "dire-wolf",
+    "viperian",
+    "rot-flower",
+    "deep-one",
+    "shadow",
+    "thug",
+    "animated-armor",
+  ];
   const dimensions: Record<string, { w: number; h: number }> = {
     goblin: { w: 22, h: 24 },
     skeleton: { w: 24, h: 30 },
     "giant-rat": { w: 28, h: 17 },
     "gloom-ogre": { w: 44, h: 52 },
+    "cave-creeper": { w: 30, h: 24 },
+    "giant-spider": { w: 32, h: 26 },
+    "thief-rogue": { w: 24, h: 30 },
+    "giant-scorpion": { w: 34, h: 28 },
+    "sea-nymph": { w: 24, h: 30 },
+    bittermold: { w: 22, h: 24 },
+    bogthorn: { w: 24, h: 26 },
+    bandit: { w: 24, h: 30 },
+    "ras-godai": { w: 24, h: 30 },
+    draugr: { w: 26, h: 32 },
+    "dire-wolf": { w: 34, h: 24 },
+    viperian: { w: 24, h: 30 },
+    "rot-flower": { w: 28, h: 28 },
+    "deep-one": { w: 26, h: 30 },
+    shadow: { w: 24, h: 30 },
+    thug: { w: 26, h: 30 },
+    "animated-armor": { w: 26, h: 32 },
   };
   for (const mon of monsters) {
     const dim = dimensions[mon]!;

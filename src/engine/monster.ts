@@ -5,6 +5,14 @@
 
 import type { Dice } from "./dice";
 
+export type MonsterBiome =
+  | "diablerie"
+  | "red-sands"
+  | "midnight-sun"
+  | "river-of-night"
+  | "dwellers-in-the-deep"
+  | "city-of-masks";
+
 export interface MonsterDef {
   id: string;
   name: string;
@@ -19,6 +27,7 @@ export interface MonsterDef {
   /** Leader-led groups skip morale while the leader lives; its death breaks them. */
   leader?: boolean;
   xpTier: "minor" | "major" | "legendary";
+  biome?: MonsterBiome;
 }
 
 export interface MonsterAttackResult {

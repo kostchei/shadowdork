@@ -82,7 +82,9 @@ function missingCompanion(party: readonly PartyProgress[], dungeonIndex: number)
     (className) => !party.some((member) => !member.dead && member.className === className),
   );
   if (missing.length === 0) return null;
-  const className = missing[Math.floor(dungeonIndex / REWARD_CYCLE.length) % missing.length]!;
+  const partySalt = party.reduce((acc, m, i) => acc + m.className.charCodeAt(0) * (i + 1), 0);
+  const pickIndex = stableIndex(dungeonIndex * 1337 + partySalt + 42, missing.length);
+  const className = missing[pickIndex]!;
   const usedNames = new Set(party.flatMap((member) => member.name ? [member.name] : []));
   const name = plebNameForSeed(dungeonIndex * 977 + stableIndex(dungeonIndex + 31, 997), usedNames);
   const alignmentRoll = stableIndex(dungeonIndex * 131 + 17, 6) + 1;

@@ -12,6 +12,23 @@ const MONSTER_SPEED: Record<string, number> = {
   skeleton: 70,
   "giant-rat": 110,
   "gloom-ogre": 60,
+  "cave-creeper": 85,
+  "giant-spider": 100,
+  "thief-rogue": 95,
+  "giant-scorpion": 90,
+  "sea-nymph": 80,
+  bittermold: 85,
+  bogthorn: 80,
+  bandit: 90,
+  "ras-godai": 115,
+  draugr: 75,
+  "dire-wolf": 105,
+  viperian: 90,
+  "rot-flower": 50,
+  "deep-one": 80,
+  shadow: 95,
+  thug: 85,
+  "animated-armor": 65,
 };
 
 export const MONSTER_ATTACK_COOLDOWN_MS = 1500;
@@ -53,9 +70,7 @@ export class MonsterSprite extends Phaser.Physics.Arcade.Sprite {
   }
 
   get speed(): number {
-    const s = MONSTER_SPEED[this.def.id];
-    if (s === undefined) throw new Error(`No speed for monster ${this.def.id}`);
-    return s;
+    return MONSTER_SPEED[this.def.id] ?? 80;
   }
 
   get aliveInFight(): boolean {

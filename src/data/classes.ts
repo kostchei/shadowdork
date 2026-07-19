@@ -22,7 +22,7 @@ const CLASS_LIST: readonly ClassDef[] = [
     hitDie: "1d8",
     startingWeaponId: "spear",
     armorId: "chainmail",
-    startsWithShield: false,
+    startsWithShield: true,
     talentTableId: "fighter-talents",
     startingSpellIds: [],
     features: [
@@ -78,6 +78,103 @@ const CLASS_LIST: readonly ClassDef[] = [
     castStat: "INT",
     startingSpellIds: ["magic-missile", "burning-hands", "mage-armor"],
     features: [],
+  },
+  {
+    name: "pit-fighter",
+    displayName: "Pit Fighter",
+    hitDie: "1d8",
+    startingWeaponId: "longsword",
+    armorId: "leather-armor",
+    startsWithShield: true,
+    talentTableId: "fighter-talents",
+    startingSpellIds: [],
+    features: [
+      {
+        id: "feat-pit-fighter-flourish",
+        name: "Flourish: regain 1d6 HP on melee hit (3/day)",
+        hooks: [{ kind: "damageBonus", bonus: 1 }],
+      },
+      {
+        id: "feat-pit-fighter-implacable",
+        name: "Implacable: advantage on CON checks to resist injury/poison",
+        hooks: [{ kind: "advantageOnStat", stat: "CON" }],
+      },
+    ],
+  },
+  {
+    name: "sea-wolf",
+    displayName: "Sea Wolf",
+    hitDie: "1d8",
+    startingWeaponId: "spear",
+    armorId: "chainmail",
+    startsWithShield: true,
+    talentTableId: "fighter-talents",
+    startingSpellIds: [],
+    features: [
+      {
+        id: "feat-sea-wolf-shield-wall",
+        name: "Shield Wall: AC becomes 20 in defensive stance with a shield",
+        hooks: [{ kind: "acBonus", bonus: 2 }],
+      },
+      {
+        id: "feat-sea-wolf-seafarer",
+        name: "Seafarer: advantage on navigation and boating",
+        hooks: [],
+      },
+    ],
+  },
+  {
+    name: "ras-godai",
+    displayName: "Ras-Godai",
+    hitDie: "1d6",
+    startingWeaponId: "dagger",
+    armorId: "leather-armor",
+    startsWithShield: false,
+    talentTableId: "thief-talents",
+    startingSpellIds: [],
+    features: [
+      {
+        id: "feat-ras-godai-assassin",
+        name: "Assassin: advantage on stealth/hiding, double damage vs unaware targets",
+        hooks: [{ kind: "advantageOn", applies: "stealth" }],
+      },
+    ],
+  },
+  {
+    name: "witch",
+    displayName: "Witch",
+    hitDie: "1d4",
+    startingWeaponId: "staff",
+    armorId: "leather-armor",
+    startsWithShield: false,
+    talentTableId: "wizard-talents",
+    castStat: "CHA",
+    startingSpellIds: ["magic-missile", "burning-hands", "mage-armor"],
+    features: [
+      {
+        id: "feat-witch-familiar",
+        name: "Familiar: small loyal animal serves as spellcasting origin",
+        hooks: [],
+      },
+    ],
+  },
+  {
+    name: "seer",
+    displayName: "Seer",
+    hitDie: "1d6",
+    startingWeaponId: "staff",
+    armorId: "leather-armor",
+    startsWithShield: false,
+    talentTableId: "priest-talents",
+    castStat: "WIS",
+    startingSpellIds: ["cure-wounds", "light", "turn-undead"],
+    features: [
+      {
+        id: "feat-seer-destined",
+        name: "Destined: add 1d6 when spending luck tokens",
+        hooks: [],
+      },
+    ],
   },
 ];
 

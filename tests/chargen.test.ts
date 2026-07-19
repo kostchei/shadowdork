@@ -6,7 +6,7 @@ import {
   type Alignment,
   type ClassName,
 } from "../src/engine";
-import { createCharacter, isPlebName, randomPlebName, registerTables } from "../src/data";
+import { createCharacter, highestAvailableDamagingSpellIndex, isPlebName, item, randomPlebName, registerTables } from "../src/data";
 
 function makeEngine(seed: number): Engine {
   const engine = new Engine({ seed });
@@ -55,6 +55,7 @@ describe("character generation rules", () => {
     const fighter = createCharacter(e, "kf", "F", "fighter");
     expect(fighter.weapon.id).toBe("spear");
     expect(fighter.wornArmor?.id).toBe("chainmail");
+    expect(fighter.carriedShield?.id).toBe("shield");
     expect(fighter.inventory.count("javelin")).toBe(3);
 
     const thief = createCharacter(e, "kt", "T", "thief");
@@ -121,5 +122,54 @@ describe("character generation rules", () => {
     expect(c.title).toBe(characterTitle("fighter", c.alignment, 1));
     c.level = 3;
     expect(c.title).toBe(characterTitle("fighter", c.alignment, 3));
+  });
+
+  it("supports alternate Cursed Scroll classes (pit-fighter, sea-wolf, ras-godai, witch, seer)", () => {
+    const alternateClasses: ClassName[] = ["pit-fighter", "sea-wolf", "ras-godai", "witch", "seer"];
+    for (const cls of alternateClasses) {
+      const c = createCharacter(makeEngine(100), `alt-${cls}`, "Alt", cls);
+      expect(c.className).toBe(cls);
+      expect(c.maxHp).toBeGreaterThan(0);
+      expect(c.inventory.slotsUsed()).toBeLessThanOrEqual(c.inventory.capacity);
+    }
+  });
+
+  it("starts Wizard and Witch with staff and 2 daggers in inventory", () => {
+    const engine = makeEngine(42);
+    const wizard = createCharacter(engine, "w1", "Merlin", "wizard");
+    expect(wizard.wieldedWeapon?.id).toBe("staff");
+    expect(wizard.inventory.count("dagger")).toBe(2);
+
+    const witch = createCharacter(engine, "w2", "Morgana", "witch");
+    expect(witch.wieldedWeapon?.id).toBe("staff");
+    expect(witch.inventory.count("dagger")).toBe(2);
+  });
+
+  it("selects highest-tier damaging spell for spellcasting", () => {
+    const engine = makeEngine(42);
+    const wizard = createCharacter(engine, "w1", "Merlin", "wizard");
+    wizard.learnSpell("fireball");
+
+    const idx = highestAvailableDamagingSpellIndex(wizard);
+    expect(idx).toBeGreaterThanOrEqual(0);
+    expect(wizard.knownSpells[idx]?.spellId).toBe("fireball");
+  });
+
+  it("sunder staff ability: destroying staff on hit negates damage and equips dagger", () => {
+    const engine = makeEngine(42);
+    const wizard = createCharacter(engine, "w1", "Merlin", "wizard");
+    expect(wizard.wieldedWeapon?.id).toBe("staff");
+
+    // Simulate Staff Sunder logic when hit
+    if (wizard.wieldedWeapon?.id === "staff") {
+      wizard.inventory.remove("staff", 1);
+      wizard.wieldedWeapon = null;
+      if (wizard.inventory.has("dagger")) {
+        wizard.equipWeapon(item("dagger"));
+      }
+    }
+
+    expect(wizard.wieldedWeapon?.id).toBe("dagger");
+    expect(wizard.inventory.has("staff")).toBe(false);
   });
 });

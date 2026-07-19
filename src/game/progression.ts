@@ -1,9 +1,10 @@
-import type { Alignment } from "../engine";
+import { getBaseRole, type Alignment, type ClassName } from "../engine";
 import { characterTitle } from "../engine";
 import type { SaveSlot, SavedCharacter } from "./state";
 import type { VisualSkinId, ZonePackId } from "./visual/model";
 import { resolveSkinForZone } from "./visual/skins";
 import { classDef, plebNameForSeed, spellsForClass } from "../data";
+import { resolveClassForZone } from "./systems/companion";
 
 export type RewardKind = "companion" | "magic-weapon" | "magic-armor" | "gold" | "spells";
 
@@ -19,7 +20,7 @@ export interface CompanionReward {
   kind: "companion";
   title: string;
   description: string;
-  className: "thief" | "priest" | "wizard";
+  className: ClassName;
   name: string;
   alignment: Alignment;
 }
@@ -77,14 +78,20 @@ function stableIndex(seed: number, size: number): number {
   return ((value ^ (value >>> 15)) >>> 0) % size;
 }
 
-function missingCompanion(party: readonly PartyProgress[], dungeonIndex: number): CompanionReward | null {
+function missingCompanion(
+  party: readonly PartyProgress[],
+  dungeonIndex: number,
+  zone?: ZonePackId,
+): CompanionReward | null {
   const missing = COMPANION_CLASSES.filter(
-    (className) => !party.some((member) => !member.dead && member.className === className),
+    (baseRole) => !party.some((member) => !member.dead && getBaseRole(member.className as ClassName) === baseRole),
   );
   if (missing.length === 0) return null;
   const partySalt = party.reduce((acc, m, i) => acc + m.className.charCodeAt(0) * (i + 1), 0);
   const pickIndex = stableIndex(dungeonIndex * 1337 + partySalt + 42, missing.length);
-  const className = missing[pickIndex]!;
+  const baseRole = missing[pickIndex]!;
+  const roll50 = stableIndex(dungeonIndex * 773 + partySalt + 19, 100) < 50;
+  const className = resolveClassForZone(baseRole, zone, roll50);
   const usedNames = new Set(party.flatMap((member) => member.name ? [member.name] : []));
   const name = plebNameForSeed(dungeonIndex * 977 + stableIndex(dungeonIndex + 31, 997), usedNames);
   const alignmentRoll = stableIndex(dungeonIndex * 131 + 17, 6) + 1;
@@ -102,8 +109,9 @@ function missingCompanion(party: readonly PartyProgress[], dungeonIndex: number)
 
 function unknownSpell(party: readonly PartyProgress[], dungeonIndex: number): SpellReward | null {
   const casters = party.flatMap((member, partyIndex) => {
-    if (member.dead || (member.className !== "wizard" && member.className !== "priest")) return [];
-    const className: "wizard" | "priest" = member.className;
+    const base = getBaseRole(member.className as ClassName);
+    if (member.dead || (base !== "wizard" && base !== "priest")) return [];
+    const className: "wizard" | "priest" = base;
     const firstDiscovery = member.knownSpellIds.every((id) => STARTING_SPELLS[className].includes(id));
     const maxTier = firstDiscovery ? 1 : maximumSpellTier(member.level);
     const eligible = spellsForClass(className).filter(
@@ -136,10 +144,11 @@ function unknownSpell(party: readonly PartyProgress[], dungeonIndex: number): Sp
 export function chooseDungeonReward(
   dungeonIndex: number,
   party: readonly PartyProgress[],
+  zone?: ZonePackId,
 ): DungeonReward {
   if (!Number.isInteger(dungeonIndex)) throw new Error("Dungeon index must be an integer");
   const kind = REWARD_CYCLE[((dungeonIndex % REWARD_CYCLE.length) + REWARD_CYCLE.length) % REWARD_CYCLE.length]!;
-  const companion = missingCompanion(party, dungeonIndex);
+  const companion = missingCompanion(party, dungeonIndex, zone);
 
   if (kind === "companion") {
     return companion ?? {

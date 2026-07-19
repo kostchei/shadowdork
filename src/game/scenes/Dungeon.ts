@@ -13,12 +13,13 @@ import { SpatialEmitter, spatialOpts, type Vec2 } from "../audio/spatial";
 import {
   createCharacter,
   highestAvailableSpellIndex,
+  highestAvailableDamagingSpellIndex,
   item,
   monster,
   randomPlebName,
   spell,
 } from "../../data";
-import { DC, MAX_LEVEL, partyCoinSlots, xpToReachNextLevel, type Alignment, type StatName } from "../../engine";
+import { DC, MAX_LEVEL, partyCoinSlots, xpToReachNextLevel, getBaseRole, type Alignment, type ClassName, type StatName } from "../../engine";
 import { GameContext } from "../context";
 import { RENDER_SCALE } from "../display";
 import { CharacterSprite } from "../entities/CharacterSprite";
@@ -56,7 +57,7 @@ import {
   type BetrayalFoeKind,
   type NpcInteractionState,
 } from "../level/npcInteraction";
-import { companionPartySnapshot, chooseCompanionRecruit, type CompanionCandidate, type CompanionClass } from "../systems/companion";
+import { companionPartySnapshot, chooseCompanionRecruit, resolveClassForZone, type CompanionCandidate, type CompanionClass } from "../systems/companion";
 import type { TopologyId } from "../level/topology";
 import type { Orientation } from "../level/embedding";
 import type { EnvironmentTextureKeys, VisualPalette, VisualSkin, VisualSkinId, ZonePackId } from "../visual/model";
@@ -395,8 +396,8 @@ export class DungeonScene extends Phaser.Scene {
     this.buildLevel();
     this.createSafeZoneVignette(layoutSeed);
     this.createConnectorTelegraphs();
-    this.activateRoomRequirements(this.lastRoomId, false);
-    this.lightTorch(this.party.leader, "You light a torch.");
+    const torchbearer = this.party.aliveMembers().find((m) => getBaseRole(m.character.className) === "priest") || this.party.leader;
+    this.lightTorch(torchbearer, `${torchbearer.character.name} lights a torch.`);
     this.trapSystem = new TrapSystem(
       this,
       this.ctx,
@@ -1156,12 +1157,15 @@ export class DungeonScene extends Phaser.Scene {
   private spawnCharacter(
     id: string,
     name: string,
-    cls: "fighter" | "thief" | "priest" | "wizard",
+    cls: ClassName,
     x: number,
     y: number,
     alignment?: Alignment,
   ): CharacterSprite {
-    const character = createCharacter(this.ctx.engine, id, name, cls, "human", alignment);
+    const zone = this.loadedState?.zone;
+    const base = getBaseRole(cls);
+    const resolvedClass = base === cls ? resolveClassForZone(base, zone) : cls;
+    const character = createCharacter(this.ctx.engine, id, name, resolvedClass, "human", alignment);
     return new CharacterSprite(this, this.ctx, x, y, character, this.light);
   }
 
@@ -2566,8 +2570,21 @@ export class DungeonScene extends Phaser.Scene {
         m.aiMoveTarget = null;
       }
 
-      // 2. Priest: mend whoever has slipped under half HP (or is dying).
-      if (c.className === "priest" && m.canSwing()) {
+      // 2. Priest / Seer: Turn Undead (works with torch & shield out!) or mend wounded allies (stows shield for divine casting).
+      const isPriest = getBaseRole(c.className) === "priest";
+      if (isPriest && m.canSwing()) {
+        const undeadNear = this.monsters.find(
+          (mon) => mon.aliveInFight && mon.def.undead && zoneBetween(m, mon) !== "beyond",
+        );
+        const turnIdx = c.knownSpells.findIndex(
+          (k) => k.spellId === "turn-undead" && k.status === "available" && !k.requiresAtonement,
+        );
+        if (undeadNear && turnIdx >= 0) {
+          m.spellIndex = turnIdx;
+          castSelectedSpell(this.spellDeps(), m, undeadNear);
+          continue;
+        }
+
         const wounded = this.party.members.find(
           (p) =>
             !p.character.dead &&
@@ -2575,24 +2592,43 @@ export class DungeonScene extends Phaser.Scene {
             zoneBetween(m, p) !== "beyond",
         );
         if (wounded && this.selectHighestSpell(m)) {
+          if (c.carriedShield && !c.shieldStowed) {
+            c.shieldStowed = true;
+          }
           castSelectedSpell(this.spellDeps(), m);
-          continue;
+          continue; // Focuses on healing/support; refrains from melee attack this round
         }
       }
 
-      // 3. Wizard: unload on the boss once battle is joined.
-      if (c.className === "wizard" && m.canSwing()) {
-        const boss = this.monsters.find(
+      // 3. Wizard / Witch: cast spells at boss OR when > 1 monster on screen & in light bubble, always casting highest damaging spell.
+      if (getBaseRole(c.className) === "wizard" && m.canSwing()) {
+        const illuminatedMonsters = this.monsters.filter(
           (mon) =>
             mon.aliveInFight &&
-            mon.def.leader === true &&
-            mon.aiState === "aggro" &&
+            this.light.levelAt(mon.x, mon.y) !== "dark" &&
             Phaser.Math.Distance.Between(m.x, m.y, mon.x, mon.y) <= FAR_PX,
         );
-        if (boss && this.selectHighestSpell(m)) {
-          m.facing = boss.x >= m.x ? 1 : -1;
-          m.setFlipX(m.facing === -1);
-          castSelectedSpell(this.spellDeps(), m, boss);
+        const boss = illuminatedMonsters.find((mon) => mon.def.leader === true && mon.aiState === "aggro") ||
+          this.monsters.find(
+            (mon) =>
+              mon.aliveInFight &&
+              mon.def.leader === true &&
+              mon.aiState === "aggro" &&
+              Phaser.Math.Distance.Between(m.x, m.y, mon.x, mon.y) <= FAR_PX,
+          );
+
+        // Cast spell at boss OR when > 1 monster on screen in light bubble
+        if (boss || illuminatedMonsters.length > 1) {
+          const target = boss || illuminatedMonsters[0];
+          const idx = highestAvailableDamagingSpellIndex(m.character);
+          if (idx >= 0) {
+            m.spellIndex = idx;
+            if (target) {
+              m.facing = target.x >= m.x ? 1 : -1;
+              m.setFlipX(m.facing === -1);
+            }
+            castSelectedSpell(this.spellDeps(), m, target);
+          }
         }
       }
     }

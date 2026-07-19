@@ -9,7 +9,31 @@ export const STAT_NAMES: readonly StatName[] = ["STR", "DEX", "CON", "INT", "WIS
 
 export type Stats = Record<StatName, number>;
 
-export type ClassName = "fighter" | "thief" | "priest" | "wizard";
+export type BaseClassName = "fighter" | "thief" | "priest" | "wizard";
+export type ClassName =
+  | BaseClassName
+  | "pit-fighter"
+  | "sea-wolf"
+  | "ras-godai"
+  | "witch"
+  | "seer";
+
+export function getBaseRole(className: ClassName): BaseClassName {
+  switch (className) {
+    case "pit-fighter":
+    case "sea-wolf":
+      return "fighter";
+    case "ras-godai":
+      return "thief";
+    case "witch":
+      return "wizard";
+    case "seer":
+      return "priest";
+    default:
+      return className;
+  }
+}
+
 export type Alignment = "law" | "neutral" | "chaos";
 export type VoiceRegister = "low" | "medium" | "high";
 
@@ -26,7 +50,7 @@ export function voiceRegisterForIdentity(id: string, name: string): VoiceRegiste
   return VOICE_REGISTERS[(hash >>> 0) % VOICE_REGISTERS.length]!;
 }
 
-const TITLES: Record<ClassName, Record<Alignment, readonly string[]>> = {
+const TITLES: Record<BaseClassName, Record<Alignment, readonly string[]>> = {
   fighter: {
     law: ["Squire", "Cavalier", "Knight", "Thane", "Lord/Lady"],
     chaos: ["Knave", "Bandit", "Slayer", "Reaver", "Warlord"],
@@ -63,7 +87,8 @@ export function alignmentLabel(alignment: Alignment): string {
 export function characterTitle(className: ClassName, alignment: Alignment, level: number): string {
   if (!Number.isInteger(level) || level < 1) throw new Error(`Invalid character level ${level}`);
   const band = Math.min(4, Math.floor((level - 1) / 2));
-  return TITLES[className][alignment][band]!;
+  const base = getBaseRole(className);
+  return TITLES[base][alignment][band]!;
 }
 
 export type SpellStatus = "available" | "lost";

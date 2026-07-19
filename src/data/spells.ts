@@ -163,3 +163,19 @@ export function highestAvailableSpellIndex(character: Character): number {
   });
   return bestIndex;
 }
+
+/** Return the known-spell index of the highest-tier damaging spell that can be cast. */
+export function highestAvailableDamagingSpellIndex(character: Character): number {
+  let bestIndex = -1;
+  let bestTier = -1;
+  character.knownSpells.forEach((known, index) => {
+    if (known.status !== "available" || known.requiresAtonement) return;
+    const def = spell(known.spellId);
+    if (!def.dice) return;
+    if (def.tier > bestTier) {
+      bestIndex = index;
+      bestTier = def.tier;
+    }
+  });
+  return bestIndex >= 0 ? bestIndex : highestAvailableSpellIndex(character);
+}

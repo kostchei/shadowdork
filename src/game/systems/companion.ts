@@ -8,11 +8,12 @@
  * gold substitute). Keeping it Phaser-free makes every branch unit testable.
  */
 
-import type { Alignment } from "../../engine/character";
+import { getBaseRole, type Alignment, type BaseClassName, type ClassName } from "../../engine/character";
+import type { ZonePackId } from "../visual/model";
 
 export const PARTY_CAP = 4;
 
-export type CompanionClass = "fighter" | "thief" | "priest" | "wizard";
+export type CompanionClass = ClassName;
 
 export interface CompanionCandidate {
   /** Stable character id for the spawned recruit. */
@@ -45,9 +46,32 @@ export type CompanionDecision =
   | { kind: "skip"; reason: "party-full" | "duplicate-class"; className: CompanionClass };
 
 /**
+ * 50% chance in the matching Cursed Scroll destination to find the alternate class:
+ * - Red Sands (CS2): fighter -> pit-fighter, thief -> ras-godai
+ * - Midnight Sun (CS3): fighter -> sea-wolf, priest -> seer
+ * - Diablerie (CS1): wizard -> witch
+ */
+export function resolveClassForZone(
+  baseClass: BaseClassName,
+  zone?: ZonePackId,
+  roll50 = Math.random() < 0.5,
+): ClassName {
+  if (!zone || !roll50) return baseClass;
+  if (zone === "red-sands") {
+    if (baseClass === "fighter") return "pit-fighter";
+    if (baseClass === "thief") return "ras-godai";
+  } else if (zone === "midnight-sun") {
+    if (baseClass === "fighter") return "sea-wolf";
+    if (baseClass === "priest") return "seer";
+  } else if (zone === "diablerie") {
+    if (baseClass === "wizard") return "witch";
+  }
+  return baseClass;
+}
+
+/**
  * Prefer the eligible NPC when present, else the reward default, then validate the
- * chosen recruit against party capacity and class uniqueness. An invalid recruit is
- * skipped outright rather than silently substituted with a different class.
+ * chosen recruit against party capacity and class uniqueness (by base role).
  */
 export function chooseCompanionRecruit(
   npc: CompanionCandidate | null,
@@ -57,7 +81,8 @@ export function chooseCompanionRecruit(
 ): CompanionDecision {
   const candidate = npc ?? fallback;
   if (party.size >= cap) return { kind: "skip", reason: "party-full", className: candidate.className };
-  if (party.classes.includes(candidate.className)) {
+  const candidateBase = getBaseRole(candidate.className);
+  if (party.classes.some((existing) => getBaseRole(existing) === candidateBase)) {
     return { kind: "skip", reason: "duplicate-class", className: candidate.className };
   }
   return { kind: "recruit", candidate };

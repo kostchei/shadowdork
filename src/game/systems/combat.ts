@@ -224,12 +224,14 @@ export function applyDamageToMonster(deps: MeleeDeps, target: MonsterSprite, dam
   }
 }
 
-/** The first ranged weapon in a character's pack, if any (the thief's shortbow). */
+/** The first ranged or throwable weapon in a character's pack (shortbow or dagger). */
 export function carriedRangedWeapon(attacker: CharacterSprite): ItemDef | null {
-  return attacker.character.inventory.has("shortbow") ? item("shortbow") : null;
+  if (attacker.character.inventory.has("shortbow")) return item("shortbow");
+  if (attacker.character.inventory.has("dagger")) return item("dagger");
+  return null;
 }
 
-/** Loose an arrow: attack roll at range, arrow flight, damage on arrival. */
+/** Loose an arrow or throw a dagger: attack roll at range, projectile flight, damage on arrival. */
 export function rangedShot(
   deps: MeleeDeps,
   attacker: CharacterSprite,
@@ -255,18 +257,23 @@ export function rangedShot(
     disadvantage,
   });
 
-  bowShot();
-  const arrow = scene.add
-    .rectangle(attacker.x + attacker.facing * 8, attacker.y - 8, 10, 2, 0xd8cfa8)
-    .setDepth(20);
-  arrow.setRotation(Phaser.Math.Angle.Between(attacker.x, attacker.y, target.x, target.y));
+  const isDagger = weapon.id === "dagger";
+  if (isDagger) {
+    whoosh({ gain: 0.7 });
+  } else {
+    bowShot();
+  }
+  const projectile = isDagger
+    ? scene.add.image(attacker.x + attacker.facing * 8, attacker.y - 8, "slash").setDepth(20).setDisplaySize(12, 6)
+    : scene.add.rectangle(attacker.x + attacker.facing * 8, attacker.y - 8, 10, 2, 0xd8cfa8).setDepth(20);
+  projectile.setRotation(Phaser.Math.Angle.Between(attacker.x, attacker.y, target.x, target.y));
   scene.tweens.add({
-    targets: arrow,
+    targets: projectile,
     x: target.x,
     y: target.y - 6,
     duration: 160,
     onComplete: () => {
-      arrow.destroy();
+      projectile.destroy();
       if (!target.active || !target.aliveInFight) return;
       const die = result.check.natural;
       if (result.check.success) {
@@ -301,6 +308,30 @@ export function monsterSwing(
     inDark && monster.def.darkvision ? "advantage" : "normal",
   );
   if (result.hit) {
+    // Staff Sunder Ability: if target is wielding a staff in 2 hands when hit, sacrifice/destroy staff to block all hit damage!
+    const wielded = target.character.wieldedWeapon;
+    if (wielded && wielded.id === "staff") {
+      swordClang();
+      scene.cameras.main.shake(120, 0.006);
+      hitBurst(scene, target.x, target.y, false);
+      floatText(scene, target.x, target.y - 16, "STAFF SUNDERED!", "#ffe06a", 15);
+      
+      // Destroy staff from inventory & clear wielded weapon
+      target.character.inventory.remove("staff", 1);
+      target.character.wieldedWeapon = null;
+      
+      // Auto-equip dagger if present in inventory
+      if (target.character.inventory.has("dagger")) {
+        target.character.equipWeapon(item("dagger"));
+      }
+      
+      ctx.say(
+        `${target.character.name}'s staff shatters in two hands to block the blow! (0 damage taken)`,
+        "#ffe06a",
+      );
+      return;
+    }
+
     thud();
     floatText(scene, target.x, target.y - 16, `-${result.damage}`, "#ff5050");
     const wentDown = ctx.engine.damageCharacter(target.character, result.damage);

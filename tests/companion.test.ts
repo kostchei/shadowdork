@@ -75,4 +75,36 @@ describe("chooseCompanionRecruit", () => {
     expect(snapshot).toEqual({ size: 1, classes: ["fighter"] });
     expect(chooseCompanionRecruit(npc, fallback, snapshot)).toEqual({ kind: "recruit", candidate: npc });
   });
+
+  it("treats alternate classes as matching their base role for duplicate class checks", () => {
+    const decision = chooseCompanionRecruit(
+      { ...npc, className: "ras-godai" },
+      fallback,
+      party(["thief"]),
+    );
+    expect(decision).toEqual({ kind: "skip", reason: "duplicate-class", className: "ras-godai" });
+  });
+});
+
+import { resolveClassForZone } from "../src/game/systems/companion";
+
+describe("resolveClassForZone", () => {
+  it("resolves base classes to alternate classes 50% of the time in matching destinations", () => {
+    expect(resolveClassForZone("fighter", "red-sands", true)).toBe("pit-fighter");
+    expect(resolveClassForZone("fighter", "red-sands", false)).toBe("fighter");
+
+    expect(resolveClassForZone("thief", "red-sands", true)).toBe("ras-godai");
+    expect(resolveClassForZone("thief", "red-sands", false)).toBe("thief");
+
+    expect(resolveClassForZone("fighter", "midnight-sun", true)).toBe("sea-wolf");
+    expect(resolveClassForZone("priest", "midnight-sun", true)).toBe("seer");
+
+    expect(resolveClassForZone("wizard", "diablerie", true)).toBe("witch");
+  });
+
+  it("retains base class when zone does not match", () => {
+    expect(resolveClassForZone("fighter", "diablerie", true)).toBe("fighter");
+    expect(resolveClassForZone("wizard", "midnight-sun", true)).toBe("wizard");
+    expect(resolveClassForZone("priest", "red-sands", true)).toBe("priest");
+  });
 });

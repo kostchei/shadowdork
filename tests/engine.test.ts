@@ -339,7 +339,7 @@ describe("equipped appearance state", () => {
 
   it("changes the visual signature when equipment changes", () => {
     const f = createCharacter(makeEngine(), "f", "Fighter", "fighter");
-    expect(characterAppearanceKey(appearanceForCharacter(f))).toBe("char-fighter-chain-spear-none");
+    expect(characterAppearanceKey(appearanceForCharacter(f))).toBe("char-fighter-chain-spear-readied");
     f.equipWeapon(item("longsword"));
     f.equipArmor(item("plate-mail"));
     f.equipShield(item("shield"));

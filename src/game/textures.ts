@@ -93,13 +93,16 @@ function drawFace(g: Phaser.GameObjects.Graphics, skin: number, bodyYOffset = 0)
   g.fillRect(22, 9 + bodyYOffset, 2, 2);
 }
 
+import { getBaseRole } from "../engine/character";
+
 function drawFeet(
   g: Phaser.GameObjects.Graphics,
   cls: ClassName,
   type: "idle" | "walk" | "brace",
   frame: number,
 ): void {
-  g.fillStyle(cls === "fighter" ? 0x352b32 : cls === "thief" ? 0x20292a : cls === "priest" ? 0x473c39 : 0x282342, 1);
+  const base = getBaseRole(cls);
+  g.fillStyle(base === "fighter" ? 0x352b32 : base === "thief" ? 0x20292a : base === "priest" ? 0x473c39 : 0x282342, 1);
   if (type === "idle" || type === "brace") {
     g.fillRect(12, 30, 6, 3);
     g.fillRect(22, 30, 6, 3);
@@ -200,7 +203,7 @@ function drawWeapon(
       g.fillRect(31, y(7), 3, 25);
       g.fillStyle(0x4b3023, 1);
       g.fillRect(33, y(10), 1, 20);
-      if (appearance.className === "wizard") {
+      if (getBaseRole(appearance.className) === "wizard") {
         g.fillStyle(0x55b9ca, 1);
         g.fillTriangle(28, y(7), 33, y(0), 37, y(7));
         g.fillStyle(0xb9fbff, 1);
@@ -215,7 +218,8 @@ function drawArmor(
   appearance: CharacterAppearance,
   y: (value: number) => number,
 ): void {
-  const { armor, className } = appearance;
+  const { armor } = appearance;
+  const className = getBaseRole(appearance.className);
   if (armor === "unarmored") {
     const cloth = className === "fighter" ? 0x78303a : className === "thief" ? 0x6b4a32 : className === "priest" ? 0xd7d0b0 : 0x3c438f;
     g.fillStyle(cloth, 1);
@@ -268,7 +272,7 @@ function drawClassIdentity(
   bodyYOffset: number,
   y: (value: number) => number,
 ): void {
-  const cls = appearance.className;
+  const cls = getBaseRole(appearance.className);
   const skin = cls === "fighter" || cls === "priest" ? 0xd8ad86 : 0xc99d78;
   if (cls === "fighter") {
     g.fillStyle(0x7b2632, 1);
@@ -385,6 +389,11 @@ function characterTextures(scene: Phaser.Scene): void {
     { className: "thief", armor: "leather", weapon: "dagger", shield: "none" },
     { className: "priest", armor: "chain", weapon: "mace", shield: "readied" },
     { className: "wizard", armor: "unarmored", weapon: "staff", shield: "none" },
+    { className: "pit-fighter", armor: "leather", weapon: "longsword", shield: "readied" },
+    { className: "sea-wolf", armor: "chain", weapon: "spear", shield: "readied" },
+    { className: "ras-godai", armor: "leather", weapon: "dagger", shield: "none" },
+    { className: "witch", armor: "leather", weapon: "staff", shield: "none" },
+    { className: "seer", armor: "leather", weapon: "staff", shield: "none" },
   ];
   for (const appearance of defaults) {
     ensureCharacterAppearance(scene, appearance);

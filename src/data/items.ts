@@ -29,23 +29,23 @@ const ITEM_LIST: readonly ItemDef[] = [
   // Armor — AC = acBase + DEX (capped); class permissions are RAW.
   {
     id: "leather-armor", name: "Leather Armor", slotCost: 1, bundleSize: 1, tags: ["armor"],
-    armor: { acBase: 11, dexCap: 99, classes: ["fighter", "priest", "thief"] }, armorVisual: "leather",
+    armor: { acBase: 11, dexCap: 99, classes: ["fighter", "priest", "thief", "pit-fighter", "sea-wolf", "ras-godai", "witch", "seer"] }, armorVisual: "leather",
   },
   {
     id: "chainmail", name: "Chainmail", slotCost: 2, bundleSize: 1, tags: ["armor"],
-    armor: { acBase: 13, dexCap: 99, classes: ["fighter", "priest"] }, armorVisual: "chain",
+    armor: { acBase: 13, dexCap: 99, classes: ["fighter", "priest", "pit-fighter", "sea-wolf"] }, armorVisual: "chain",
   },
   {
     id: "plate-mail", name: "Plate Mail", slotCost: 3, bundleSize: 1, tags: ["armor"],
-    armor: { acBase: 15, dexCap: 0, classes: ["fighter", "priest"] }, armorVisual: "plate",
+    armor: { acBase: 15, dexCap: 0, classes: ["fighter", "priest", "pit-fighter", "sea-wolf"] }, armorVisual: "plate",
   },
   {
     id: "mithral-chainmail", name: "Mithral Chainmail", slotCost: 1, bundleSize: 1, tags: ["armor", "magic"],
-    armor: { acBase: 13, dexCap: 99, classes: ["fighter", "priest", "thief"] }, armorVisual: "mithral",
+    armor: { acBase: 13, dexCap: 99, classes: ["fighter", "priest", "thief", "pit-fighter", "sea-wolf", "ras-godai", "witch", "seer"] }, armorVisual: "mithral",
   },
   {
     id: "aegis-mail", name: "Aegis Mail", slotCost: 1, bundleSize: 1, tags: ["armor", "magic"],
-    armor: { acBase: 14, dexCap: 99, classes: ["fighter", "priest", "thief", "wizard"] }, armorVisual: "mithral",
+    armor: { acBase: 14, dexCap: 99, classes: ["fighter", "priest", "thief", "wizard", "pit-fighter", "sea-wolf", "ras-godai", "witch", "seer"] }, armorVisual: "mithral",
   },
   { id: "shield", name: "Shield", slotCost: 1, bundleSize: 1, tags: ["armor"], shield: true },
 

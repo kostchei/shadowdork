@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { expInterval } from "../src/game/audio/ambience";
 import { brownNoise, pinkNoise, whiteNoise } from "../src/game/audio/noise";
 import { cutoffFor, distanceTaper, gainFor, panFor, spatialOpts } from "../src/game/audio/spatial";
+import { reverbImpulse, saturationCurve } from "../src/game/audio/context";
+import { VOWELS, syllableCount } from "../src/game/audio/voice";
 
 const N = 16384;
 
@@ -111,5 +113,56 @@ describe("spatialization math", () => {
     const far = spatialOpts({ x: 700, y: 0 }, { x: 0, y: 0 });
     expect(far.cutoff).toBeCloseTo(800);
     expect(far.pan).toBe(0.8);
+  });
+});
+
+describe("master bus math", () => {
+  it("saturation curve is monotonic, odd-ish, and bounded in [-1, 1]", () => {
+    const curve = saturationCurve(1024);
+    expect(curve[0]).toBeCloseTo(-1); // ±1 in maps to ±1 out (normalized)
+    expect(curve[curve.length - 1]!).toBeCloseTo(1);
+    expect(curve[512]!).toBeCloseTo(0, 2); // passes through the origin
+    for (let i = 1; i < curve.length; i++) {
+      expect(curve[i]!).toBeGreaterThanOrEqual(curve[i - 1]!); // monotonic
+      expect(Math.abs(curve[i]!)).toBeLessThanOrEqual(1 + 1e-6);
+    }
+    // Soft-clip compresses the mid-range: input 0.5 maps to > 0.5 (more level).
+    const mid = curve[Math.round(0.75 * (curve.length - 1))]!; // input +0.5
+    expect(mid).toBeGreaterThan(0.5);
+    expect(() => saturationCurve(1)).toThrow();
+  });
+
+  it("reverb impulse decays — the tail is far quieter than the onset", () => {
+    const ir = reverbImpulse(4096);
+    const energy = (from: number, to: number) => {
+      let e = 0;
+      for (let i = from; i < to; i++) e += ir[i]! * ir[i]!;
+      return e;
+    };
+    const head = energy(0, 512);
+    const tail = energy(ir.length - 512, ir.length);
+    expect(head).toBeGreaterThan(tail * 10);
+    expect(maxAbs(ir)).toBeLessThanOrEqual(1);
+    expect(() => reverbImpulse(0)).toThrow();
+  });
+});
+
+describe("wordless voice", () => {
+  it("maps text length to a short, capped syllable run", () => {
+    expect(syllableCount("")).toBe(0);
+    expect(syllableCount("   ")).toBe(0);
+    expect(syllableCount("go")).toBe(1);
+    expect(syllableCount("the goblin snarls")).toBeGreaterThan(1);
+    // A whole sentence never murmurs longer than the phrase cap.
+    expect(syllableCount("the ancient dragon awakens and roars with fury")).toBeLessThanOrEqual(5);
+    expect(syllableCount("supercalifragilisticexpialidocious")).toBeLessThanOrEqual(5);
+  });
+
+  it("has five three-formant vowels with rising F1 < F2 < F3", () => {
+    expect(VOWELS.length).toBe(5);
+    for (const [f1, f2, f3] of VOWELS) {
+      expect(f1).toBeLessThan(f2);
+      expect(f2).toBeLessThan(f3);
+    }
   });
 });

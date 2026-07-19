@@ -7,7 +7,7 @@
  * touch the engine's seeded dice. Every one-shot cleans up its own nodes.
  */
 
-import { audioCtx, masterGain } from "./context";
+import { audioCtx, masterGain, reverbBus, saturationCurve } from "./context";
 import { noiseSource, startNoise, type NoiseKind } from "./noise";
 
 export interface SfxOpts {
@@ -17,6 +17,18 @@ export interface SfxOpts {
   pan?: number;
   /** Lowpass cutoff in Hz for distance muffling; omit for full brightness. */
   cutoff?: number;
+  /** Wet reverb send, 0…1. Gives the sound a room/tail; omit for bone-dry. */
+  reverb?: number;
+}
+
+/** Cached soft-clip curve for driven sub layers (built lazily, needs a ctx). */
+let driveCurve: Float32Array<ArrayBuffer> | null = null;
+function driveShaper(c: AudioContext): WaveShaperNode {
+  if (!driveCurve) driveCurve = saturationCurve(512, 2.4);
+  const ws = c.createWaveShaper();
+  ws.curve = driveCurve;
+  ws.oversample = "2x";
+  return ws;
 }
 
 function jitter(v: number, pct: number): number {
@@ -35,6 +47,8 @@ class Shot {
   readonly c: AudioContext;
   readonly t0: number;
   readonly dest: AudioNode;
+  /** Wet send into the shared reverb, or null when opts.reverb is unset. */
+  private readonly wet: GainNode | null;
   private readonly nodes: AudioNode[] = [];
 
   constructor(opts: SfxOpts) {
@@ -57,11 +71,27 @@ class Shot {
       head = f;
     }
     this.dest = head;
+    if (opts.reverb !== undefined && opts.reverb > 0) {
+      // The send taps the post-pan/cutoff signal so distant sounds are muffled
+      // in their tail too, then feeds the shared reverb bus.
+      this.wet = this.c.createGain();
+      this.wet.gain.value = Math.min(1, opts.reverb);
+      this.wet.connect(reverbBus());
+      this.nodes.push(this.wet);
+    } else {
+      this.wet = null;
+    }
   }
 
   own<T extends AudioNode>(node: T): T {
     this.nodes.push(node);
     return node;
+  }
+
+  /** Route a voice's output to the dry destination and (if any) the wet send. */
+  route(node: AudioNode): void {
+    node.connect(this.dest);
+    if (this.wet) node.connect(this.wet);
   }
 
   /** τ-style exponential decay: setTargetAtTime IS e^(-t/τ) on the AudioParam. */
@@ -115,7 +145,8 @@ function fmStrike(shot: Shot, cfg: FmStrikeCfg, opts: SfxOpts): AudioScheduledSo
   modDepth.connect(carrier.frequency);
 
   const amp = shot.decayGain(cfg.peak * (opts.gain ?? 1), cfg.ampTau, at);
-  carrier.connect(amp).connect(shot.dest);
+  carrier.connect(amp);
+  shot.route(amp);
 
   const stopAt = at + cfg.ampTau * 8;
   mod.start(at);
@@ -154,7 +185,8 @@ function noiseBurst(shot: Shot, cfg: BurstCfg, opts: SfxOpts): AudioScheduledSou
   amp.gain.setValueAtTime(0, at);
   amp.gain.linearRampToValueAtTime(peak, at + 0.005);
   amp.gain.setTargetAtTime(0, at + cfg.duration * 0.4, cfg.duration * 0.3);
-  head.connect(amp).connect(shot.dest);
+  head.connect(amp);
+  shot.route(amp);
   startNoise(src, at);
   src.stop(at + cfg.duration + 0.1);
   return src;
@@ -178,7 +210,68 @@ function sinePartial(shot: Shot, cfg: SineCfg, opts: SfxOpts): AudioScheduledSou
     osc.frequency.exponentialRampToValueAtTime(cfg.freq * cfg.glideTo, at + cfg.tau * 4);
   }
   const amp = shot.decayGain(cfg.peak * (opts.gain ?? 1), cfg.tau, at);
-  osc.connect(amp).connect(shot.dest);
+  osc.connect(amp);
+  shot.route(amp);
+  osc.start(at);
+  osc.stop(at + cfg.tau * 8);
+  return osc;
+}
+
+/**
+ * A very short highpassed white-noise tick at t0 — the broadband attack that
+ * gives a strike its "bite." Cosmetic accent, never the anchor.
+ */
+interface TransientCfg {
+  /** Highpass corner; higher = brighter, snappier click. */
+  hpFrom: number;
+  peak: number;
+  /** Burst length in seconds (2–5 ms typical). */
+  duration?: number;
+  delay?: number;
+}
+
+function transient(shot: Shot, cfg: TransientCfg, opts: SfxOpts): void {
+  const { c } = shot;
+  const at = shot.t0 + (cfg.delay ?? 0);
+  const dur = cfg.duration ?? 0.004;
+  const src = shot.own(noiseSource("white", { loop: false }));
+  const hp = shot.own(c.createBiquadFilter());
+  hp.type = "highpass";
+  hp.frequency.value = cfg.hpFrom;
+  const amp = shot.own(c.createGain());
+  const peak = cfg.peak * (opts.gain ?? 1);
+  amp.gain.setValueAtTime(peak, at);
+  amp.gain.setTargetAtTime(0, at, dur * 0.4);
+  src.connect(hp).connect(amp);
+  shot.route(amp);
+  startNoise(src, at);
+  src.stop(at + dur + 0.02);
+}
+
+/**
+ * A low sine driven through a soft-clipper so its harmonics survive on tiny
+ * speakers — sub weight you feel, not a pure tone you can't hear. Returns the
+ * oscillator so the caller can anchor cleanup on it.
+ */
+interface SubCfg {
+  freq: number;
+  tau: number;
+  peak: number;
+  delay?: number;
+}
+
+function subLayer(shot: Shot, cfg: SubCfg, opts: SfxOpts): AudioScheduledSourceNode {
+  const { c } = shot;
+  const at = shot.t0 + (cfg.delay ?? 0);
+  const osc = shot.own(c.createOscillator());
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(cfg.freq, at);
+  const pre = shot.own(c.createGain());
+  pre.gain.value = 2.2; // push into the shaper's knee for harmonics
+  const shaper = shot.own(driveShaper(c));
+  const amp = shot.decayGain(cfg.peak * (opts.gain ?? 1), cfg.tau, at);
+  osc.connect(pre).connect(shaper).connect(amp);
+  shot.route(amp);
   osc.start(at);
   osc.stop(at + cfg.tau * 8);
   return osc;
@@ -186,20 +279,28 @@ function sinePartial(shot: Shot, cfg: SineCfg, opts: SfxOpts): AudioScheduledSou
 
 // ── Combat ────────────────────────────────────────────────────────────────────
 
-/** Sword on flesh-and-bone-and-armor: the doc's metallic FM clang. */
+/** Sword on flesh-and-bone-and-armor: a bright transient into the metallic FM clang. */
 export function swordClang(opts: SfxOpts = {}): void {
-  const shot = new Shot(opts);
-  const fc = jitter(520, 0.15);
-  const anchor = fmStrike(
+  const shot = new Shot({ reverb: 0.14, ...opts });
+  const fc = jitter(540, 0.15);
+  // The edge: a sharp broadband tick that reads as steel biting.
+  transient(shot, { hpFrom: 3500, peak: 0.5 }, opts);
+  fmStrike(
     shot,
     {
       fc,
       ratio: 1.414 + rand(-0.05, 0.05),
-      deviation: fc * rand(3, 5),
-      modTau: 0.06,
-      ampTau: jitter(0.22, 0.2),
+      deviation: fc * rand(4, 6.5), // more index → more inharmonic zing
+      modTau: 0.05,
+      ampTau: jitter(0.2, 0.2),
       peak: 0.3,
     },
+    opts,
+  );
+  // A high glinting partial that extends the top end past the mid "box."
+  const anchor = fmStrike(
+    shot,
+    { fc: fc * 3.1, ratio: 1.71, deviation: fc * 2, modTau: 0.04, ampTau: 0.12, peak: 0.09 },
     opts,
   );
   shot.finish(anchor, shot.t0 + 2);
@@ -207,16 +308,17 @@ export function swordClang(opts: SfxOpts = {}): void {
 
 /** Crit: the clang plus a second inharmonic partial, ringing longer and higher. */
 export function swordCrit(opts: SfxOpts = {}): void {
-  const shot = new Shot(opts);
-  const fc = jitter(660, 0.1);
+  const shot = new Shot({ reverb: 0.2, ...opts });
+  const fc = jitter(680, 0.1);
+  transient(shot, { hpFrom: 4000, peak: 0.6 }, opts);
   fmStrike(
     shot,
-    { fc, ratio: 1.414, deviation: fc * 4, modTau: 0.08, ampTau: 0.4, peak: 0.28 },
+    { fc, ratio: 1.414, deviation: fc * 5.5, modTau: 0.08, ampTau: 0.4, peak: 0.28 },
     opts,
   );
   const anchor = fmStrike(
     shot,
-    { fc: fc * 2.76, ratio: 1.34, deviation: fc, modTau: 0.12, ampTau: 0.5, peak: 0.12 },
+    { fc: fc * 2.76, ratio: 1.34, deviation: fc * 1.6, modTau: 0.12, ampTau: 0.55, peak: 0.13 },
     opts,
   );
   shot.finish(anchor, shot.t0 + 4);
@@ -224,27 +326,31 @@ export function swordCrit(opts: SfxOpts = {}): void {
 
 /** Blunt impact — a monster's claw or a fist landing. */
 export function thud(opts: SfxOpts = {}): void {
-  const shot = new Shot(opts);
+  const shot = new Shot({ reverb: 0.12, ...opts });
   noiseBurst(
     shot,
-    { kind: "pink", duration: 0.06, peak: 0.25, filter: { type: "lowpass", from: 400 } },
+    { kind: "pink", duration: 0.06, peak: 0.22, filter: { type: "lowpass", from: 400 } },
     opts,
   );
-  const anchor = sinePartial(shot, { freq: jitter(90, 0.2), tau: 0.12, peak: 0.5 }, opts);
+  const f = jitter(70, 0.2);
+  sinePartial(shot, { freq: f, tau: 0.12, peak: 0.45 }, opts);
+  // A driven sub an octave down: the weight you feel in the chest, not the ear.
+  const anchor = subLayer(shot, { freq: f * 0.5, tau: 0.16, peak: 0.5 }, opts);
   shot.finish(anchor, shot.t0 + 1.2);
 }
 
 /** Bowstring thwip plus a short arrow hiss. */
 export function bowShot(opts: SfxOpts = {}): void {
   const shot = new Shot(opts);
-  sinePartial(shot, { freq: jitter(160, 0.15), tau: 0.05, peak: 0.25 }, opts);
+  sinePartial(shot, { freq: jitter(150, 0.15), tau: 0.06, peak: 0.28, glideTo: 0.6 }, opts);
   const anchor = noiseBurst(
     shot,
     {
+      // Wider band with a lower floor so it whistles past instead of hissing.
       kind: "white",
-      duration: 0.12,
-      peak: 0.12,
-      filter: { type: "bandpass", from: 2500, to: 900 },
+      duration: 0.13,
+      peak: 0.13,
+      filter: { type: "bandpass", from: 3000, to: 700 },
     },
     opts,
   );
@@ -254,17 +360,29 @@ export function bowShot(opts: SfxOpts = {}): void {
 /** A miss — air parting around the blade. */
 export function whoosh(opts: SfxOpts = {}): void {
   const shot = new Shot(opts);
+  // Body: a low airy layer so it reads as moved air, not telephone-band hiss.
+  noiseBurst(
+    shot,
+    {
+      kind: "brown",
+      duration: jitter(0.16, 0.2),
+      peak: 0.22,
+      filter: { type: "lowpass", from: 700 },
+    },
+    opts,
+  );
+  // Edge: a wider bandpass sweeping up then away.
   const anchor = noiseBurst(
     shot,
     {
       kind: "white",
       duration: jitter(0.14, 0.2),
-      peak: 0.3,
-      filter: { type: "bandpass", from: 400, to: 1400 },
+      peak: 0.22,
+      filter: { type: "bandpass", from: 300, to: 2200 },
     },
     opts,
   );
-  shot.finish(anchor, shot.t0 + 0.5);
+  shot.finish(anchor, shot.t0 + 0.6);
 }
 
 // ── Movement ──────────────────────────────────────────────────────────────────
@@ -282,7 +400,9 @@ export function footstep(opts: SfxOpts = {}): void {
     },
     opts,
   );
-  const anchor = sinePartial(shot, { freq: 60, tau: 0.045, peak: 0.22 }, opts);
+  sinePartial(shot, { freq: 60, tau: 0.045, peak: 0.18 }, opts);
+  // A touch of driven sub so boots land with body instead of a dry tick.
+  const anchor = subLayer(shot, { freq: 42, tau: 0.05, peak: 0.16 }, opts);
   shot.finish(anchor, shot.t0 + 0.6);
 }
 
@@ -323,7 +443,7 @@ export function splash(opts: SfxOpts = {}): void {
 
 /** Pickup sparkle: two clean additive partials; jewels get a third, higher voice. */
 export function pickupChime(jewel: boolean, opts: SfxOpts = {}): void {
-  const shot = new Shot(opts);
+  const shot = new Shot({ reverb: 0.18, ...opts });
   const base = jitter(jewel ? 1320 : 880, 0.05);
   sinePartial(shot, { freq: base, tau: 0.25, peak: 0.14 }, opts);
   const anchor = sinePartial(shot, { freq: base * 2.01, tau: 0.2, peak: 0.07 }, opts);
@@ -333,26 +453,29 @@ export function pickupChime(jewel: boolean, opts: SfxOpts = {}): void {
 
 /** Spike trap: a vicious short metallic stab, then the impact. */
 export function spikeTrap(opts: SfxOpts = {}): void {
-  const shot = new Shot(opts);
+  const shot = new Shot({ reverb: 0.15, ...opts });
   const fc = jitter(1400, 0.15);
+  transient(shot, { hpFrom: 5000, peak: 0.5 }, opts);
   fmStrike(
     shot,
-    { fc, ratio: 3.7, deviation: fc * 5, modTau: 0.02, ampTau: 0.06, peak: 0.3 },
+    { fc, ratio: 3.7, deviation: fc * 6, modTau: 0.02, ampTau: 0.06, peak: 0.3 },
     opts,
   );
-  const anchor = sinePartial(shot, { freq: 200, tau: 0.1, peak: 0.35, delay: 0.03 }, opts);
+  sinePartial(shot, { freq: 200, tau: 0.1, peak: 0.3, delay: 0.03 }, opts);
+  const anchor = subLayer(shot, { freq: 80, tau: 0.14, peak: 0.32, delay: 0.03 }, opts);
   shot.finish(anchor, shot.t0 + 1);
 }
 
 /** A heavy door or gate moving. */
 export function doorThump(opts: SfxOpts = {}): void {
-  const shot = new Shot(opts);
+  const shot = new Shot({ reverb: 0.22, ...opts });
   noiseBurst(
     shot,
-    { kind: "brown", duration: 0.12, peak: 0.4, filter: { type: "lowpass", from: 300 } },
+    { kind: "brown", duration: 0.12, peak: 0.38, filter: { type: "lowpass", from: 300 } },
     opts,
   );
-  const anchor = sinePartial(shot, { freq: 70, tau: 0.25, peak: 0.4 }, opts);
+  sinePartial(shot, { freq: 55, tau: 0.25, peak: 0.36 }, opts);
+  const anchor = subLayer(shot, { freq: 32, tau: 0.32, peak: 0.5 }, opts);
   shot.finish(anchor, shot.t0 + 2.5);
 }
 
@@ -396,7 +519,7 @@ export function crunch(opts: SfxOpts = {}): void {
 
 /** A spell going off: three quick rising shimmer notes. */
 export function spellCast(opts: SfxOpts = {}): void {
-  const shot = new Shot(opts);
+  const shot = new Shot({ reverb: 0.25, ...opts });
   const base = jitter(300, 0.2);
   let anchor: AudioScheduledSourceNode | null = null;
   [1, 1.33, 1.78].forEach((mult, i) => {
@@ -430,7 +553,7 @@ export function spellMishap(opts: SfxOpts = {}): void {
 
 /** Level up: a rising four-note fanfare in perfect fourths. */
 export function levelUp(opts: SfxOpts = {}): void {
-  const shot = new Shot(opts);
+  const shot = new Shot({ reverb: 0.28, ...opts });
   const notes = [330, 440, 587, 784];
   let anchor: AudioScheduledSourceNode | null = null;
   notes.forEach((f, i) => {
@@ -444,8 +567,8 @@ export function levelUp(opts: SfxOpts = {}): void {
 
 /** A death: low FM bell. Undead get a dissonant ratio and a dry bone rattle. */
 export function deathKnell(undead: boolean, opts: SfxOpts = {}): void {
-  const shot = new Shot(opts);
-  const fc = jitter(110, 0.1);
+  const shot = new Shot({ reverb: 0.3, ...opts });
+  const fc = jitter(90, 0.1);
   const anchor = fmStrike(
     shot,
     {
@@ -458,6 +581,8 @@ export function deathKnell(undead: boolean, opts: SfxOpts = {}): void {
     },
     opts,
   );
+  // A slow driven sub under the bell — the toll you feel through the floor.
+  subLayer(shot, { freq: fc * 0.5, tau: 0.7, peak: 0.42 }, opts);
   if (undead) {
     for (let i = 0; i < 4; i++) {
       noiseBurst(

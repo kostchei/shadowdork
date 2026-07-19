@@ -35,6 +35,7 @@ declare global {
       context: typeof import("./audio/context");
       sfx: typeof import("./audio/sfx");
       ambience: typeof import("./audio/ambience");
+      voice: typeof import("./audio/voice");
     };
   }
 }
@@ -49,5 +50,6 @@ void (async () => {
     context: await import("./audio/context"),
     sfx: await import("./audio/sfx"),
     ambience: await import("./audio/ambience"),
+    voice: await import("./audio/voice"),
   };
 })();

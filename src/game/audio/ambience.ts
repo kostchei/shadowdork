@@ -5,7 +5,7 @@
  * drips) so nothing ever sounds like it's on a loop.
  */
 
-import { audioCtx, masterGain } from "./context";
+import { audioCtx, masterGain, reverbBus } from "./context";
 import { noiseSource, startNoise, type NoiseKind } from "./noise";
 import { waterPlink } from "./sfx";
 import type { DungeonTheme } from "../level/dungeons";
@@ -201,14 +201,24 @@ export function dripBed(opts: DripOpts = {}): AmbienceHandle {
   return bed;
 }
 
-/** Two barely detuned low sines beating against each other — wrongness drone. */
-export function droneBed(opts: { level?: number } = {}): AmbienceHandle {
+/**
+ * Two barely detuned low sines beating against each other — wrongness drone —
+ * over a sub-octave partner for cavernous weight. A slow reverb send opens the
+ * space up so it reads as a vast dark hollow rather than a tone in a vacuum.
+ */
+export function droneBed(opts: { level?: number; reverb?: number } = {}): AmbienceHandle {
   const bed = new Bed(opts.level ?? 0.035);
-  for (const f of [55, 55.7]) {
+  for (const f of [55, 55.7, 27.5]) {
     const osc = bed.own(bed.c.createOscillator());
     osc.frequency.value = f;
     osc.connect(bed.gain);
     osc.start();
+  }
+  const send = opts.reverb ?? 0;
+  if (send > 0) {
+    const wet = bed.own(bed.c.createGain());
+    wet.gain.value = send;
+    bed.gain.connect(wet).connect(reverbBus());
   }
   return bed;
 }
@@ -225,7 +235,7 @@ export function themeAmbience(backdrop: DungeonTheme["backdrop"]): AmbienceHandl
     case "eldritch-depths":
       return [
         windBed({ level: 0.05, cutoffBase: 450, cutoffSwing: 250, lfoHz: 0.07 }),
-        droneBed(),
+        droneBed({ reverb: 0.5 }),
       ];
   }
 }

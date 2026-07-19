@@ -213,14 +213,24 @@ browser: each of the 4 dungeons has a distinct bed; scene restart doesn't stack 
 left of a brazier → sound biased right; walk away → quieter *and* duller. Console-eval assertion:
 `panner.pan.value` sign matches dx.
 
-### Checkpoint 5 — Narrative voice (decision gate, not scheduled)
-The doc's §1 (Kokoro / Qwen3-TTS) needs a real decision before any work:
-- **(a) kokoro-js in-browser** — ~80 MB model download, WebGPU/WASM inference; real narration, heavy.
-- **(b) Offline pre-generation** — run a local TTS once, ship selected lines as static assets;
-  contradicts "no assets" but cheap at runtime.
-- **(c) Skip** — the `ctx.say` text log already narrates.
+### Checkpoint 5 — Narrative voice — DONE (wordless synthesis)
+Decision (2026-07-19): **wordless formant synthesis**, not real TTS. Rejected
+(a) kokoro-js (~80 MB download, adds a dep) and (b) pre-generated assets
+(contradicts "no assets"). Implemented in [voice.ts](../src/game/audio/voice.ts):
+a sawtooth glottal source through three parallel formant bandpasses (F1/F2/F3),
+enveloped per syllable; syllable count/vowels derive from the text (stable shape),
+pitch/timing jitter is `Math.random`. Wired to `ctx.say` via the `"message"`
+event in [Hud.ts](../src/game/scenes/Hud.ts) (throttled ~350 ms so combat-log
+bursts don't stack). Exposed on `window.__audio.voice`.
 
-Recommendation: (c) for now; revisit after 1–4 land. No implementation until the user picks.
+### Checkpoint 6 — Mix depth pass — DONE
+Fixed the thin "PC speaker" character. Master bus
+([context.ts](../src/game/audio/context.ts)) is now saturation (WaveShaper
+soft-clip) → low/high shelves → compressor, plus one shared procedural reverb
+(decaying-noise IR, no asset) on a send bus (`reverbBus()`). SFX gained a
+`transient()` bite on strikes and a driven `subLayer()` for felt low end;
+`whoosh`/`bowShot` widened out of the telephone band. `SfxOpts.reverb` adds a
+per-sound wet send. Tuning knobs live in those two files.
 
 ---
 

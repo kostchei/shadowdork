@@ -15,6 +15,7 @@ import { roomAtTolerant } from "../level/geometry";
 import { TILE } from "../textures";
 import type { DungeonScene } from "./Dungeon";
 import { SaveRepository } from "../SaveRepository";
+import { speak } from "../audio/voice";
 
 const UI_STYLE = {
   fontFamily: '"Trebuchet MS", Arial, sans-serif',
@@ -195,10 +196,21 @@ export class HudScene extends Phaser.Scene {
     this.ctx.events.on("levelup", (payload: { name: string; result: LevelUpResult }) =>
       this.levelUpCeremony(payload.name, payload.result),
     );
+    // Wordless narration: murmur the newest log line. Throttled so combat-log
+    // bursts don't stack a dozen overlapping voices.
+    let lastSpokeAt = -Infinity;
+    this.ctx.events.on("message", () => {
+      const msg = this.ctx.messages[this.ctx.messages.length - 1];
+      if (!msg) return;
+      if (this.time.now - lastSpokeAt < 350) return;
+      lastSpokeAt = this.time.now;
+      speak(msg.text, { gain: 0.5 });
+    });
     this.events.on(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.ctx.events.off("gameover");
       this.ctx.events.off("won");
       this.ctx.events.off("levelup");
+      this.ctx.events.off("message");
     });
 
     if (this.dungeon.awaitingStart) this.showStartOverlay(this.dungeon.party.leader.character);

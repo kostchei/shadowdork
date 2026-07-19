@@ -138,13 +138,26 @@ functions so they can be unit-tested for correct persisted state, and to shrink 
 - [x] Unit tests for every outcome's state transition and effect ordering
       (`tests/npcInteraction.test.ts`, 17 cases). Full suite green (258 passing).
 
-### Checkpoint B — Persist betrayal  `[ ]`
-- [ ] Persist spawned-ambusher state (or a `betrayalSpawned` flag) and restore on reload.
-- [ ] Save/reload test.
+### Checkpoint B — Persist betrayal  `[x]`
+- [x] No new schema needed: tile monsters already respawn from the grid on every load, so
+      the betrayal is persisted by `npcInteractionStates[id] === "resolved"`. `buildLevel`
+      now re-creates the ambusher (via shared `createBetrayalFoe`) for a resolved betrayer
+      instead of skipping it. Pure predicate `betrayalFoePersists` documents the rule.
+- [x] Tests: `betrayalFoePersists` unit cases (resolved-only, betrayal-only). Save round-trip
+      of `npcInteractionStates` is already covered by `SaveRepository.test.ts`. Full suite
+      green (270).
+- [ ] Not driven in the live preview: reaching the reload-after-betrayal path manually is
+      fragile (and the preview is known to freeze in a hidden tab). Verified by logic + tests.
 
-### Checkpoint C — Companion invariants  `[ ]`
-- [ ] Enforce party capacity + duplicate-class check before applying the NPC override.
-- [ ] Test duplicate-class and full-party cases.
+### Checkpoint C — Companion invariants  `[x]`
+- [x] Pure `chooseCompanionRecruit` (`systems/companion.ts`): prefers the eligible NPC, else
+      the reward default, then validates against `PARTY_CAP` and class uniqueness. An invalid
+      recruit is skipped outright (no silent class substitution) per the chosen behavior.
+- [x] `claimDungeonReward` consumes the decision: recruits on success, or grants a 500-gold
+      substitute with a capacity/duplicate message on skip. (Note: `missingCompanion` already
+      guarantees the *default* recruit is a missing class, so the override was the live risk.)
+- [x] Tests: `tests/companion.test.ts` (6 cases — recruit, fallback, duplicate-skip,
+      capacity-skip, precedence, fallback-validation). Full suite green (268).
 
 ### Checkpoint D — Transactional trade  `[x]`
 - [x] Added non-mutating `Inventory.canSwap(removeId, addDef)` evaluating the add against

@@ -45,6 +45,16 @@ export interface NpcInteractionInput {
   inventory: LeaderInventorySnapshot;
 }
 
+/**
+ * Whether rebuilding the level must re-spawn a betrayal ambusher for this NPC. The
+ * betrayer sprite is gone once resolved, but the fight they started is a persisted
+ * consequence — reloading re-creates the foe deterministically from this state
+ * rather than storing live monster positions.
+ */
+export function betrayalFoePersists(outcome: TalkableNpcSpec["outcome"], state: NpcInteractionState): boolean {
+  return state === "resolved" && outcome === "betrayal";
+}
+
 const RESOLUTION_COLOR = "#e8c878";
 const REPEAT_COLOR = "#c8b888";
 const SUCCESS_COLOR = "#d0e080";

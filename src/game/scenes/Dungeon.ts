@@ -48,7 +48,8 @@ import {
 } from "../level/dungeons";
 import { expandDungeon } from "../level/expand";
 import { generateAbstractDungeon, type GenerateOptions } from "../level/generate";
-import { resolveNpcInteraction, type NpcAction } from "../level/npcInteraction";
+import { betrayalFoePersists, resolveNpcInteraction, type NpcAction } from "../level/npcInteraction";
+import { chooseCompanionRecruit, type CompanionCandidate, type CompanionClass } from "../systems/companion";
 import type { TopologyId } from "../level/topology";
 import type { Orientation } from "../level/embedding";
 import { roomAt, roomAtTolerant } from "../level/geometry";
@@ -73,6 +74,8 @@ import {
  * or leaves reach, retaliation lapses.
  */
 const RETALIATE_WINDOW_MS = 4000;
+/** Gold granted when a companion vault reward cannot recruit (full or duplicate class). */
+const COMPANION_SUBSTITUTE_GOLD = 500;
 
 interface RescuableNpc {
   sprite: Phaser.GameObjects.Image;
@@ -787,7 +790,12 @@ export class DungeonScene extends Phaser.Scene {
 
   private addTalkableNpc(spec: TalkableNpcSpec, x: number, y: number): void {
     const state = this.npcInteractionStates.get(spec.id) ?? "unmet";
-    if (state === "resolved" && spec.outcome === "betrayal") return;
+    if (betrayalFoePersists(spec.outcome, state)) {
+      // The betrayer departed, but their ambush is a saved consequence: re-create
+      // the foe at their post instead of silently dropping it on reload.
+      this.createBetrayalFoe(x, y, spec.roomId);
+      return;
+    }
     if (
       state === "resolved" &&
       spec.outcome === "companion-eligible" &&
@@ -1587,20 +1595,30 @@ export class DungeonScene extends Phaser.Scene {
     return true;
   }
 
-  private spawnNpcBetrayal(npc: TalkableNpc): void {
+  /**
+   * Create an alerted betrayal ambusher and register it with morale + the monster
+   * list. Group/trap membership is added by the caller: live betrayals wire it up
+   * immediately, while reload-time spawns rely on buildLevel's post-pass.
+   */
+  private createBetrayalFoe(x: number, y: number, roomId: string): MonsterSprite {
     const foe = new MonsterSprite(
       this,
-      npc.sprite.x,
-      npc.sprite.y,
+      x,
+      y,
       monster(this.activeDungeon.encounterMonsterId),
-      npc.spec.roomId,
+      roomId,
       this.ctx.engine.dice,
     );
     this.morale.register(foe);
     this.monsters.push(foe);
+    foe.alert();
+    return foe;
+  }
+
+  private spawnNpcBetrayal(npc: TalkableNpc): void {
+    const foe = this.createBetrayalFoe(npc.sprite.x, npc.sprite.y, npc.spec.roomId);
     this.monsterGroup.add(foe);
     this.trapSystem.registerActor(foe);
-    foe.alert();
     npc.sprite.destroy();
     npc.marker.destroy();
     this.ctx.say(`${npc.spec.name}'s allies spring the ambush!`, "#d07070");
@@ -1618,24 +1636,44 @@ export class DungeonScene extends Phaser.Scene {
         npc.spec.companionClass &&
         this.npcInteractionStates.get(npc.spec.id) === "resolved",
       );
-      const companionClass = eligibleNpc?.spec.companionClass ?? reward.className;
-      const companionName = eligibleNpc?.spec.name ?? reward.name;
-      const recruit = this.spawnCharacter(
-        eligibleNpc ? `pc-${eligibleNpc.spec.id}` : `pc-${reward.className}`,
-        companionName,
-        companionClass,
-        this.rewardMarker.x,
-        this.rewardMarker.y,
-        eligibleNpc ? "neutral" : reward.alignment,
+      const npcCandidate: CompanionCandidate | null = eligibleNpc
+        ? {
+            id: `pc-${eligibleNpc.spec.id}`,
+            name: eligibleNpc.spec.name,
+            className: eligibleNpc.spec.companionClass!,
+            alignment: "neutral",
+            fromNpc: true,
+          }
+        : null;
+      const decision = chooseCompanionRecruit(
+        npcCandidate,
+        { id: `pc-${reward.className}`, name: reward.name, className: reward.className, alignment: reward.alignment, fromNpc: false },
+        { size: this.party.size, classes: this.party.members.map((member) => member.character.className as CompanionClass) },
       );
-      this.party.add(recruit);
-      this.partyGroup.add(recruit);
-      this.trapSystem.registerActor(recruit);
-      if (eligibleNpc) {
-        eligibleNpc.sprite.destroy();
-        eligibleNpc.marker.destroy();
+      if (decision.kind === "skip") {
+        this.grantGoldReward(COMPANION_SUBSTITUTE_GOLD);
+        message = decision.reason === "party-full"
+          ? `Four already march together — the recruit takes ${COMPANION_SUBSTITUTE_GOLD} gold and parts ways.`
+          : `A ${decision.className} already travels with you — the recruit leaves ${COMPANION_SUBSTITUTE_GOLD} gold instead.`;
+      } else {
+        const { candidate } = decision;
+        const recruit = this.spawnCharacter(
+          candidate.id,
+          candidate.name,
+          candidate.className,
+          this.rewardMarker.x,
+          this.rewardMarker.y,
+          candidate.alignment,
+        );
+        this.party.add(recruit);
+        this.partyGroup.add(recruit);
+        this.trapSystem.registerActor(recruit);
+        if (candidate.fromNpc && eligibleNpc) {
+          eligibleNpc.sprite.destroy();
+          eligibleNpc.marker.destroy();
+        }
+        message = `${candidate.name} joins the party and will travel to future dungeons! (${this.party.size}/4)`;
       }
-      message = `${companionName} joins the party and will travel to future dungeons! (${this.party.size}/4)`;
     } else if (reward.kind === "magic-weapon" || reward.kind === "magic-armor") {
       const def = item(reward.itemId);
       const recipients = [

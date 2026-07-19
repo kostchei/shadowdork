@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  betrayalFoePersists,
   resolveNpcInteraction,
   type LeaderInventorySnapshot,
   type NpcAction,
@@ -117,5 +118,19 @@ describe("resolveNpcInteraction — outcome effects", () => {
   it("spawns the ambush for betrayal", () => {
     const actions = run("betrayal", "heard");
     expect(actions).toContainEqual({ type: "spawn-betrayal" });
+  });
+});
+
+describe("betrayalFoePersists — reload reconstitution", () => {
+  it("re-spawns the foe only once a betrayal is resolved", () => {
+    expect(betrayalFoePersists("betrayal", "resolved")).toBe(true);
+    expect(betrayalFoePersists("betrayal", "heard")).toBe(false);
+    expect(betrayalFoePersists("betrayal", "unmet")).toBe(false);
+  });
+
+  it("never re-spawns a foe for non-betrayal outcomes", () => {
+    for (const outcome of ["give-torch", "warning", "trade", "reveal-route", "revelation", "companion-eligible"] as const) {
+      expect(betrayalFoePersists(outcome, "resolved")).toBe(false);
+    }
   });
 });

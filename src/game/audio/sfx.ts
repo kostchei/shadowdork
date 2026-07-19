@@ -9,6 +9,7 @@
 
 import { audioCtx, masterGain, reverbBus, saturationCurve } from "./context";
 import { noiseSource, startNoise, type NoiseKind } from "./noise";
+import type { WornArmorVisual } from "../entities/appearance";
 
 export interface SfxOpts {
   /** Linear gain multiplier (e.g. spatial distance attenuation). */
@@ -387,28 +388,181 @@ export function whoosh(opts: SfxOpts = {}): void {
 
 // ── Movement ──────────────────────────────────────────────────────────────────
 
-/** Boot on stone: grit burst + heel thud, per the doc's footstep recipe. */
-export function footstep(opts: SfxOpts = {}): void {
-  const shot = new Shot(opts);
+export interface FootstepOpts extends SfxOpts {
+  /** Which boot/armor is landing — picks the synthesis pathway. */
+  armor?: WornArmorVisual;
+  /** Full-detail foley (the party leader). Followers get the light recipe. */
+  full?: boolean;
+}
+
+/**
+ * Soft boot / barefoot on grit: a short gravel crunch, not a clicky tap. A
+ * brown-noise scrape settling underfoot, a scatter of tiny stone bits so it
+ * reads as crushed gravel, and a little heel weight underneath.
+ */
+function footLight(shot: Shot, opts: SfxOpts): AudioScheduledSourceNode {
+  // The crunch body: a low brown scrape, longer than a tick so the ear reads
+  // "grinding gravel" instead of "keystroke."
   noiseBurst(
     shot,
     {
-      kind: "pink",
-      duration: rand(0.04, 0.08),
-      peak: 0.08,
-      filter: { type: "lowpass", from: jitter(1100, 0.2) },
+      kind: "brown",
+      duration: rand(0.09, 0.14),
+      peak: 0.15,
+      filter: { type: "lowpass", from: jitter(650, 0.2) },
     },
     opts,
   );
-  sinePartial(shot, { freq: 60, tau: 0.045, peak: 0.18 }, opts);
-  // A touch of driven sub so boots land with body instead of a dry tick.
-  const anchor = subLayer(shot, { freq: 42, tau: 0.05, peak: 0.16 }, opts);
-  shot.finish(anchor, shot.t0 + 0.6);
+  // A handful of tiny staggered grit pieces fracturing under the sole.
+  const bits = 2 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < bits; i++) {
+    noiseBurst(
+      shot,
+      {
+        kind: "white",
+        duration: rand(0.004, 0.01),
+        peak: 0.045,
+        filter: { type: "highpass", from: 3500 },
+        delay: rand(0, 0.06),
+      },
+      opts,
+    );
+  }
+  sinePartial(shot, { freq: 55, tau: 0.05, peak: 0.12 }, opts);
+  return subLayer(shot, { freq: 40, tau: 0.05, peak: 0.1 }, opts);
+}
+
+/** Heavy platemail boot on stone and rubble: weight, settling gravel, steel ring. */
+function footPlate(shot: Shot, opts: SfxOpts): AudioScheduledSourceNode {
+  // Sub & bass impact — the heel and the weight behind it.
+  sinePartial(shot, { freq: 50, tau: 0.08, peak: 0.3 }, opts);
+  const heel = subLayer(shot, { freq: 38, tau: 0.12, peak: 0.42 }, opts);
+  // Stone/rubble crunch: sliding gravel settling underfoot.
+  noiseBurst(
+    shot,
+    { kind: "brown", duration: 0.28, peak: 0.2, filter: { type: "lowpass", from: 450 } },
+    opts,
+  );
+  // Rock pieces fracturing — a handful of tiny staggered high cracks.
+  const shards = 4 + Math.floor(Math.random() * 2);
+  for (let i = 0; i < shards; i++) {
+    noiseBurst(
+      shot,
+      {
+        kind: "white",
+        duration: rand(0.005, 0.012),
+        peak: 0.08,
+        filter: { type: "highpass", from: 4000 },
+        delay: rand(0, 0.15),
+      },
+      opts,
+    );
+  }
+  // Armor jangle & ring — two inharmonic metallic clinks (reverb send is on the shot).
+  fmStrike(
+    shot,
+    { fc: jitter(1800, 0.1), ratio: 1.47, deviation: 1800 * 3, modTau: 0.02, ampTau: 0.06, peak: 0.08, delay: rand(0, 0.03) },
+    opts,
+  );
+  fmStrike(
+    shot,
+    { fc: jitter(850, 0.1), ratio: 1.61, deviation: 850 * 3, modTau: 0.03, ampTau: 0.06, peak: 0.07, delay: rand(0, 0.05) },
+    opts,
+  );
+  return heel; // the sub rings longest → it anchors cleanup
+}
+
+/** Chain/mithral: a moderate thud under a bright ripple of mail links. */
+function footChain(shot: Shot, opts: SfxOpts): AudioScheduledSourceNode {
+  sinePartial(shot, { freq: 60, tau: 0.06, peak: 0.24 }, opts);
+  const heel = subLayer(shot, { freq: 45, tau: 0.06, peak: 0.28 }, opts);
+  noiseBurst(
+    shot,
+    { kind: "pink", duration: 0.12, peak: 0.13, filter: { type: "lowpass", from: 2000 } },
+    opts,
+  );
+  const links = 3 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < links; i++) {
+    sinePartial(shot, { freq: rand(1200, 2500), tau: 0.02, peak: 0.05, delay: rand(0, 0.08) }, opts);
+  }
+  return heel;
+}
+
+/**
+ * A footstep, synthesized per armor type. Only the leader (`full`) gets the
+ * heavy plate/mail foley; followers fall back to the light recipe so a marching
+ * party doesn't pile into mud.
+ */
+export function footstep(opts: FootstepOpts = {}): void {
+  const armor: WornArmorVisual = opts.full ? opts.armor ?? "unarmored" : "unarmored";
+  const reverb = armor === "plate" ? 0.15 : armor === "chain" || armor === "mithral" ? 0.08 : 0;
+  const shot = new Shot({ reverb, ...opts });
+  const anchor =
+    armor === "plate"
+      ? footPlate(shot, opts)
+      : armor === "chain" || armor === "mithral"
+        ? footChain(shot, opts)
+        : footLight(shot, opts);
+  shot.finish(anchor, shot.t0 + 1.6);
 }
 
 /** A hard landing after a real drop. */
 export function landThud(opts: SfxOpts = {}): void {
   thud({ ...opts, gain: (opts.gain ?? 1) * 0.8 });
+}
+
+/**
+ * Boots hitting the ground out of a jump — a heftier gravel crunch than a
+ * stride, with more stone bits and a little more heel weight. Fires on every
+ * real landing (the heavy landThud stacks on top only for damaging falls).
+ */
+export function landCrunch(opts: SfxOpts = {}): void {
+  const shot = new Shot({ reverb: 0.06, ...opts });
+  noiseBurst(
+    shot,
+    {
+      kind: "brown",
+      duration: rand(0.12, 0.18),
+      peak: 0.24,
+      filter: { type: "lowpass", from: jitter(550, 0.2) },
+    },
+    opts,
+  );
+  const bits = 4 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < bits; i++) {
+    noiseBurst(
+      shot,
+      {
+        kind: "white",
+        duration: rand(0.005, 0.012),
+        peak: 0.08,
+        filter: { type: "highpass", from: 3000 },
+        delay: rand(0, 0.08),
+      },
+      opts,
+    );
+  }
+  sinePartial(shot, { freq: 55, tau: 0.07, peak: 0.22 }, opts);
+  const anchor = subLayer(shot, { freq: 40, tau: 0.09, peak: 0.24 }, opts);
+  shot.finish(anchor, shot.t0 + 1);
+}
+
+/** Feather Fall touching down: an airy hush and a small rising glassy tone. */
+export function featherLand(opts: SfxOpts = {}): void {
+  const shot = new Shot({ reverb: 0.2, ...opts });
+  noiseBurst(
+    shot,
+    {
+      kind: "pink",
+      duration: 0.24,
+      peak: 0.08,
+      filter: { type: "highpass", from: 900, to: 1800 },
+    },
+    opts,
+  );
+  sinePartial(shot, { freq: 390, glideTo: 1.18, tau: 0.12, peak: 0.07 }, opts);
+  const anchor = sinePartial(shot, { freq: 620, glideTo: 1.12, tau: 0.18, peak: 0.045 }, opts);
+  shot.finish(anchor, shot.t0 + 1.2);
 }
 
 // ── Water ─────────────────────────────────────────────────────────────────────

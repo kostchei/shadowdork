@@ -11,6 +11,20 @@ export type Stats = Record<StatName, number>;
 
 export type ClassName = "fighter" | "thief" | "priest" | "wizard";
 export type Alignment = "law" | "neutral" | "chaos";
+export type VoiceRegister = "low" | "medium" | "high";
+
+const VOICE_REGISTERS: readonly VoiceRegister[] = ["low", "medium", "high"];
+
+/** Stable cosmetic assignment that never consumes the rules engine's dice. */
+export function voiceRegisterForIdentity(id: string, name: string): VoiceRegister {
+  const identity = `${id}\0${name}`;
+  let hash = 2166136261;
+  for (let i = 0; i < identity.length; i++) {
+    hash ^= identity.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return VOICE_REGISTERS[(hash >>> 0) % VOICE_REGISTERS.length]!;
+}
 
 const TITLES: Record<ClassName, Record<Alignment, readonly string[]>> = {
   fighter: {
@@ -100,6 +114,7 @@ export interface CharacterInit {
   maxHp: number;
   alignment?: Alignment;
   ancestry?: string;
+  voiceRegister?: VoiceRegister;
 }
 
 export class Character {
@@ -109,6 +124,7 @@ export class Character {
   readonly alignment: Alignment;
   readonly stats: Stats;
   readonly ancestry: string;
+  readonly voiceRegister: VoiceRegister;
 
   level = 1;
   xp = 0;
@@ -143,6 +159,7 @@ export class Character {
     this.alignment = init.alignment ?? "neutral";
     this.stats = { ...init.stats };
     this.ancestry = init.ancestry ?? "human";
+    this.voiceRegister = init.voiceRegister ?? voiceRegisterForIdentity(init.id, init.name);
     for (const s of STAT_NAMES) statModifier(this.stats[s]); // validate
     this.baseMaxHp = init.maxHp;
     this.hp = this.maxHp;

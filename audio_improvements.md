@@ -1,5 +1,13 @@
 # Upgrade Procedural Footsteps & Modulate Background Ambience
 
+> **Status (2026-07-19): IMPLEMENTED.** Armor-aware footsteps + drone LFO swell
+> are live. Decision: **leader-only heavy** — only the party leader gets the full
+> plate/mail foley (`footstep({ full: true, armor })`); followers use the light
+> recipe so a marching party stays clean. `armor` is a dedicated `FootstepOpts`
+> field (not on the shared `SfxOpts`). Persistent ambience sources now stop after
+> fade-out, Feather Fall has a soft landing cue, and each character has a saved
+> low/medium/high voice register shown in stats. Manual listening signoff remains.
+
 This plan upgrades the footstep synthesis to reflect armor types (specifically a heavy platemail boot crunching rubble) and implements dynamic modulation of the low-frequency background ambience so that the deep "thundering" drone comes and goes over time. Sound effects will feature longer, lingering decay tails that naturally overlap to create a dense, cinematic acoustic landscape.
 
 ## User Review Required

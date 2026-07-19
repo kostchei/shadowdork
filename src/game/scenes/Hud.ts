@@ -662,9 +662,10 @@ export class HudScene extends Phaser.Scene {
 
     const xpVal = c.level >= MAX_LEVEL ? "MAX" : `${c.xp}/${xpToNextLevel(c.level)}`;
     const secondaryDetails = 
-      `HP : ${c.hp} / ${c.maxHp}\n\n` +
-      `AC : ${c.ac}\n\n` +
-      `XP : ${xpVal}`;
+      `HP : ${c.hp} / ${c.maxHp}\n` +
+      `AC : ${c.ac}\n` +
+      `XP : ${xpVal}\n` +
+      `VOICE : ${c.voiceRegister.toUpperCase()}`;
 
     const secondaryText = this.add.text(w / 2 - 140, h / 2 + 40, secondaryDetails, {
       ...DATA_STYLE,

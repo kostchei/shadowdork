@@ -3,7 +3,7 @@ import { expInterval } from "../src/game/audio/ambience";
 import { brownNoise, pinkNoise, whiteNoise } from "../src/game/audio/noise";
 import { cutoffFor, distanceTaper, gainFor, panFor, spatialOpts } from "../src/game/audio/spatial";
 import { reverbImpulse, saturationCurve } from "../src/game/audio/context";
-import { VOWELS, syllableCount } from "../src/game/audio/voice";
+import { pitchForVoiceRegister, VOWELS, syllableCount } from "../src/game/audio/voice";
 
 const N = 16384;
 
@@ -148,6 +148,15 @@ describe("master bus math", () => {
 });
 
 describe("wordless voice", () => {
+  it("uses three close but ordered character voice registers", () => {
+    const low = pitchForVoiceRegister("low");
+    const medium = pitchForVoiceRegister("medium");
+    const high = pitchForVoiceRegister("high");
+    expect(low).toBeLessThan(medium);
+    expect(medium).toBeLessThan(high);
+    expect((high - low) / medium).toBeLessThan(0.12);
+  });
+
   it("maps text length to a short, capped syllable run", () => {
     expect(syllableCount("")).toBe(0);
     expect(syllableCount("   ")).toBe(0);

@@ -49,9 +49,11 @@ class Bed implements AmbienceHandle {
   readonly c = audioCtx();
   readonly gain: GainNode;
   private readonly nodes: AudioNode[] = [];
+  private readonly sources: AudioScheduledSourceNode[] = [];
   private readonly cancels: (() => void)[] = [];
   private readonly baseLevel: number;
   private levelScale = 1;
+  private destroyed = false;
 
   constructor(baseLevel: number) {
     this.baseLevel = baseLevel;
@@ -67,13 +69,19 @@ class Bed implements AmbienceHandle {
     return node;
   }
 
+  ownSource<T extends AudioScheduledSourceNode>(source: T): T {
+    this.sources.push(source);
+    this.nodes.push(source);
+    return source;
+  }
+
   ownTimer(cancel: () => void): void {
     this.cancels.push(cancel);
   }
 
   /** A looped noise layer through an optional filter, into the bed gain. */
   loopedNoise(kind: NoiseKind, build?: (head: AudioNode) => AudioNode): AudioBufferSourceNode {
-    const src = this.own(noiseSource(kind, { loop: true }));
+    const src = this.ownSource(noiseSource(kind, { loop: true }));
     const tail = build ? build(src) : src;
     tail.connect(this.gain);
     startNoise(src);
@@ -90,10 +98,15 @@ class Bed implements AmbienceHandle {
   }
 
   destroy(): void {
+    if (this.destroyed) return;
+    this.destroyed = true;
     for (const cancel of this.cancels) cancel();
     const t = this.c.currentTime;
     this.gain.gain.cancelScheduledValues(t);
     this.gain.gain.setTargetAtTime(0, t, FADE_S / 4);
+    // Scheduled source nodes retain themselves while running. Stop them at the
+    // end of the fade rather than merely disconnecting an immortal source graph.
+    for (const source of this.sources) source.stop(t + FADE_S);
     window.setTimeout(() => {
       for (const n of this.nodes) n.disconnect();
     }, FADE_S * 1000);
@@ -120,7 +133,7 @@ export function windBed(opts: WindOpts = {}): AmbienceHandle {
     const lpf = bed.own(bed.c.createBiquadFilter());
     lpf.type = "lowpass";
     lpf.frequency.value = base;
-    const lfo = bed.own(bed.c.createOscillator());
+    const lfo = bed.ownSource(bed.c.createOscillator());
     lfo.frequency.value = opts.lfoHz ?? 0.13;
     const depth = bed.own(bed.c.createGain());
     depth.gain.value = swing;
@@ -203,15 +216,30 @@ export function dripBed(opts: DripOpts = {}): AmbienceHandle {
 
 /**
  * Two barely detuned low sines beating against each other — wrongness drone —
- * over a sub-octave partner for cavernous weight. A slow reverb send opens the
- * space up so it reads as a vast dark hollow rather than a tone in a vacuum.
+ * over a sub-octave partner for cavernous weight. A very slow LFO swells the
+ * whole drone up and back down to near-silence over ~83 s, so the thundering
+ * atmosphere comes and goes instead of fatiguing as a constant hum. A slow
+ * reverb send opens the space into a vast dark hollow.
  */
-export function droneBed(opts: { level?: number; reverb?: number } = {}): AmbienceHandle {
+export function droneBed(opts: { level?: number; reverb?: number; lfoHz?: number } = {}): AmbienceHandle {
   const bed = new Bed(opts.level ?? 0.035);
+
+  // Swell stage the oscillators pass through; LFO (±1) × depth around baseline 1
+  // sweeps it 0…2 over the cycle — full thunder at the crest, silence at the trough.
+  const swell = bed.own(bed.c.createGain());
+  swell.gain.value = 1;
+  const lfo = bed.ownSource(bed.c.createOscillator());
+  lfo.frequency.value = opts.lfoHz ?? 0.012; // ~83 s period
+  const depth = bed.own(bed.c.createGain());
+  depth.gain.value = 1;
+  lfo.connect(depth).connect(swell.gain);
+  lfo.start();
+  swell.connect(bed.gain);
+
   for (const f of [55, 55.7, 27.5]) {
-    const osc = bed.own(bed.c.createOscillator());
+    const osc = bed.ownSource(bed.c.createOscillator());
     osc.frequency.value = f;
-    osc.connect(bed.gain);
+    osc.connect(swell);
     osc.start();
   }
   const send = opts.reverb ?? 0;
@@ -233,9 +261,9 @@ export function themeAmbience(backdrop: DungeonTheme["backdrop"]): AmbienceHandl
     case "natural-caverns":
       return [windBed({ level: 0.025, cutoffBase: 700, cutoffSwing: 400 }), dripBed({ meanMs: 2500 })];
     case "eldritch-depths":
-      return [
-        windBed({ level: 0.05, cutoffBase: 450, cutoffSwing: 250, lfoHz: 0.07 }),
-        droneBed({ reverb: 0.5 }),
-      ];
+      // A single bed, not two. The swelling drone comes and goes on its own slow
+      // LFO, so it reads as one living atmosphere instead of a constant wind bed
+      // and a constant thunder bed fighting for the same air.
+      return [droneBed({ reverb: 0.5 })];
   }
 }

@@ -6,6 +6,7 @@ import type {
   Engine,
   KnownSpell,
   Stats,
+  VoiceRegister,
 } from "../engine";
 import { Character as EngineCharacter } from "../engine";
 import { item } from "../data";
@@ -22,6 +23,8 @@ export interface SavedCharacter {
   /** Optional for backward compatibility with saves created before character identity data. */
   alignment?: Alignment;
   ancestry?: string;
+  /** Optional for backward compatibility with saves created before character voices. */
+  voiceRegister?: VoiceRegister;
   stats: Stats;
   level: number;
   xp: number;
@@ -77,6 +80,7 @@ export function serializeCharacter(c: Character): SavedCharacter {
     className: c.className,
     alignment: c.alignment,
     ancestry: c.ancestry,
+    voiceRegister: c.voiceRegister,
     stats: c.stats,
     level: c.level,
     xp: c.xp,
@@ -102,6 +106,7 @@ export function deserializeCharacter(state: SavedCharacter, engine: Engine): Cha
     className: state.className as any,
     alignment: state.alignment ?? "neutral",
     ancestry: state.ancestry ?? "human",
+    voiceRegister: state.voiceRegister,
     stats: state.stats,
     maxHp: state.hp, // Set initial hp to prevent maxHp calculation issues during init
   });

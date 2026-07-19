@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Engine } from "../src/engine";
+import { Engine, voiceRegisterForIdentity } from "../src/engine";
 import { createCharacter, item, registerTables } from "../src/data";
 import { serializeCharacter, deserializeCharacter } from "../src/game/state";
 
@@ -10,6 +10,14 @@ function makeEngine(seed = 42): Engine {
 }
 
 describe("Save slots / serialization", () => {
+  it("assigns all three voice registers deterministically from identity", () => {
+    const registers = new Set(
+      Array.from({ length: 30 }, (_, index) => voiceRegisterForIdentity(`id-${index}`, `Pleb ${index}`)),
+    );
+    expect(registers).toEqual(new Set(["low", "medium", "high"]));
+    expect(voiceRegisterForIdentity("same", "Mara")).toBe(voiceRegisterForIdentity("same", "Mara"));
+  });
+
   it("serializes and deserializes character state exactly", () => {
     const engine1 = makeEngine();
     
@@ -35,6 +43,7 @@ describe("Save slots / serialization", () => {
     expect(serialized.className).toBe("thief");
     expect(serialized.alignment).toBe(thief.alignment);
     expect(serialized.ancestry).toBe(thief.ancestry);
+    expect(serialized.voiceRegister).toBe(thief.voiceRegister);
     expect(serialized.hp).toBe(3);
     expect(serialized.wornArmorId).toBe("leather-armor");
     expect(serialized.wieldedWeaponId).toBe("dagger");
@@ -49,6 +58,7 @@ describe("Save slots / serialization", () => {
     expect(restored.className).toBe("thief");
     expect(restored.alignment).toBe(thief.alignment);
     expect(restored.ancestry).toBe(thief.ancestry);
+    expect(restored.voiceRegister).toBe(thief.voiceRegister);
     expect(restored.level).toBe(1);
     expect(restored.xp).toBe(5);
     expect(restored.hp).toBe(3);
@@ -64,6 +74,18 @@ describe("Save slots / serialization", () => {
     // Check equipped gear
     expect(restored.wornArmor?.id).toBe("leather-armor");
     expect(restored.weapon.id).toBe("dagger");
+  });
+
+  it("derives a stable voice register for legacy saves without one", () => {
+    const engine = makeEngine();
+    const character = createCharacter(engine, "legacy", "Mara", "fighter");
+    const saved = serializeCharacter(character);
+    delete saved.voiceRegister;
+
+    const first = deserializeCharacter(saved, engine);
+    const second = deserializeCharacter(saved, makeEngine());
+    expect(["low", "medium", "high"]).toContain(first.voiceRegister);
+    expect(second.voiceRegister).toBe(first.voiceRegister);
   });
 
   it("handles deceased character state serialization", () => {

@@ -10,7 +10,8 @@ import { classDef, type ClassDef } from "../../data";
 import type { GameContext } from "../context";
 import type { MonsterSprite } from "./MonsterSprite";
 import { crackleBed, type AmbienceHandle } from "../audio/ambience";
-import { footstep, landThud } from "../audio/sfx";
+import { featherLand, footstep, landThud, landCrunch } from "../audio/sfx";
+import { grunt } from "../audio/voice";
 import { floatText } from "../systems/combat";
 import { flameFollowing } from "../fx/vfx";
 import type { LightSystem } from "../systems/light";
@@ -187,6 +188,7 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
     if (this.grounded) this.lastGroundedAt = now;
     if (now - this.lastGroundedAt <= COYOTE_MS) {
       this.setVelocityY(JUMP_VELOCITY);
+      if (this.isLeader) grunt({ register: this.character.voiceRegister });
       this.lastGroundedAt = -Infinity;
       this.lastJumpPressedAt = -Infinity;
       return true;
@@ -201,6 +203,7 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
       this.lastGroundedAt = now;
       if (now - this.lastJumpPressedAt <= JUMP_BUFFER_MS) {
         this.setVelocityY(JUMP_VELOCITY);
+        if (this.isLeader) grunt({ register: this.character.voiceRegister });
         this.lastJumpPressedAt = -Infinity;
         this.lastGroundedAt = -Infinity;
       }
@@ -243,10 +246,16 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
       if (isMoving && this.grounded) {
         this.play(`${this.appearanceKey}-walk`, true);
         // Boots on stone: one grit-burst per stride, quieter for followers.
+        // Only the leader gets the heavy armor-specific foley (full: true).
         this.stepAccum += Math.abs(this.x - this.prevStepX);
-        if (this.stepAccum > TILE * 0.9) {
+        // A longer stride between crunches — a walking pace, not a typewriter.
+        if (this.stepAccum > TILE * 1.35) {
           this.stepAccum = 0;
-          footstep({ gain: this.isLeader ? 1 : 0.3 });
+          footstep({
+            gain: this.isLeader ? 1 : 0.3,
+            armor: this.character.wornArmor?.armorVisual ?? "unarmored",
+            full: this.isLeader,
+          });
         }
       } else {
         this.stepAccum = 0;
@@ -329,14 +338,19 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
     if (this.fallPeakY === null) return;
     const tilesFallen = (this.y - this.fallPeakY) / TILE;
     this.fallPeakY = null;
-    if (tilesFallen <= SAFE_FALL_TILES) return;
+    if (tilesFallen <= SAFE_FALL_TILES) {
+      if (tilesFallen > 0.4 && this.isLeader) landCrunch();
+      return;
+    }
     if (this.character.effects.some((effect) => effect.id === "spell-feather-fall")) {
       this.character.removeEffect("spell-feather-fall");
-      landThud();
+      featherLand({ gain: this.isLeader ? 1 : 0.3 });
       floatText(this.scene, this.x, this.y - 16, "FEATHER FALL", "#a7d8ff");
       this.ctx.say(`${this.character.name} drifts safely to the ground.`, "#a7d8ff");
       return;
     }
+    // A damaging landing gets both settling rubble and the existing hard impact.
+    if (this.isLeader) landCrunch();
     const diceCount = Math.max(1, Math.floor((tilesFallen - SAFE_FALL_TILES) / TILES_PER_FALL_DIE) + 1);
     const dmg = this.ctx.engine.dice.roll(`${diceCount}d6`);
     landThud();

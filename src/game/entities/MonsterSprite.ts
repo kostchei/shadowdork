@@ -2,6 +2,8 @@
 
 import Phaser from "phaser";
 import type { Dice, MonsterDef } from "../../engine";
+import type { LightSystem } from "../systems/light";
+import { projectShadow } from "../systems/shadows";
 
 export type MonsterAiState = "patrol" | "aggro" | "fleeing";
 
@@ -64,10 +66,17 @@ export class MonsterSprite extends Phaser.Physics.Arcade.Sprite {
     return this.scene.time.now < this.asleepUntil;
   }
 
+  /** Project the ground shadow away from the nearest light. */
+  updateShadow(light: LightSystem): void {
+    if (!this.active) return;
+    projectShadow(this.shadow, this.x, this.y + this.displayHeight * 0.42, light.nearestLight(this.x, this.y), {
+      baseScaleX: this.def.id === "gloom-ogre" ? 1.45 : 0.8,
+      baseAlpha: 0.62,
+    });
+  }
+
   updateAi(delta: number, target: { x: number; y: number } | null): void {
     this.attackCooldown = Math.max(0, this.attackCooldown - delta);
-    this.shadow.setPosition(this.x, this.y + this.displayHeight * 0.42);
-    this.shadow.setScale(this.def.id === "gloom-ogre" ? 1.45 : 0.8, 1);
     const body = this.body as Phaser.Physics.Arcade.Body;
 
     if (this.isSleeping) {

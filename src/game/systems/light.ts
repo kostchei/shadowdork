@@ -163,6 +163,27 @@ export class LightSystem {
     return best;
   }
 
+  /**
+   * The closest real (non-dim) light to a point — the "sun" that casts its
+   * shadow. Dark-adapted self-glow doesn't count; it lights nothing. Returns
+   * null when nothing but darkness is in range.
+   */
+  nearestLight(x: number, y: number): { x: number; y: number; radius: number } | null {
+    let best: { x: number; y: number; radius: number } | null = null;
+    let bestDist = Infinity;
+    for (const s of this.sources.values()) {
+      if (s.dim === true) continue;
+      const pos = s.position();
+      if (!pos) continue;
+      const d = Phaser.Math.Distance.Between(x, y, pos.x, pos.y);
+      if (d < bestDist) {
+        bestDist = d;
+        best = { x: pos.x, y: pos.y, radius: s.radius };
+      }
+    }
+    return best;
+  }
+
   update(): void {
     const cam = this.scene.cameras.main;
     // World-to-texture: the textures are drawn at device resolution, so

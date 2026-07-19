@@ -35,6 +35,7 @@ import {
 } from "../systems/combat";
 import { EncounterSystem } from "../systems/encounters";
 import { CAMPFIRE_RADIUS, LightSystem } from "../systems/light";
+import { ShadowSystem } from "../systems/shadows";
 import { PartyManager } from "../systems/party";
 import { CLOSE_PX, FAR_PX, zoneBetween } from "../systems/position";
 import { castSelectedSpell, type SpellDeps } from "../systems/spells";
@@ -137,6 +138,7 @@ export class DungeonScene extends Phaser.Scene {
   ctx!: GameContext;
   party!: PartyManager;
   light!: LightSystem;
+  shadows!: ShadowSystem;
   activeDungeon!: DungeonDefinition;
   visualSkin?: VisualSkin;
   private environmentTextures!: EnvironmentTextureKeys;
@@ -334,6 +336,7 @@ export class DungeonScene extends Phaser.Scene {
         ? 0.28
         : 0.84,
     );
+    this.shadows = new ShadowSystem(this, this.light);
     this.startSurvivalTimer();
 
     this.buildLevel();
@@ -934,6 +937,14 @@ export class DungeonScene extends Phaser.Scene {
               .setAlpha(0.13)
               .setDepth(4);
             this.campfires.push({ x: px, y: py, free: ch === "F" });
+            // Deep prop: a fixed self-shadow that doesn't swing with the light.
+            this.shadows.register({
+              position: () => ({ x: px, y: py }),
+              kind: "deep",
+              footOffset: TILE / 2 - 2,
+              depth: 4,
+              options: { baseScaleX: 1.3, baseAlpha: 0.45 },
+            });
             this.light.addSource(CAMPFIRE_RADIUS, () => ({ x: px, y: py }), {
               tint: 0xe0a868,
               tintAlpha: 0.45,
@@ -950,10 +961,24 @@ export class DungeonScene extends Phaser.Scene {
           case "h": {
             this.add.image(px, py + 2, "shrine").setDepth(5);
             this.shrines.push({ x: px, y: py });
+            this.shadows.register({
+              position: () => ({ x: px, y: py }),
+              kind: "deep",
+              footOffset: TILE / 2 - 2,
+              depth: 4,
+              options: { baseScaleX: 1.1, baseAlpha: 0.45 },
+            });
             break;
           }
           case "b": {
             const brazier = this.add.image(px, py + 3, "brazier").setDepth(5);
+            this.shadows.register({
+              position: () => ({ x: px, y: py }),
+              kind: "deep",
+              footOffset: TILE / 2 - 2,
+              depth: 4,
+              options: { baseScaleX: 1.0, baseAlpha: 0.45 },
+            });
             this.add
               .image(px, py - 9, "light-radial")
               .setScale(0.6)
@@ -1114,6 +1139,13 @@ export class DungeonScene extends Phaser.Scene {
       resolution: RENDER_SCALE,
     }).setOrigin(0.5).setDepth(10);
     this.talkableNpcs.push({ spec, sprite, marker });
+    this.shadows.register({
+      position: () => (sprite.active ? { x: sprite.x, y: sprite.y } : null),
+      kind: "cast",
+      footOffset: 15,
+      depth: 7,
+      options: { baseScaleX: 0.9, baseAlpha: 0.6 },
+    });
   }
 
   private addPickup(x: number, y: number, itemId: string, qty: number): void {
@@ -1131,6 +1163,14 @@ export class DungeonScene extends Phaser.Scene {
     this.physics.add.collider(sprite, this.walls);
     this.pickups.push({ sprite, itemId, qty });
     if (this.trapSystem) this.trapSystem.registerActor(sprite);
+    // Small, flat, movable: a torch-driven cast shadow, gone when collected.
+    this.shadows.register({
+      position: () => (sprite.active ? { x: sprite.x, y: sprite.y } : null),
+      kind: "cast",
+      footOffset: 11,
+      depth: 5,
+      options: { baseScaleX: 0.7, baseAlpha: 0.5 },
+    });
   }
 
   private addRewardMarker(x: number, y: number): void {
@@ -1154,6 +1194,14 @@ export class DungeonScene extends Phaser.Scene {
       ease: "Sine.inOut",
     });
     this.rewardMarker = { x, y, sprite };
+    // Marker hovers, but its shadow stays pooled on the floor and leans with the torch.
+    this.shadows.register({
+      position: () => (sprite.active ? { x, y } : null),
+      kind: "cast",
+      footOffset: 16,
+      depth: 7,
+      options: { baseScaleX: 0.85, baseAlpha: 0.55 },
+    });
   }
 
   private setupInput(): void {
@@ -1241,6 +1289,10 @@ export class DungeonScene extends Phaser.Scene {
     this.updateDying();
     this.updatePartyCombat(time);
     for (const m of this.party.members) m.tick(delta);
+    // Cast shadows follow the nearest light — projected after movement settles.
+    for (const m of this.party.members) m.updateShadow(this.light);
+    for (const m of this.monsters) m.updateShadow(this.light);
+    this.shadows.update();
     this.light.setDarknessAlpha(
       this.environmentTextures.openSky
         && this.openSkyDaytime

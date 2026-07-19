@@ -296,7 +296,8 @@ export class HudScene extends Phaser.Scene {
         365,
         "A/D or ←/→  MOVE    W/↑/SPACE  JUMP    J/X/CTRL  ATTACK    K  CAST\n" +
           "E  INTERACT    T  TORCH    Q  NEXT SPELL    TAB/1-4  LEADER\n" +
-          "C  STATS    I  GEAR    H  HOLD/FOLLOW    ESC  PAUSE",
+          "C  STATS    I  GEAR    H  HOLD/FOLLOW    ESC  PAUSE\n" +
+          "TIP: THE TORCH STAYS WITH WHOEVER LIGHTS IT — SWAP TO A MEMBER (TAB/1-4), PRESS T, THEN SWAP BACK",
         { ...DATA_STYLE, fontSize: "11px", lineSpacing: 5 },
       ),
       this.add
@@ -577,7 +578,8 @@ export class HudScene extends Phaser.Scene {
       "A/D or Arrows : Move Left/Right  |  W/Space : Jump\n" +
       "J / X / Left Ctrl : Melee Attack  |  K : Cast Spell\n" +
       "E : Interact  |  T : Light Torch  |  H : Toggle Hold/Follow\n" +
-      "C : Stats  |  I : Gear/Inventory  |  M : Mute Sound", {
+      "C : Stats  |  I : Gear/Inventory  |  M : Mute Sound\n" +
+      "Torch stays with whoever lights it — swap to a member (TAB/1-4), press T, swap back", {
       ...DATA_STYLE,
       fontSize: "9px",
       align: "center",

@@ -16,6 +16,7 @@ import { floatText } from "../systems/combat";
 import { flameFollowing } from "../fx/vfx";
 import type { LightSystem } from "../systems/light";
 import { DARK_SIGHT_TINT, SELF_GLOW_RADIUS } from "../systems/light";
+import { projectShadow } from "../systems/shadows";
 import { ensureCharacterAppearance, TILE } from "../textures";
 import { appearanceForCharacter, characterAppearanceKey } from "./appearance";
 
@@ -103,6 +104,21 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
 
   get alive(): boolean {
     return !this.character.dead && !this.character.dying;
+  }
+
+  /**
+   * Project this member's ground shadow away from the nearest light. Hidden
+   * while hanging from a ledge or dead; otherwise leans with the torch.
+   */
+  updateShadow(light: LightSystem): void {
+    if (this.ledgeGrabState || this.character.dead) {
+      this.shadow.setVisible(false);
+      return;
+    }
+    this.shadow.setVisible(true);
+    projectShadow(this.shadow, this.x, this.y + 15, light.nearestLight(this.x, this.y), {
+      baseAlpha: 0.72,
+    });
   }
 
   get speed(): number {
@@ -216,19 +232,14 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
       this.setVelocity(0, 0);
       (this.body as Phaser.Physics.Arcade.Body).allowGravity = false;
       this.play(`${this.appearanceKey}-idle`, true);
-      this.shadow.setVisible(false);
       return;
     }
     if (this.bracing) {
       this.setVelocityX(0);
       this.play(`${this.appearanceKey}-brace`, true);
-      this.shadow.setPosition(this.x, this.y + 15).setVisible(true);
       return;
     }
     this.trackFalling();
-    this.shadow.setPosition(this.x, this.y + 15).setVisible(!this.character.dead);
-    const speedRatio = Math.min(1, Math.abs(this.body?.velocity.x ?? 0) / this.speed);
-    this.shadow.setScale(1 - speedRatio * 0.12, 1);
     if (this.character.dying) {
       this.setVelocityX(0);
       this.setTint(0x884444);

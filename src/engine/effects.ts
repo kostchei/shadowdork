@@ -11,6 +11,7 @@ export type CheckKind =
   | "spellcast"
   | "initiative"
   | "morale"
+  | "stealth"
   | "stat" // generic ability check (climb, disarm, stabilize...)
   | "any";
 

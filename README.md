@@ -15,6 +15,8 @@ a fresh expedition in the next generated dungeon.
 Design docs: [Shadowdork.md](Shadowdork.md) (game design),
 [docs/five-room-dungeons.md](docs/five-room-dungeons.md) (level-design bible:
 room-variant library, order shuffles, 2D layout patterns),
+[docs/mobile-playability-plan.md](docs/mobile-playability-plan.md) (mobile-web
+input architecture, touch UI, lifecycle, performance, and release criteria),
 [docs/game-improvement-plan.md](docs/game-improvement-plan.md) (implemented
 presentation/replay plan and next phases),
 [the rules-engine doc](<Shadowdark Backend Rules Engine — Design Requirements.md>)

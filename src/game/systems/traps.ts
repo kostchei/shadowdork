@@ -110,6 +110,8 @@ interface CollapsingFloorRuntime {
 type PhysicsActor = Phaser.Physics.Arcade.Sprite | Phaser.Physics.Arcade.Image;
 
 export class TrapSystem {
+  onDisarmedCoins?: (x: number, y: number) => void;
+
   private readonly scene: Phaser.Scene;
   private readonly ctx: GameContext;
   private readonly members: () => readonly CharacterSprite[];
@@ -926,7 +928,7 @@ export class TrapSystem {
           stat: "DEX",
           dc,
           kind: "stat",
-          advantage: isThief,
+          advantage: isThief ? ["thief trap mastery"] : [],
         });
         if (result.success) {
           onSuccess();

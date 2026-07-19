@@ -14,8 +14,9 @@ function makeEngine(seed: number): Engine {
   return engine;
 }
 
-const CLASSES: ClassName[] = ["fighter", "thief", "priest", "wizard"];
-const HIT_DIE_SIDES: Record<ClassName, number> = { fighter: 8, thief: 4, priest: 6, wizard: 4 };
+const CLASSES = ["fighter", "thief", "priest", "wizard"] as const satisfies readonly ClassName[];
+type CoreClass = (typeof CLASSES)[number];
+const HIT_DIE_SIDES: Record<CoreClass, number> = { fighter: 8, thief: 4, priest: 6, wizard: 4 };
 const SEEDS = [1, 7, 42, 99, 1234, 5678, 31337, 8080, 271828, 314159];
 
 describe("character generation rules", () => {

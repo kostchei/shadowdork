@@ -2,6 +2,7 @@
 
 import Phaser from "phaser";
 import type { Dice, MonsterDef } from "../../engine";
+import type { CharacterSprite } from "./CharacterSprite";
 import type { LightSystem } from "../systems/light";
 import { projectShadow } from "../systems/shadows";
 
@@ -39,6 +40,7 @@ export class MonsterSprite extends Phaser.Physics.Arcade.Sprite {
   readonly groupId: string;
   hp: number;
   aiState: MonsterAiState = "patrol";
+  targetPlayer: CharacterSprite | null = null;
   private asleepUntil = 0;
   private alertedUntil = 0;
   attackCooldown = 0;
@@ -90,7 +92,8 @@ export class MonsterSprite extends Phaser.Physics.Arcade.Sprite {
     });
   }
 
-  updateAi(delta: number, target: { x: number; y: number } | null): void {
+  updateAi(delta: number, target: CharacterSprite | null): void {
+    this.targetPlayer = target;
     this.attackCooldown = Math.max(0, this.attackCooldown - delta);
     const body = this.body as Phaser.Physics.Arcade.Body;
 

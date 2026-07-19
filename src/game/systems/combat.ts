@@ -78,7 +78,7 @@ export function buildAttackContext(
           stat: "DEX",
           dc: 15,
           kind: "stat",
-          advantage: true,
+          advantage: ["thief backstab"],
         });
         if (check.success) {
           advantage.push("backstab");

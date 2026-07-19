@@ -52,9 +52,58 @@ const ITEM_LIST: readonly ItemDef[] = [
   // Treasure — treasure IS XP (minor 1, major 2-3, legendary 10)
   // First 100 coins ride free; every 100 after costs a slot. XP: 1 per 100 banked (handled by the game).
   { id: "coins", name: "Coins", slotCost: 1, bundleSize: 100, freeQty: 100, tags: ["treasure"], xpValue: 1 },
-  { id: "gem", name: "Gem", slotCost: 1, bundleSize: 10, tags: ["treasure"], xpValue: 2 },
-  { id: "jeweled-idol", name: "Jeweled Idol", slotCost: 2, bundleSize: 1, tags: ["treasure"], xpValue: 3 },
-  { id: "crown-of-the-deep", name: "Crown of the Deep", slotCost: 1, bundleSize: 1, tags: ["treasure"], xpValue: 10 },
+  { id: "gem", name: "Gem", slotCost: 0, bundleSize: 10, tags: ["treasure"], xpValue: 2 },
+  { id: "jeweled-idol", name: "Jeweled Idol", slotCost: 0, bundleSize: 1, tags: ["treasure"], xpValue: 3 },
+  { id: "crown-of-the-deep", name: "Crown of the Deep", slotCost: 0, bundleSize: 1, tags: ["treasure"], xpValue: 10 },
+
+  // Potions & Consumables
+  { id: "potion-healing", name: "Potion of Healing", slotCost: 1, bundleSize: 1, tags: ["potion", "magic"] },
+  { id: "potion-invisibility", name: "Potion of Invisibility", slotCost: 1, bundleSize: 1, tags: ["potion", "magic"] },
+  { id: "potion-water-breathing", name: "Potion of Water Breathing", slotCost: 1, bundleSize: 1, tags: ["potion", "magic"] },
+  { id: "potion-flying", name: "Potion of Flying", slotCost: 1, bundleSize: 1, tags: ["potion", "magic"] },
+  { id: "potion-giant-strength", name: "Potion of Giant Strength", slotCost: 1, bundleSize: 1, tags: ["potion", "magic"] },
+  { id: "potion-polymorph", name: "Potion of Polymorph", slotCost: 1, bundleSize: 1, tags: ["potion", "magic"] },
+  { id: "potion-extirpation", name: "Potion of Extirpation", slotCost: 1, bundleSize: 1, tags: ["potion", "magic"] },
+
+  // Spell Scrolls
+  { id: "scroll-cure-wounds", name: "Scroll of Cure Wounds", slotCost: 1, bundleSize: 1, tags: ["scroll", "magic"] },
+  { id: "scroll-light", name: "Scroll of Light", slotCost: 1, bundleSize: 1, tags: ["scroll", "magic"] },
+  { id: "scroll-burning-hands", name: "Scroll of Burning Hands", slotCost: 1, bundleSize: 1, tags: ["scroll", "magic"] },
+  { id: "scroll-feather-fall", name: "Scroll of Feather Fall", slotCost: 1, bundleSize: 1, tags: ["scroll", "magic"] },
+  { id: "scroll-covenant", name: "Scroll of the Covenant", slotCost: 1, bundleSize: 1, tags: ["scroll", "magic"] },
+
+  // Wands, Rings & Utility Items
+  { id: "wand-fireball", name: "Wand of Fireballs", slotCost: 1, bundleSize: 1, tags: ["wand", "magic"] },
+  { id: "ring-feather-falling", name: "Ring of Feather Falling", slotCost: 1, bundleSize: 1, tags: ["ring", "magic"] },
+  { id: "egg-of-cockatrice", name: "Egg of the Cockatrice", slotCost: 0, bundleSize: 1, tags: ["relic", "magic"] },
+  { id: "bag-of-holding", name: "Bag of Holding", slotCost: 1, bundleSize: 1, tags: ["utility", "magic"] },
+  { id: "kytherian-cog", name: "Kytherian Cog", slotCost: 0, bundleSize: 1, tags: ["relic", "magic"] },
+  { id: "crystal-ball", name: "Crystal Ball", slotCost: 1, bundleSize: 1, tags: ["utility", "magic"] },
+  { id: "immovable-rod", name: "Immovable Rod", slotCost: 1, bundleSize: 1, tags: ["utility", "magic"] },
+  { id: "portable-hole", name: "Portable Hole", slotCost: 0, bundleSize: 1, tags: ["utility", "magic"] },
+  { id: "brak-cube", name: "Brak's Cube of Perfection", slotCost: 1, bundleSize: 1, tags: ["artifact", "magic"] },
+  { id: "flying-carpet", name: "Flying Carpet", slotCost: 2, bundleSize: 1, tags: ["utility", "magic"] },
+
+  // Weapons & Armor Artifacts
+  { id: "blade-of-vengeance", name: "Blade of Vengeance (+2)", slotCost: 1, bundleSize: 1, tags: ["weapon", "magic"], damage: "1d8", finesse: true, reachTiles: 1.8, weaponVisual: "longsword" },
+  { id: "greataxe-of-horde", name: "Greataxe of the Horde (+2)", slotCost: 2, bundleSize: 1, tags: ["weapon", "magic"], damage: "1d12", twoHanded: true, reachTiles: 2.0, weaponVisual: "mace" },
+  { id: "scimitar-of-speed", name: "Scimitar of Speed (+1)", slotCost: 1, bundleSize: 1, tags: ["weapon", "magic"], damage: "1d6", finesse: true, reachTiles: 1.7, weaponVisual: "dagger" },
+  { id: "obsidian-witchknife", name: "Obsidian Witchknife (+3)", slotCost: 1, bundleSize: 1, tags: ["weapon", "magic", "artifact"], damage: "1d10", finesse: true, reachTiles: 1.8, weaponVisual: "dagger" },
+  { id: "armor-saint-terragnis", name: "Armor of Saint Terragnis (+3)", slotCost: 3, bundleSize: 1, tags: ["armor", "magic", "artifact"], armor: { acBase: 18, dexCap: 0, classes: ["fighter", "priest"] }, armorVisual: "plate" },
+  { id: "staff-of-ord", name: "Staff of Ord (+3)", slotCost: 1, bundleSize: 1, tags: ["weapon", "magic", "artifact"], damage: "1d8", twoHanded: true, reachTiles: 2.2, weaponVisual: "staff" },
+
+  // Cursed Scrolls (1-3) Relics & Drops
+  { id: "carved-flame-bone", name: "Carved Flame Bone", slotCost: 0, bundleSize: 1, tags: ["relic", "magic"] },
+  { id: "eyeball-charm", name: "Eyeball Charm", slotCost: 0, bundleSize: 1, tags: ["relic", "magic"] },
+  { id: "floating-wolf-idol", name: "Floating Wolf Idol", slotCost: 0, bundleSize: 1, tags: ["relic", "magic"] },
+  { id: "compass-rose", name: "Compass Rose", slotCost: 0, bundleSize: 1, tags: ["relic", "magic"] },
+  { id: "pickled-imp-jar", name: "Pickled Imp Jar", slotCost: 0, bundleSize: 1, tags: ["relic", "magic"] },
+  { id: "vial-demon-blood", name: "Vial of Demon Blood", slotCost: 1, bundleSize: 1, tags: ["potion", "magic"] },
+  { id: "cursed-eye-token", name: "Cursed Eye Token", slotCost: 0, bundleSize: 1, tags: ["relic", "magic"] },
+  { id: "cobra-bag", name: "Burlap Cobra Bag", slotCost: 1, bundleSize: 1, tags: ["utility"] },
+  { id: "treasure-map-half", name: "Treasure Map Half", slotCost: 0, bundleSize: 1, tags: ["relic"] },
+  { id: "scarab-jar", name: "Sealed Scarab Jar", slotCost: 0, bundleSize: 1, tags: ["relic"] },
+  { id: "poison-wine-cup", name: "Poison Reservoir Cup", slotCost: 0, bundleSize: 1, tags: ["relic"] },
 ];
 
 const ITEMS = new Map(ITEM_LIST.map((i) => [i.id, i]));

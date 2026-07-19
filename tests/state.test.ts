@@ -69,7 +69,7 @@ describe("Save slots / serialization", () => {
 
     // Check inventory
     expect(restored.inventory.count("torch")).toBe(5);
-    expect(restored.inventory.count("ration")).toBe(3);
+    expect(restored.inventory.count("ration")).toBe(4);
 
     // Check equipped gear
     expect(restored.wornArmor?.id).toBe("leather-armor");

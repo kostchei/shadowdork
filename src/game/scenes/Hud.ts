@@ -784,7 +784,7 @@ export class HudScene extends Phaser.Scene {
       lineSpacing: 6
     });
 
-    const footer = this.add.text(w / 2, h / 2 + 150, "Up/Down select  |  E equip  |  D drop item  |  I close", {
+    const footer = this.add.text(w / 2, h / 2 + 150, "Up/Down select  |  E use/equip  |  D drop  |  R rest  |  I close", {
       ...UI_STYLE,
       fontSize: "11px",
       color: "#808490"

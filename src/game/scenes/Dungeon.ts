@@ -1273,6 +1273,9 @@ export class DungeonScene extends Phaser.Scene {
     if (this.justDown("I")) {
       this.toggleGearOverlay();
     }
+    if (this.justDown("R") && !this.gearOverlayOpen && !this.statsOverlayOpen) {
+      this.attemptRest();
+    }
 
     if (this.gearOverlayOpen) {
       this.updateGearOverlayInput();
@@ -1419,6 +1422,28 @@ export class DungeonScene extends Phaser.Scene {
     hud.showGearOverlay(this.party.leader.character, items[this.gearSelectionIndex]?.def.id);
   }
 
+  private attemptRest(): void {
+    const leader = this.party.leader;
+    if (!leader || !leader.alive) return;
+    const rationDef = item("ration");
+    if (!leader.character.inventory.has("ration")) {
+      this.ctx.say(`${leader.character.name} has no Rations to rest!`, "#d07070");
+      return;
+    }
+    try {
+      this.ctx.engine.rest(leader.character, rationDef);
+      for (const m of this.party.aliveMembers()) {
+        m.character.heal(m.character.maxHp);
+      }
+      sfx.pickupChime(true, this.spatial({ x: leader.x, y: leader.y }));
+      floatText(this, leader.x, leader.y - 24, "RESTED! Full HP & Spells", "#5be26d");
+      this.ctx.say(`${leader.character.name} consumes a ration and rests. Full HP & spells restored!`, "#5be26d");
+      if (this.gearOverlayOpen) this.refreshGearOverlay();
+    } catch (err) {
+      this.ctx.say(err instanceof Error ? err.message : String(err), "#d07070");
+    }
+  }
+
   private updateGearOverlayInput(): void {
     const items = this.allInventoryItems();
     if (items.length === 0) return;
@@ -1432,30 +1457,38 @@ export class DungeonScene extends Phaser.Scene {
       this.refreshGearOverlay();
       return;
     }
-    // EQUIP ('E')
+    if (this.justDown("R")) {
+      this.attemptRest();
+      return;
+    }
+    // EQUIP / USE ('E')
     if (this.justDown("E")) {
       const member = this.party.leader;
       const def = items[this.gearSelectionIndex]?.def;
       if (def) {
-        try {
-          if (def.weaponVisual) {
-            if (member.torchLit && def.twoHanded) {
-              throw new Error(`${member.character.name} cannot wield ${def.name} while carrying a torch`);
+        if (def.id === "ration") {
+          this.attemptRest();
+        } else {
+          try {
+            if (def.weaponVisual) {
+              if (member.torchLit && def.twoHanded) {
+                throw new Error(`${member.character.name} cannot wield ${def.name} while carrying a torch`);
+              }
+              member.character.equipWeapon(def);
+              this.ctx.say(`${member.character.name} equips ${def.name}.`, "#e0c060");
+            } else if (def.armor) {
+              member.character.equipArmor(def);
+              this.ctx.say(`${member.character.name} equips ${def.name}.`, "#e0c060");
+            } else if (def.shield) {
+              member.character.equipShield(def);
+              if (member.torchLit) member.character.shieldStowed = true;
+              this.ctx.say(`${member.character.name} equips ${def.name}.`, "#e0c060");
+            } else {
+              this.ctx.say(`${def.name} cannot be equipped.`, "#a0a4b0");
             }
-            member.character.equipWeapon(def);
-            this.ctx.say(`${member.character.name} equips ${def.name}.`, "#e0c060");
-          } else if (def.armor) {
-            member.character.equipArmor(def);
-            this.ctx.say(`${member.character.name} equips ${def.name}.`, "#e0c060");
-          } else if (def.shield) {
-            member.character.equipShield(def);
-            if (member.torchLit) member.character.shieldStowed = true;
-            this.ctx.say(`${member.character.name} equips ${def.name}.`, "#e0c060");
-          } else {
-            this.ctx.say(`${def.name} cannot be equipped.`, "#a0a4b0");
+          } catch (error) {
+            this.ctx.say(error instanceof Error ? error.message : String(error), "#d07070");
           }
-        } catch (error) {
-          this.ctx.say(error instanceof Error ? error.message : String(error), "#d07070");
         }
         this.refreshGearOverlay();
       }

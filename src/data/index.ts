@@ -19,11 +19,14 @@ import {
   WIZARD_TALENTS,
 } from "./tables/talents";
 
+import { ALL_TREASURE_TABLES } from "./tables/treasure";
+
 export { classDef, type ClassDef } from "./classes";
 export { allItems, item } from "./items";
 export { monster } from "./monsters";
 export { highestAvailableSpellIndex, spell, spellsForClass } from "./spells";
 export { isPlebName, plebNameForSeed, randomPlebName } from "./names";
+export { ALL_TREASURE_TABLES } from "./tables/treasure";
 
 /** Register all data tables with an engine instance. Call once at boot. */
 export function registerTables(engine: Engine): void {
@@ -32,6 +35,7 @@ export function registerTables(engine: Engine): void {
   engine.tables.register(PRIEST_TALENTS);
   engine.tables.register(WIZARD_TALENTS);
   for (const table of WIZARD_MISHAP_TABLES) engine.tables.register(table);
+  for (const table of ALL_TREASURE_TABLES) engine.tables.register(table);
 }
 
 const PRIME_STAT: Record<ClassName, StatName> = {
@@ -124,12 +128,9 @@ export function createCharacter(
     c.inventory.add(item("flint-and-steel"), 1, true);
     c.inventory.add(item("torch"), 2, true);
     c.inventory.add(item("ration"), 3, true);
-    c.inventory.add(item("iron-spikes"), 10, true);
-    c.inventory.add(item("grappling-hook"), 1, true);
-    c.inventory.add(item("rope"), 1, true);
   } else {
     c.inventory.add(item("torch"), 2, true);
-    c.inventory.add(item("ration"), 1, true);
+    c.inventory.add(item("ration"), 2, true);
   }
   // Class sidearms: the thief shoots from the shadows, the wizard keeps knives.
   if (cls === "thief") c.inventory.add(item("shortbow"), 1, true);

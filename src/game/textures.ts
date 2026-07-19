@@ -1138,6 +1138,36 @@ function propAndPickupTextures(scene: Phaser.Scene): void {
     });
   }
 
+  for (const def of allItems()) {
+    if (scene.textures.exists(`pickup-${def.id}`)) continue;
+    if (def.tags.includes("potion")) {
+      pickup(`pickup-${def.id}`, (g) => {
+        g.fillStyle(0x3a2518, 1);
+        g.fillRect(8, 2, 4, 3);
+        g.fillStyle(0x33aaee, 1);
+        g.fillCircle(10, 12, 6);
+        g.fillStyle(0xccffff, 1);
+        g.fillCircle(8, 10, 2);
+      });
+    } else if (def.tags.includes("scroll")) {
+      pickup(`pickup-${def.id}`, (g) => {
+        g.fillStyle(0xe5d09b, 1);
+        g.fillRect(4, 3, 12, 14);
+        g.fillStyle(0x882222, 1);
+        g.fillRect(5, 5, 10, 2);
+        g.fillRect(6, 9, 8, 1);
+        g.fillRect(6, 12, 8, 1);
+      });
+    } else if (def.tags.includes("wand") || def.tags.includes("ring") || def.tags.includes("relic") || def.tags.includes("utility") || def.tags.includes("artifact")) {
+      pickup(`pickup-${def.id}`, (g) => {
+        g.fillStyle(0x8d5e26, 1);
+        g.fillRect(4, 7, 12, 12);
+        g.fillStyle(0x5be26d, 1);
+        g.fillCircle(10, 10, 4);
+      });
+    }
+  }
+
   texture(scene, "campfire", 32, 26, (g) => {
     g.lineStyle(4, 0x68452c, 1);
     g.lineBetween(3, 23, 28, 17);

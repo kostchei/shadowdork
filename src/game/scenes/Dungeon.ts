@@ -42,6 +42,17 @@ import { CLOSE_PX, FAR_PX, zoneBetween } from "../systems/position";
 import { castSelectedSpell, type SpellDeps } from "../systems/spells";
 import { TrapSystem } from "../systems/traps";
 import {
+  buy as shopBuy,
+  sell as shopSell,
+  buyPrice,
+  sellPrice,
+  buyBlocker,
+  isSellable,
+  stockItems,
+  type ShopRow,
+  type ShopView,
+} from "../systems/shop";
+import {
   dungeonAt,
   type DungeonDefinition,
   type ExpandedConnector,
@@ -232,6 +243,12 @@ export class DungeonScene extends Phaser.Scene {
   private statsOverlayOpen = false;
   private gearOverlayOpen = false;
   private gearSelectionIndex = 0;
+  // Safe-zone shop overlay state (transient — not persisted).
+  private shopOverlayOpen = false;
+  private shopMode: "buy" | "sell" = "buy";
+  private shopCursor = 0;
+  private shopMemberIndex = 0;
+  private safeZoneName?: string;
   private startPaused = true;
   private usedCharacterNames = new Set<string>();
   private startingFighterName = "";
@@ -252,6 +269,9 @@ export class DungeonScene extends Phaser.Scene {
       
       const newCtx = new GameContext();
       newCtx.totalCoins = this.loadedState!.coinsBanked;
+      // Legacy saves predate the wallet: seed it from the coin bank so an
+      // existing hoard stays spendable rather than starting empty.
+      newCtx.spendableGold = this.loadedState!.spendableGold ?? this.loadedState!.coinsBanked;
       newCtx.kills = this.loadedState!.kills;
       newCtx.messages.push(...this.loadedState!.messages);
       this.registry.set("ctx", newCtx);
@@ -279,6 +299,10 @@ export class DungeonScene extends Phaser.Scene {
     this.statsOverlayOpen = false;
     this.gearOverlayOpen = false;
     this.gearSelectionIndex = 0;
+    this.shopOverlayOpen = false;
+    this.shopMode = "buy";
+    this.shopCursor = 0;
+    this.shopMemberIndex = 0;
     this.monsters = [];
     this.pickups = [];
     this.talkableNpcs = [];
@@ -579,6 +603,7 @@ export class DungeonScene extends Phaser.Scene {
     const presentation = safeZonePresentation(this.visualSkin?.id, seed);
     const anchor = this.safeZoneAnchor();
     if (!presentation || !anchor) return;
+    this.safeZoneName = presentation.name;
     const { x, y } = anchor;
     const g = this.add.graphics().setDepth(2);
 
@@ -1286,6 +1311,12 @@ export class DungeonScene extends Phaser.Scene {
       return;
     }
 
+    // The shop overlay owns input while open (before the C/I/R toggles).
+    if (this.shopOverlayOpen) {
+      this.updateShopOverlayInput();
+      return;
+    }
+
     if (this.justDown("C")) {
       this.toggleStatsOverlay();
     }
@@ -1544,6 +1575,148 @@ export class DungeonScene extends Phaser.Scene {
   }
 
   /** Floating "E — do the thing" prompt above the leader or hover info at mouse pointer. */
+  /** Alive party members buy/sell; falls back to all if somehow none are up. */
+  private shopMembers(): CharacterSprite[] {
+    const alive = this.party.aliveMembers();
+    return alive.length > 0 ? alive : this.party.members;
+  }
+
+  private activeShopMember(): CharacterSprite {
+    const members = this.shopMembers();
+    this.shopMemberIndex = Phaser.Math.Wrap(this.shopMemberIndex, 0, members.length);
+    return members[this.shopMemberIndex]!;
+  }
+
+  private openShop(): void {
+    if (this.shopOverlayOpen) return;
+    this.shopOverlayOpen = true;
+    this.shopMode = "buy";
+    this.shopCursor = 0;
+    this.shopMemberIndex = 0;
+    if (this.gearOverlayOpen) this.toggleGearOverlay();
+    if (this.statsOverlayOpen) this.toggleStatsOverlay();
+    this.refreshShopOverlay();
+  }
+
+  private closeShop(): void {
+    this.shopOverlayOpen = false;
+    (this.scene.get("Hud") as HudScene).hideShopOverlay();
+  }
+
+  private sellableStacks(member: CharacterSprite) {
+    return member.character.inventory.all().filter((s) => isSellable(s.def));
+  }
+
+  private buildShopView(): ShopView {
+    const member = this.activeShopMember();
+    const inv = member.character.inventory;
+    const buy: ShopRow[] = stockItems().map((def) => ({
+      id: def.id,
+      name: def.name,
+      price: buyPrice(def),
+      block: buyBlocker(this.ctx, inv, def),
+    }));
+    const sell: ShopRow[] = this.sellableStacks(member).map((s) => ({
+      id: s.def.id,
+      name: s.def.name,
+      price: sellPrice(s.def),
+      qty: s.qty,
+    }));
+    const list = this.shopMode === "buy" ? buy : sell;
+    this.shopCursor = list.length > 0 ? Phaser.Math.Wrap(this.shopCursor, 0, list.length) : 0;
+    return {
+      zoneName: this.safeZoneName ?? "SHOP",
+      gold: this.ctx.spendableGold,
+      memberName: member.character.name,
+      mode: this.shopMode,
+      buy,
+      sell,
+      cursor: this.shopCursor,
+    };
+  }
+
+  private refreshShopOverlay(): void {
+    const hud = this.scene.get("Hud") as HudScene;
+    hud.hideShopOverlay();
+    hud.showShopOverlay(this.buildShopView());
+  }
+
+  private updateShopOverlayInput(): void {
+    if (this.justDown("I")) {
+      this.closeShop();
+      return;
+    }
+    if (this.justDown("LEFT") || this.justDown("RIGHT")) {
+      this.shopMode = this.shopMode === "buy" ? "sell" : "buy";
+      this.shopCursor = 0;
+      this.refreshShopOverlay();
+      return;
+    }
+    if (this.justDown("TAB")) {
+      this.shopMemberIndex = Phaser.Math.Wrap(this.shopMemberIndex + 1, 0, this.shopMembers().length);
+      this.shopCursor = 0;
+      this.refreshShopOverlay();
+      return;
+    }
+    const length = this.shopMode === "buy" ? stockItems().length : this.sellableStacks(this.activeShopMember()).length;
+    if (length > 0 && this.justDown("UP")) {
+      this.shopCursor = Phaser.Math.Wrap(this.shopCursor - 1, 0, length);
+      this.refreshShopOverlay();
+      return;
+    }
+    if (length > 0 && this.justDown("DOWN")) {
+      this.shopCursor = Phaser.Math.Wrap(this.shopCursor + 1, 0, length);
+      this.refreshShopOverlay();
+      return;
+    }
+    if (this.justDown("E")) {
+      if (this.shopMode === "buy") this.attemptBuy();
+      else this.attemptSell();
+    }
+  }
+
+  private attemptBuy(): void {
+    const member = this.activeShopMember();
+    const def = stockItems()[this.shopCursor];
+    if (!def) return;
+    try {
+      shopBuy(this.ctx, member.character.inventory, def);
+      sfx.pickupChime(false, this.spatial({ x: member.x, y: member.y }));
+      this.ctx.say(
+        `${member.character.name} buys ${def.name} for ${buyPrice(def)}g — ${this.ctx.spendableGold}g left.`,
+        "#e8c840",
+      );
+    } catch (err) {
+      this.ctx.say(err instanceof Error ? err.message : String(err), "#d07070");
+    }
+    this.refreshShopOverlay();
+  }
+
+  private attemptSell(): void {
+    const member = this.activeShopMember();
+    const stack = this.sellableStacks(member)[this.shopCursor];
+    if (!stack) return;
+    const def = stack.def;
+    try {
+      const paid = shopSell(this.ctx, member.character.inventory, def);
+      // Drop any equipment references to a sold item once the last one is gone.
+      const c = member.character;
+      if (!c.inventory.has(def.id)) {
+        if (c.wieldedWeapon?.id === def.id) c.wieldedWeapon = null;
+        if (c.wornArmor?.id === def.id) c.wornArmor = null;
+        if (c.carriedShield?.id === def.id) c.carriedShield = null;
+      }
+      sfx.pickupChime(true, this.spatial({ x: member.x, y: member.y }));
+      this.ctx.say(
+        `${member.character.name} sells ${def.name} for ${paid}g — ${this.ctx.spendableGold}g total.`,
+        "#e8c840",
+      );
+    } catch (err) {
+      this.ctx.say(err instanceof Error ? err.message : String(err), "#d07070");
+    }
+    this.refreshShopOverlay();
+  }
+
   private updateInteractPrompt(): void {
     const leader = this.party.leader;
     const interaction = leader.alive ? this.findInteraction(leader) : null;
@@ -1914,6 +2087,14 @@ export class DungeonScene extends Phaser.Scene {
       return {
         label: `claim ${this.currentReward.title}`,
         run: () => this.claimDungeonReward(),
+      };
+    }
+
+    // Safe-zone shop: available anywhere inside the shelter room.
+    if (this.safeZoneId && this.currentRoomId === this.safeZoneId) {
+      return {
+        label: `shop${this.safeZoneName ? ` (${this.safeZoneName})` : ""}`,
+        run: () => this.openShop(),
       };
     }
 
@@ -2714,6 +2895,8 @@ export class DungeonScene extends Phaser.Scene {
         sparkleBurst(this, pxCoord, pyCoord, false);
 
         const xp = this.ctx.bankCoins(p.qty);
+        // Collected coin is both XP (bankCoins, above) and spendable money.
+        this.ctx.earnGold(p.qty);
         const label = `${p.qty} coins`;
         if (xp > 0) {
           floatText(this, collector.x, collector.y - 24, `${label} +${xp} XP`, "#e8c840");
@@ -3042,6 +3225,7 @@ export class DungeonScene extends Phaser.Scene {
       hasCrown: this.hasCrown,
       kills: this.ctx.kills,
       coinsBanked: this.ctx.totalCoins,
+      spendableGold: this.ctx.spendableGold,
       party: this.party.members.map((m) => serializeCharacter(m.character)),
       rescuedIds: this.party.members.map((m) => m.character.className),
       messages: [...this.ctx.messages],
@@ -3103,6 +3287,7 @@ export class DungeonScene extends Phaser.Scene {
       const nextState = nextDungeonSave(
         {
           coinsBanked: this.ctx.totalCoins,
+          spendableGold: this.ctx.spendableGold,
           messages: [...this.ctx.messages],
           runSeed,
         },

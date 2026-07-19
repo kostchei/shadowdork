@@ -15,6 +15,9 @@ export interface ItemDef {
   tags: readonly string[];
   /** XP value when picked up, for treasure items. */
   xpValue?: number;
+  /** Base coin value. Buy price = valueGp; sell price = floor(valueGp * SELL_RATE).
+   * Items without a valueGp are neither stocked nor sellable. */
+  valueGp?: number;
   /** Damage dice for weapons, e.g. "1d8". */
   damage?: string;
   /** Melee reach in tiles — required for weapons. Monsters strike at 1.6. */

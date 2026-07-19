@@ -204,7 +204,7 @@ export function progressFromSavedParty(party: readonly SavedCharacter[]): PartyP
 import { pickSkinForScrollRun } from "./biomeChoice";
 
 export function nextDungeonSave(
-  current: Pick<SaveSlot, "coinsBanked" | "messages" | "runSeed">,
+  current: Pick<SaveSlot, "coinsBanked" | "spendableGold" | "messages" | "runSeed">,
   dungeonIndex: number,
   party: SavedCharacter[],
   chosenZone: ZonePackId,

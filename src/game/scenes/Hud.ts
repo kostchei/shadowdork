@@ -18,6 +18,7 @@ import type { DungeonScene } from "./Dungeon";
 import { SaveRepository } from "../SaveRepository";
 import { speak } from "../audio/voice";
 import { skinsForZone, zonePackInfo } from "../visual/skins";
+import type { ShopRow, ShopView } from "../systems/shop";
 
 const UI_STYLE = {
   fontFamily: '"Trebuchet MS", Arial, sans-serif',
@@ -65,6 +66,7 @@ export class HudScene extends Phaser.Scene {
   private pauseOverlay: Phaser.GameObjects.Container | null = null;
   private statsOverlay: Phaser.GameObjects.Container | null = null;
   private gearOverlay: Phaser.GameObjects.Container | null = null;
+  private shopOverlay: Phaser.GameObjects.Container | null = null;
   private lastPartySize = -1;
 
   constructor() {
@@ -81,6 +83,7 @@ export class HudScene extends Phaser.Scene {
     this.pauseOverlay = null;
     this.statsOverlay = null;
     this.gearOverlay = null;
+    this.shopOverlay = null;
     this.lastPartySize = -1;
     this.partyNames = [];
     this.partyStats = [];
@@ -809,6 +812,88 @@ export class HudScene extends Phaser.Scene {
     if (this.gearOverlay) {
       this.gearOverlay.destroy();
       this.gearOverlay = null;
+    }
+  }
+
+  showShopOverlay(view: ShopView): void {
+    if (this.shopOverlay) return;
+    const w = GAME_W;
+    const h = GAME_H;
+    const accent = this.dungeon.presentationPalette.accent;
+    const titleColor = `#${accent.toString(16).padStart(6, "0")}`;
+    const gold = "#e8c840";
+
+    const bg = this.add.rectangle(w / 2, h / 2, w, h, 0x020205, 0.7);
+    const box = this.add.graphics();
+    box.fillStyle(0x05060a, 0.94);
+    box.fillRoundedRect(w / 2 - 240, h / 2 - 180, 480, 360, 8);
+    box.lineStyle(2, accent, 0.9);
+    box.strokeRoundedRect(w / 2 - 240, h / 2 - 180, 480, 360, 8);
+
+    const title = this.add.text(w / 2, h / 2 - 152, view.zoneName.toUpperCase(), {
+      fontFamily: "Georgia, serif",
+      fontSize: "22px",
+      color: "#ffd45f",
+      stroke: "#000000",
+      strokeThickness: 3,
+      resolution: RENDER_SCALE,
+    }).setOrigin(0.5);
+
+    const header = this.add.text(
+      w / 2,
+      h / 2 - 122,
+      `Gold: ${view.gold}g     Shopping for: ${view.memberName}`,
+      { ...UI_STYLE, fontSize: "13px", color: gold },
+    ).setOrigin(0.5);
+
+    // Column titles show which side is active.
+    const buyActive = view.mode === "buy";
+    const buyTitle = this.add.text(w / 2 - 220, h / 2 - 96, buyActive ? "BUY ▸" : "BUY", {
+      ...UI_STYLE, fontSize: "12px", color: buyActive ? titleColor : "#808490", fontStyle: "bold",
+    });
+    const sellTitle = this.add.text(w / 2 + 20, h / 2 - 96, !buyActive ? "SELL ▸" : "SELL", {
+      ...UI_STYLE, fontSize: "12px", color: !buyActive ? titleColor : "#808490", fontStyle: "bold",
+    });
+
+    const blockNote = (row: ShopRow): string =>
+      row.block === "gold" ? " (need gold)" : row.block === "room" ? " (no room)" : "";
+    const buyLines = view.buy.length === 0
+      ? "—"
+      : view.buy.map((row, i) => {
+          const cursor = buyActive && i === view.cursor ? ">" : " ";
+          return `${cursor} ${row.name}  ${row.price}g${blockNote(row)}`;
+        }).join("\n");
+    const sellLines = view.sell.length === 0
+      ? "Nothing to sell"
+      : view.sell.map((row, i) => {
+          const cursor = !buyActive && i === view.cursor ? ">" : " ";
+          const qty = row.qty && row.qty > 1 ? ` x${row.qty}` : "";
+          return `${cursor} ${row.name}${qty}  ${row.price}g`;
+        }).join("\n");
+
+    const buyText = this.add.text(w / 2 - 220, h / 2 - 74, buyLines, {
+      ...DATA_STYLE, fontSize: "11px", lineSpacing: 6, wordWrap: { width: 210 },
+    });
+    const sellText = this.add.text(w / 2 + 20, h / 2 - 74, sellLines, {
+      ...DATA_STYLE, fontSize: "11px", lineSpacing: 6, wordWrap: { width: 210 },
+    });
+
+    const footer = this.add.text(
+      w / 2,
+      h / 2 + 152,
+      "Up/Down select  |  Left/Right buy/sell  |  E confirm  |  Tab next member  |  I close",
+      { ...UI_STYLE, fontSize: "11px", color: "#808490" },
+    ).setOrigin(0.5);
+
+    this.shopOverlay = this.add.container(0, 0, [
+      bg, box as any, title, header, buyTitle, sellTitle, buyText, sellText, footer,
+    ]).setDepth(2000);
+  }
+
+  hideShopOverlay(): void {
+    if (this.shopOverlay) {
+      this.shopOverlay.destroy();
+      this.shopOverlay = null;
     }
   }
 

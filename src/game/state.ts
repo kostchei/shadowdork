@@ -85,6 +85,9 @@ export interface SaveSlot {
   hasCrown: boolean;
   kills: number;
   coinsBanked: number;
+  /** Spendable shop wallet, separate from the XP-driving coinsBanked. Absent on
+   * legacy saves, which seed it from coinsBanked on load. */
+  spendableGold?: number;
   party: SavedCharacter[];
   rescuedIds: string[]; // Classes of characters already rescued
   messages: { text: string; color: string }[];

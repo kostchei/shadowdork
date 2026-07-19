@@ -51,4 +51,33 @@ export class GameContext {
     this.coinsBanked += qty;
     return Math.floor(this.coinsBanked / 100) - before;
   }
+
+  /**
+   * Spendable wallet, separate from the XP-driving {@link coinsBanked}.
+   * Collecting treasure feeds both; buying spends from here only (XP is kept);
+   * selling adds here only (no XP). See docs/shops-plan.md.
+   */
+  private gold = 0;
+
+  set spendableGold(value: number) {
+    if (value < 0) throw new Error(`Wallet cannot be negative, got ${value}`);
+    this.gold = value;
+  }
+
+  get spendableGold(): number {
+    return this.gold;
+  }
+
+  /** Add coin to the wallet (treasure pickup or a sale). Never grants XP. */
+  earnGold(qty: number): void {
+    if (qty < 1) throw new Error(`Gold quantity must be >= 1, got ${qty}`);
+    this.gold += qty;
+  }
+
+  /** Spend from the wallet. Throws rather than going negative. */
+  spendGold(qty: number): void {
+    if (qty < 1) throw new Error(`Gold quantity must be >= 1, got ${qty}`);
+    if (qty > this.gold) throw new Error(`Cannot spend ${qty}: wallet holds ${this.gold}`);
+    this.gold -= qty;
+  }
 }

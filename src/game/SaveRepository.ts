@@ -210,6 +210,7 @@ export class SaveRepository {
     if (typeof obj.hasCrown !== "boolean") return false;
     if (typeof obj.kills !== "number") return false;
     if (typeof obj.coinsBanked !== "number") return false;
+    if (obj.spendableGold !== undefined && (typeof obj.spendableGold !== "number" || obj.spendableGold < 0)) return false;
     
     // Check party list
     if (!Array.isArray(obj.party)) return false;

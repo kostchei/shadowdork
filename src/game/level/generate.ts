@@ -263,7 +263,7 @@ function tryBuild(seed: number, candidate: number, opts: GenerateOptions): Abstr
       fromRoomId: roomId(a),
       toRoomId: roomId(b),
       routedCells: embEdge.routedCells,
-      kind: pickKind(embEdge.direction, connRng),
+      kind: embEdge.viaJunction ? "junction" : pickKind(embEdge.direction, connRng),
       state: "open",
       direction: "two-way",
       classFavoured: false,
@@ -305,6 +305,30 @@ function tryBuild(seed: number, candidate: number, opts: GenerateOptions): Abstr
 
     connections.push(conn);
   });
+
+  // Dense forms may describe more potential adjacency than should be readable at
+  // once. Close only redundant edges until every room has at most three initially
+  // open connections; the universal route remains intact.
+  if (form.tier === 3) {
+    const optionalIds = new Set(redundant.map(([a, b]) => `conn-${a}-${b}`));
+    const initiallyOpen = (connection: DungeonConnection) =>
+      connection.state === "open" || connection.state === "guarded" || connection.state === "one-way";
+    const openDegree = new Map<string, number>();
+    for (const connection of connections) if (initiallyOpen(connection)) {
+      openDegree.set(connection.fromRoomId, (openDegree.get(connection.fromRoomId) ?? 0) + 1);
+      openDegree.set(connection.toRoomId, (openDegree.get(connection.toRoomId) ?? 0) + 1);
+    }
+    for (const connection of [...connections].reverse()) {
+      if (!optionalIds.has(connection.id) || !initiallyOpen(connection)) continue;
+      if ((openDegree.get(connection.fromRoomId) ?? 0) <= 3 && (openDegree.get(connection.toRoomId) ?? 0) <= 3) continue;
+      connection.state = "secret";
+      connection.kind = "secret-door";
+      connection.direction = "two-way";
+      connection.classFavoured = false;
+      openDegree.set(connection.fromRoomId, (openDegree.get(connection.fromRoomId) ?? 1) - 1);
+      openDegree.set(connection.toRoomId, (openDegree.get(connection.toRoomId) ?? 1) - 1);
+    }
+  }
 
   const themeId = rngFor(seed, `theme${suffix}`).pick(THEME_IDS);
 

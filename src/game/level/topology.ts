@@ -3,8 +3,9 @@
  *
  * A form describes potential room-to-room adjacency only. Whether a given edge
  * becomes an open passage, a gated door, a secret, or a one-way drop is decided
- * later by connector assignment. Milestone 1 ships the six Tier 1 forms that stay
- * readable with five rooms and need no corridor crossings.
+ * later by connector assignment. Released Tier 1 and Tier 2 forms all have
+ * explicit crossing-free embeddings; denser Tier 3 forms remain gated on portal
+ * or overpass support.
  */
 
 export type TopologyId =
@@ -13,7 +14,17 @@ export type TopologyId =
   | "cross"
   | "fauchard-fork"
   | "moose"
-  | "v";
+  | "v"
+  | "five-circle"
+  | "lollipop"
+  | "foglio-snail"
+  | "paw"
+  | "banner"
+  | "bull"
+  | "stingray"
+  | "house"
+  | "hourglass"
+  | "kite";
 
 export type Edge = readonly [number, number];
 
@@ -111,6 +122,24 @@ export const TOPOLOGIES: readonly TopologyForm[] = [
     ],
     weight: 5,
   },
+  { id: "five-circle", label: "5-Circle", tier: 2, edges: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 0]], weight: 3 },
+  { id: "lollipop", label: "Lollipop", tier: 2, edges: [[0, 1], [1, 2], [2, 0], [2, 3], [3, 4]], weight: 3 },
+  { id: "foglio-snail", label: "Foglio's Snail", tier: 2, edges: [[0, 1], [1, 2], [2, 3], [3, 0], [3, 4]], weight: 3 },
+  { id: "paw", label: "Paw", tier: 2, edges: [[0, 1], [1, 2], [2, 0], [2, 3], [2, 4]], weight: 3 },
+  { id: "banner", label: "Banner", tier: 2, edges: [[0, 1], [1, 2], [2, 3], [3, 0], [0, 4]], weight: 3 },
+  { id: "bull", label: "Bull", tier: 2, edges: [[0, 1], [1, 2], [2, 0], [0, 3], [2, 4]], weight: 3 },
+  { id: "stingray", label: "Stingray", tier: 2, edges: [[0, 1], [0, 2], [1, 3], [2, 3], [3, 4]], weight: 3 },
+  { id: "house", label: "House", tier: 2, edges: [[0, 1], [1, 2], [2, 3], [3, 0], [1, 4], [2, 4]], weight: 3 },
+  { id: "hourglass", label: "Hourglass", tier: 2, edges: [[0, 1], [1, 2], [2, 0], [2, 3], [3, 4], [4, 2]], weight: 3 },
+  {
+    id: "kite",
+    label: "Kite Junction",
+    tier: 3,
+    // K4 around an explicit connector junction, plus a tail. The shared filler
+    // is intentional and every physical transition it enables exists here.
+    edges: [[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3], [3, 4]],
+    weight: 1,
+  },
 ];
 
 export const NODE_COUNT = 5;
@@ -136,7 +165,7 @@ export function degrees(form: TopologyForm): number[] {
   return adjacency(form).map((neighbours) => neighbours.length);
 }
 
-/** Every Tier 1 form must be a single connected component over all five nodes. */
+/** Every released form must be a single connected component over all five nodes. */
 export function isConnected(form: TopologyForm): boolean {
   const adj = adjacency(form);
   const seen = new Set<number>([0]);

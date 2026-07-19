@@ -175,6 +175,36 @@ export function validatePhysicalDungeon(dungeon: DungeonDefinition): PhysicalVal
       }
     }
   }
+  if (dungeon.roomContents) {
+    const contentIds = new Set(dungeon.roomContents.map((content) => content.roomId));
+    for (const region of dungeon.regions) {
+      if (!contentIds.has(region.id)) diagnostics.push(`missing-room-content:${region.id}`);
+    }
+    for (const content of dungeon.roomContents) {
+      if (content.pressures.length === 0) diagnostics.push(`unpressured-room:${content.roomId}`);
+    }
+    const pressures = new Set(dungeon.roomContents.flatMap((content) => content.pressures));
+    for (const required of ["light", "hp", "inventory"] as const) {
+      if (!pressures.has(required)) diagnostics.push(`missing-run-pressure:${required}`);
+    }
+  }
+  if (dungeon.talkableNpcs) {
+    const npcTiles = dungeon.grid.reduce((count, row) => count + [...row].filter((ch) => ch === "N").length, 0);
+    if (npcTiles !== dungeon.talkableNpcs.length) diagnostics.push("talkable-npc-metadata-mismatch");
+    for (const npc of dungeon.talkableNpcs) {
+      if (tile(dungeon, npc.tile.x, npc.tile.y) !== "N") diagnostics.push(`missing-talkable-npc-tile:${npc.id}`);
+    }
+  }
+  for (const junction of dungeon.junctions ?? []) {
+    if (!inBounds(dungeon, junction.tile.x, junction.tile.y) || !usable(tile(dungeon, junction.tile.x, junction.tile.y))) {
+      diagnostics.push(`invalid-junction:${junction.id}`);
+    }
+    if (junction.roomIds.length < 3) diagnostics.push(`undersubscribed-junction:${junction.id}`);
+    const touching = (dungeon.connectors ?? []).filter((connector) =>
+      connector.waypoints.some((point) => point.x === junction.tile.x && point.y === junction.tile.y),
+    );
+    if (touching.length < 2) diagnostics.push(`unrouted-junction:${junction.id}`);
+  }
   validateCompletionSearch(dungeon, diagnostics);
   return { ok: diagnostics.length === 0, diagnostics };
 }

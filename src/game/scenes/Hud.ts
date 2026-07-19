@@ -52,6 +52,7 @@ export class HudScene extends Phaser.Scene {
   private logTexts: Phaser.GameObjects.Text[] = [];
   private objectiveText!: Phaser.GameObjects.Text;
   private roomText!: Phaser.GameObjects.Text;
+  private mapText!: Phaser.GameObjects.Text;
   private torchWarning!: Phaser.GameObjects.Text;
   private luckHint!: Phaser.GameObjects.Text;
   private overlay: Phaser.GameObjects.Container | null = null;
@@ -141,6 +142,10 @@ export class HudScene extends Phaser.Scene {
       .setDepth(1000);
     this.roomText = this.add
       .text(w - 18, 55, "", { ...DATA_STYLE, fontSize: "9px", color: "#9fa5b1" })
+      .setOrigin(1, 0)
+      .setDepth(1000);
+    this.mapText = this.add
+      .text(w - 18, 78, "", { ...DATA_STYLE, fontSize: "8px", color: "#69c8d4", align: "right" })
       .setOrigin(1, 0)
       .setDepth(1000);
 
@@ -901,6 +906,9 @@ export class HudScene extends Phaser.Scene {
       Math.floor(leader.y / TILE),
     );
     if (region) this.roomText.setText(region.hud);
+    this.mapText
+      .setVisible((this.dungeon.activeDungeon.connectors?.length ?? 0) >= 5)
+      .setText(this.dungeon.compactMap);
 
     if (minTorchMs < 30_000) {
       this.torchWarning.setVisible(true).setAlpha(0.6 + 0.4 * Math.sin(time / 120));

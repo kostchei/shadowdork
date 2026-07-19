@@ -37,6 +37,16 @@ describe("macro-grid embedding", () => {
     const occupied = [...rooms, ...fillers].map((c) => `${c.column},${c.row}`);
     expect(new Set(occupied).size).toBe(occupied.length);
 
+    const routedCounts = new Map<string, number>();
+    for (const edge of embedding.edges) for (const cell of edge.routedCells) {
+      const key = `${cell.column},${cell.row}`;
+      routedCounts.set(key, (routedCounts.get(key) ?? 0) + 1);
+    }
+    const junctionKeys = new Set(embedding.junctionCells.map((cell) => `${cell.column},${cell.row}`));
+    for (const [key, count] of routedCounts) {
+      if (count > 1) expect(junctionKeys.has(key), `undeclared shared filler ${key}`).toBe(true);
+    }
+
     // At least two boundary rooms so entrance and exit can differ.
     expect(embedding.boundaryNodes.size).toBeGreaterThanOrEqual(2);
   });

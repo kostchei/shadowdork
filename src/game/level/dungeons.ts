@@ -38,7 +38,14 @@ export interface ExpandedConnector {
   vertical: boolean;
 }
 
-export type TalkableNpcOutcome = "give-torch" | "reveal-route" | "warning";
+export type TalkableNpcOutcome =
+  | "give-torch"
+  | "reveal-route"
+  | "warning"
+  | "trade"
+  | "betrayal"
+  | "revelation"
+  | "companion-eligible";
 
 export interface TalkableNpcSpec {
   id: string;
@@ -49,6 +56,8 @@ export interface TalkableNpcSpec {
   introduction: string;
   resolution: string;
   outcome: TalkableNpcOutcome;
+  targetConnectorId?: string;
+  companionClass?: "thief" | "priest" | "wizard";
 }
 
 export interface ExpandedRoomContent {
@@ -56,6 +65,12 @@ export interface ExpandedRoomContent {
   family: ContentFamily;
   templateId: string;
   pressures: readonly ("light" | "hp" | "inventory" | "time" | "position")[];
+}
+
+export interface ExpandedJunction {
+  id: string;
+  tile: TilePoint;
+  roomIds: readonly string[];
 }
 
 export const DUNGEON_W = 120;
@@ -253,6 +268,7 @@ export interface DungeonDefinition {
   connectors?: readonly ExpandedConnector[];
   roomContents?: readonly ExpandedRoomContent[];
   talkableNpcs?: readonly TalkableNpcSpec[];
+  junctions?: readonly ExpandedJunction[];
   theme: DungeonTheme;
   pools: VariantPools;
   traps: readonly FeaturedTrapSpec[];

@@ -10,7 +10,7 @@ function sample(count: number) {
   return Array.from({ length: count }, (_, seed) => generateAbstractDungeon(seed));
 }
 
-describe("per-topology validity", () => {
+describe("per-released-topology validity", () => {
   // Acceptance criterion: at least 1,000 seeds per released topology, across all
   // supported rotations/reflections. 4 orientations x 260 seeds = 1,040 per form.
   const PER_ORIENTATION = 260;
@@ -55,7 +55,7 @@ describe("abstract dungeon generation", () => {
     }
   });
 
-  it("exercises every Tier 1 topology and keeps railroad a minority", () => {
+  it("exercises every released topology and keeps railroad a minority", () => {
     const counts = new Map<TopologyId, number>();
     for (const d of sample(DIST_SAMPLE)) {
       counts.set(d.topologyId, (counts.get(d.topologyId) ?? 0) + 1);
@@ -99,6 +99,22 @@ describe("abstract dungeon generation", () => {
       for (const c of d.connections) {
         expect(c.routedCells.length).toBeLessThanOrEqual(2);
       }
+    }
+  });
+
+  it("limits the staged dense topology to three initially traversable exits per room", () => {
+    for (let seed = 0; seed < 100; seed++) {
+      const dungeon = generateAbstractDungeon(seed, { topology: "kite", orientation: "identity" });
+      const degree = new Map<string, number>();
+      for (const connection of dungeon.connections) {
+        if (connection.state === "secret" || connection.state === "locked" || connection.state === "switched") continue;
+        degree.set(connection.fromRoomId, (degree.get(connection.fromRoomId) ?? 0) + 1);
+        degree.set(connection.toRoomId, (degree.get(connection.toRoomId) ?? 0) + 1);
+      }
+      expect(Math.max(...dungeon.rooms.map((room) => degree.get(room.id) ?? 0))).toBeLessThanOrEqual(3);
+      expect(dungeon.connections.some((connection) =>
+        connection.state === "secret" || connection.state === "locked" || connection.state === "switched",
+      )).toBe(true);
     }
   });
 

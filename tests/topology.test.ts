@@ -9,13 +9,20 @@ import {
 } from "../src/game/level/topology";
 
 describe("topology catalogue", () => {
-  it("ships the six Tier 1 forms", () => {
+  it("ships all Tier 1 and Tier 2 forms", () => {
     const ids = TOPOLOGIES.map((t) => t.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(new Set(ids)).toEqual(
-      new Set(["railroad", "arrow", "cross", "fauchard-fork", "moose", "v"]),
+      new Set([
+        "railroad", "arrow", "cross", "fauchard-fork", "moose", "v",
+        "five-circle", "lollipop", "foglio-snail", "paw", "banner", "bull",
+        "stingray", "house", "hourglass",
+        "kite",
+      ]),
     );
-    expect(TOPOLOGIES.every((t) => t.tier === 1)).toBe(true);
+    expect(TOPOLOGIES.filter((t) => t.tier === 1)).toHaveLength(6);
+    expect(TOPOLOGIES.filter((t) => t.tier === 2)).toHaveLength(9);
+    expect(TOPOLOGIES.filter((t) => t.tier === 3)).toHaveLength(1);
   });
 
   it.each(TOPOLOGIES)("$id is a connected simple graph on five nodes", (form) => {

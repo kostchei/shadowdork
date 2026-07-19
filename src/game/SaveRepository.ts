@@ -192,6 +192,7 @@ export class SaveRepository {
       if (!obj.npcInteractionStates || typeof obj.npcInteractionStates !== "object" || Array.isArray(obj.npcInteractionStates)) return false;
       if (!Object.values(obj.npcInteractionStates).every((state) => state === "unmet" || state === "heard" || state === "resolved")) return false;
     }
+    if (obj.discoveredRoomIds !== undefined && (!Array.isArray(obj.discoveredRoomIds) || !obj.discoveredRoomIds.every((id: unknown) => typeof id === "string"))) return false;
     if (typeof obj.hasCrown !== "boolean") return false;
     if (typeof obj.kills !== "number") return false;
     if (typeof obj.coinsBanked !== "number") return false;

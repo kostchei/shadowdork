@@ -138,6 +138,7 @@ export class DungeonScene extends Phaser.Scene {
   private npcs: RescuableNpc[] = [];
   private talkableNpcs: TalkableNpc[] = [];
   private npcInteractionStates = new Map<string, "unmet" | "heard" | "resolved">();
+  private discoveredRoomIds = new Set<string>();
   private campfires: { x: number; y: number; free: boolean }[] = [];
   private shrines: { x: number; y: number }[] = [];
   private door!: { x: number; y: number };
@@ -208,6 +209,7 @@ export class DungeonScene extends Phaser.Scene {
     this.npcInteractionStates = new Map(
       Object.entries(this.loadedState?.npcInteractionStates ?? {}) as [string, "unmet" | "heard" | "resolved"][],
     );
+    this.discoveredRoomIds = new Set(this.loadedState?.discoveredRoomIds ?? []);
     this.campfires = [];
     this.shrines = [];
     this.climbTiles = [];
@@ -235,6 +237,7 @@ export class DungeonScene extends Phaser.Scene {
     const layoutSeed = (runSeed + dungeonIndex) >>> 0;
     this.activeDungeon = this.resolveActiveDungeon(layoutSeed);
     this.lastRoomId = this.resolveLoadedRoomId();
+    this.discoveredRoomIds.add(this.lastRoomId);
     this.currentReward = chooseDungeonReward(
       dungeonIndex,
       this.loadedState
@@ -714,6 +717,21 @@ export class DungeonScene extends Phaser.Scene {
 
   /** Direction/state cues are authored from connector metadata, not tile guesses. */
   private createConnectorTelegraphs(): void {
+    for (const junction of this.activeDungeon.junctions ?? []) {
+      this.add.text(
+        junction.tile.x * TILE + TILE / 2,
+        junction.tile.y * TILE - TILE,
+        "◇ JUNCTION",
+        {
+          fontFamily: "Consolas, monospace",
+          fontSize: "10px",
+          color: "#8bd6d0",
+          stroke: "#050508",
+          strokeThickness: 3,
+          resolution: RENDER_SCALE,
+        },
+      ).setOrigin(0.5).setAlpha(0.82).setDepth(5);
+    }
     for (const connector of this.activeDungeon.connectors ?? []) {
       if (connector.direction === "two-way") continue;
       const forward = connector.direction === "from-to";
@@ -768,6 +786,12 @@ export class DungeonScene extends Phaser.Scene {
 
   private addTalkableNpc(spec: TalkableNpcSpec, x: number, y: number): void {
     const state = this.npcInteractionStates.get(spec.id) ?? "unmet";
+    if (state === "resolved" && spec.outcome === "betrayal") return;
+    if (
+      state === "resolved" &&
+      spec.outcome === "companion-eligible" &&
+      this.loadedState?.party.some((member) => member.name === spec.name)
+    ) return;
     const sprite = this.add.image(x, y, "char-wizard").setDepth(8).setTint(0xd6b36a);
     const marker = this.add.text(x, y - 30, state === "resolved" ? "·" : "!", {
       fontFamily: "Georgia, serif",
@@ -887,6 +911,7 @@ export class DungeonScene extends Phaser.Scene {
     const currentRoom = this.currentRoomId;
     if (currentRoom !== this.lastRoomId) {
       this.lastRoomId = currentRoom;
+      this.discoveredRoomIds.add(currentRoom);
       this.activateRoomRequirements(currentRoom, true);
       this.saveToSlot(0);
     }
@@ -1345,7 +1370,7 @@ export class DungeonScene extends Phaser.Scene {
     if (talkable) {
       const state = this.npcInteractionStates.get(talkable.spec.id) ?? "unmet";
       return {
-        label: `${state === "unmet" ? "speak with" : "continue with"} ${talkable.spec.name}`,
+        label: `${state === "unmet" ? "speak with" : state === "heard" ? "continue with" : "recall words from"} ${talkable.spec.name}`,
         run: () => this.advanceNpcInteraction(talkable, leader),
       };
     }
@@ -1524,21 +1549,30 @@ export class DungeonScene extends Phaser.Scene {
         return;
       }
     } else if (spec.outcome === "reveal-route") {
-      const connector = (this.activeDungeon.connectors ?? []).find((candidate) =>
-        candidate.state === "secret" &&
-        !this.openedConnectors.has(candidate.id) &&
-        (candidate.fromRoomId === spec.roomId || candidate.toRoomId === spec.roomId),
-      );
-      if (connector) {
-        openConnector(connector, this.activatedRequirements, this.openedConnectors);
-        for (const [gate, mapped] of this.connectorGates) {
-          if (mapped.id === connector.id) gate.destroy();
-        }
-        for (const [wall, mapped] of this.connectorWeakWalls) {
-          if (mapped.id === connector.id) wall.destroy();
-        }
-        this.ctx.say(`${spec.name} reveals and opens ${connector.id}.`, "#d0e080");
+      if (this.openNpcTargetConnector(spec.targetConnectorId, false)) {
+        this.ctx.say(`${spec.name} reveals and opens a concealed route.`, "#d0e080");
       }
+    } else if (spec.outcome === "revelation") {
+      if (this.openNpcTargetConnector(spec.targetConnectorId, true)) {
+        this.ctx.say(`${spec.name}'s phrase releases a distant mechanism.`, "#d0e080");
+      }
+    } else if (spec.outcome === "trade") {
+      if (!leader.character.inventory.has("ration")) {
+        this.ctx.say(`${spec.name} still wants one ration for the gem.`, "#e0c060");
+        return;
+      }
+      const gem = item("gem");
+      if (!leader.character.inventory.canAdd(gem)) {
+        this.ctx.say(`${leader.character.name} needs inventory space for the gem.`, "#e0c060");
+        return;
+      }
+      leader.character.inventory.remove("ration", 1);
+      leader.character.inventory.add(gem);
+      this.ctx.say(`${leader.character.name} trades a ration for a gem.`, "#d0e080");
+    } else if (spec.outcome === "betrayal") {
+      this.spawnNpcBetrayal(npc);
+    } else if (spec.outcome === "companion-eligible") {
+      this.ctx.say(`${spec.name} will join if the vault's reward calls for a companion.`, "#d0e080");
     }
 
     this.npcInteractionStates.set(spec.id, "resolved");
@@ -1547,24 +1581,68 @@ export class DungeonScene extends Phaser.Scene {
     this.saveToSlot(0);
   }
 
+  private openNpcTargetConnector(connectorId: string | undefined, operateRequirement: boolean): boolean {
+    const connector = (this.activeDungeon.connectors ?? []).find((candidate) => candidate.id === connectorId);
+    if (!connector) return false;
+    if (operateRequirement && connector.requirement) {
+      this.activatedRequirements.add(connector.requirement.id);
+    }
+    const result = openConnector(connector, this.activatedRequirements, this.openedConnectors);
+    if (result === "requires-key" || result === "requires-switch") return false;
+    for (const [gate, mapped] of this.connectorGates) if (mapped.id === connector.id) gate.destroy();
+    for (const [wall, mapped] of this.connectorWeakWalls) if (mapped.id === connector.id) wall.destroy();
+    return true;
+  }
+
+  private spawnNpcBetrayal(npc: TalkableNpc): void {
+    const foe = new MonsterSprite(
+      this,
+      npc.sprite.x,
+      npc.sprite.y,
+      monster(this.activeDungeon.encounterMonsterId),
+      npc.spec.roomId,
+      this.ctx.engine.dice,
+    );
+    this.morale.register(foe);
+    this.monsters.push(foe);
+    this.monsterGroup.add(foe);
+    this.trapSystem.registerActor(foe);
+    foe.alert();
+    npc.sprite.destroy();
+    npc.marker.destroy();
+    this.ctx.say(`${npc.spec.name}'s allies spring the ambush!`, "#d07070");
+    this.emitNoiseAt(foe.x, foe.y);
+  }
+
   private claimDungeonReward(): void {
     if (this.rewardClaimed || !this.rewardMarker) return;
     const reward = this.currentReward;
     let message = "";
 
     if (reward.kind === "companion") {
+      const eligibleNpc = this.talkableNpcs.find((npc) =>
+        npc.spec.outcome === "companion-eligible" &&
+        npc.spec.companionClass &&
+        this.npcInteractionStates.get(npc.spec.id) === "resolved",
+      );
+      const companionClass = eligibleNpc?.spec.companionClass ?? reward.className;
+      const companionName = eligibleNpc?.spec.name ?? reward.name;
       const recruit = this.spawnCharacter(
-        `pc-${reward.className}`,
-        reward.name,
-        reward.className,
+        eligibleNpc ? `pc-${eligibleNpc.spec.id}` : `pc-${reward.className}`,
+        companionName,
+        companionClass,
         this.rewardMarker.x,
         this.rewardMarker.y,
-        reward.alignment,
+        eligibleNpc ? "neutral" : reward.alignment,
       );
       this.party.add(recruit);
       this.partyGroup.add(recruit);
       this.trapSystem.registerActor(recruit);
-      message = `${reward.name} joins the party and will travel to future dungeons! (${this.party.size}/4)`;
+      if (eligibleNpc) {
+        eligibleNpc.sprite.destroy();
+        eligibleNpc.marker.destroy();
+      }
+      message = `${companionName} joins the party and will travel to future dungeons! (${this.party.size}/4)`;
     } else if (reward.kind === "magic-weapon" || reward.kind === "magic-armor") {
       const def = item(reward.itemId);
       const recipients = [
@@ -2149,6 +2227,31 @@ export class DungeonScene extends Phaser.Scene {
     return region ? region.id : this.lastRoomId;
   }
 
+  /** Four-by-five discovered-room map; connectors stay hidden to preserve secrets. */
+  get compactMap(): string {
+    const columns = 5;
+    const rows = 4;
+    const cells = Array.from({ length: rows }, () => Array<string>(columns).fill("·"));
+    for (const region of this.activeDungeon.regions) {
+      if (!this.discoveredRoomIds.has(region.id) && region.id !== this.currentRoomId) continue;
+      const centerX = (region.x1 + region.x2) / 2;
+      const centerY = (region.y1 + region.y2) / 2;
+      const column = Math.min(columns - 1, Math.floor(centerX / (this.activeDungeon.width / columns)));
+      const row = Math.min(rows - 1, Math.floor(centerY / (this.activeDungeon.height / rows)));
+      const marker = region.id === this.currentRoomId
+        ? "@"
+        : region.beat === "entrance"
+          ? "E"
+          : region.beat === "climax"
+            ? "X"
+            : region.beat === "reward"
+              ? "R"
+              : "o";
+      cells[row]![column] = marker;
+    }
+    return cells.map((row) => row.join(" ")).join("\n");
+  }
+
   /**
    * The layout to render. `?nl=<seed>` renders a non-linear dungeon expanded from
    * the abstract generator instead of a hand-authored one; `?nltopo` / `?nlorient`
@@ -2233,6 +2336,7 @@ export class DungeonScene extends Phaser.Scene {
       activatedRequirementIds: [...this.activatedRequirements],
       openedConnectorIds: [...this.openedConnectors],
       npcInteractionStates: Object.fromEntries(this.npcInteractionStates),
+      discoveredRoomIds: [...this.discoveredRoomIds],
       hasCrown: this.hasCrown,
       kills: this.ctx.kills,
       coinsBanked: this.ctx.totalCoins,

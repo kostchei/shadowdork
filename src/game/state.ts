@@ -55,6 +55,8 @@ export interface SaveSlot {
   openedConnectorIds?: string[];
   /** Deterministic talkable-NPC conversation progress keyed by NPC id. */
   npcInteractionStates?: Record<string, "unmet" | "heard" | "resolved">;
+  /** Stable ids of rooms revealed on the compact expedition map. */
+  discoveredRoomIds?: string[];
   hasCrown: boolean;
   kills: number;
   coinsBanked: number;

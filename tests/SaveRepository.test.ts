@@ -95,6 +95,7 @@ describe("SaveRepository", () => {
       activatedRequirementIds: ["req-1-2"],
       openedConnectorIds: ["conn-1-2", "conn-2-4"],
       npcInteractionStates: { "npc-2": "heard", "npc-4": "resolved" },
+      discoveredRoomIds: ["room-1", "room-2"],
     };
     delete (nonlinearSave as Partial<SaveSlot>).currentRoom;
 
@@ -103,6 +104,7 @@ describe("SaveRepository", () => {
     expect(resumed?.activatedRequirementIds).toEqual(["req-1-2"]);
     expect(resumed?.openedConnectorIds).toEqual(["conn-1-2", "conn-2-4"]);
     expect(resumed?.npcInteractionStates).toEqual({ "npc-2": "heard", "npc-4": "resolved" });
+    expect(resumed?.discoveredRoomIds).toEqual(["room-1", "room-2"]);
   });
 
   it("validates structural integrity of save slots correctly", () => {
@@ -113,6 +115,7 @@ describe("SaveRepository", () => {
     const invalidSlot = { ...validSaveSlot, slotId: "not-a-number" };
     expect(SaveRepository.validateSaveSlot(invalidSlot)).toBe(false);
     expect(SaveRepository.validateSaveSlot({ ...validSaveSlot, runSeed: "not-a-number" })).toBe(false);
+    expect(SaveRepository.validateSaveSlot({ ...validSaveSlot, discoveredRoomIds: ["room-1", 2] })).toBe(false);
 
     const corruptParty = { ...validSaveSlot, party: [{ name: "missing-fields" }] };
     expect(SaveRepository.validateSaveSlot(corruptParty)).toBe(false);

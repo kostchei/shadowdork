@@ -19,6 +19,7 @@ import {
   DUNGEONS,
   type DungeonDefinition,
   type ExpandedConnector,
+  type ExpandedJunction,
   type ExpandedRoomContent,
   type TalkableNpcOutcome,
   type TalkableNpcSpec,
@@ -47,6 +48,22 @@ function npcDialogue(outcome: TalkableNpcOutcome): { introduction: string; resol
     case "warning": return {
       introduction: "Steel carries farther than footsteps in these halls.",
       resolution: "Open doors carry noise. A closed gate may be the safer road.",
+    };
+    case "trade": return {
+      introduction: "I have a jewel, but no food left for the road.",
+      resolution: "A fair exchange: your ration for my gem.",
+    };
+    case "betrayal": return {
+      introduction: "You took your time. My friends were beginning to doubt me.",
+      resolution: "The signal is given. Steel answers from the dark.",
+    };
+    case "revelation": return {
+      introduction: "The old mechanisms still answer the keeper's phrase.",
+      resolution: "Hear it turn? A sealed route has yielded elsewhere.",
+    };
+    case "companion-eligible": return {
+      introduction: "Reach the vault and prove this expedition has a future.",
+      resolution: "Do that, and I will join you when the prize is claimed.",
     };
   }
 }
@@ -248,6 +265,22 @@ export function expandDungeon(abstract: AbstractDungeon): DungeonDefinition {
   const connectors = abstract.connections.map((conn, i) =>
     expandedConnector(conn, paths[i]!, conn.requirementId ? requirements.get(conn.requirementId) : undefined),
   );
+  const routedUses = new Map<string, { point: MacroPoint; roomIds: Set<string>; count: number }>();
+  for (const connection of abstract.connections) for (const point of connection.routedCells) {
+    const key = `${point.column},${point.row}`;
+    const use = routedUses.get(key) ?? { point, roomIds: new Set<string>(), count: 0 };
+    use.count++;
+    use.roomIds.add(connection.fromRoomId);
+    use.roomIds.add(connection.toRoomId);
+    routedUses.set(key, use);
+  }
+  const junctions: ExpandedJunction[] = [...routedUses.values()]
+    .filter((use) => use.count > 1)
+    .map((use, index) => ({
+      id: `junction-${index}`,
+      tile: endpointTile(use.point),
+      roomIds: [...use.roomIds].sort(),
+    }));
 
   // A separate deterministic stream controls social content, so changing a room
   // template never perturbs topology or connector selection. Standard runs get
@@ -307,7 +340,19 @@ export function expandDungeon(abstract: AbstractDungeon): DungeonDefinition {
     });
     if (stamped.npcLocalX !== undefined) {
       const npcHash = templateHash(abstract.seed, `npc:${room.id}`);
-      const outcome = (["give-torch", "reveal-route", "warning"] as const)[npcHash % 3]!;
+      const secret = connectors.find((connector) =>
+        connector.state === "secret" &&
+        (connector.fromRoomId === room.id || connector.toRoomId === room.id),
+      );
+      const gate = connectors.find((connector) =>
+        (connector.state === "locked" || connector.state === "switched") && connector.requirement,
+      );
+      const outcomes: TalkableNpcOutcome[] = [
+        "give-torch", "warning", "trade", "betrayal", "companion-eligible",
+      ];
+      if (secret) outcomes.push("reveal-route");
+      if (gate) outcomes.push("revelation");
+      const outcome = outcomes[npcHash % outcomes.length]!;
       const dialogue = npcDialogue(outcome);
       talkableNpcs.push({
         id: `npc-${room.node}`,
@@ -318,6 +363,10 @@ export function expandDungeon(abstract: AbstractDungeon): DungeonDefinition {
         introduction: dialogue.introduction,
         resolution: dialogue.resolution,
         outcome,
+        targetConnectorId: outcome === "reveal-route" ? secret?.id : outcome === "revelation" ? gate?.id : undefined,
+        companionClass: outcome === "companion-eligible"
+          ? (["thief", "priest", "wizard"] as const)[(npcHash >>> 8) % 3]
+          : undefined,
       });
     }
   }
@@ -355,6 +404,7 @@ export function expandDungeon(abstract: AbstractDungeon): DungeonDefinition {
     connectors,
     roomContents,
     talkableNpcs,
+    junctions,
     theme: base.theme,
     pools: EMPTY_POOLS,
     traps: [],

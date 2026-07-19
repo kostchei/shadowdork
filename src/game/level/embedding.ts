@@ -86,12 +86,67 @@ const CANONICAL: Record<TopologyId, readonly Placement[]> = {
     { node: 4, column: 4, row: 2 },
     { node: 3, column: 4, row: 0 },
   ],
+  "five-circle": [
+    { node: 0, column: 0, row: 1 }, { node: 1, column: 1, row: 1 },
+    { node: 2, column: 2, row: 1 }, { node: 3, column: 2, row: 2 },
+    { node: 4, column: 0, row: 2 },
+  ],
+  lollipop: [
+    { node: 0, column: 1, row: 0 }, { node: 1, column: 2, row: 0 },
+    { node: 2, column: 2, row: 1 }, { node: 3, column: 3, row: 1 },
+    { node: 4, column: 4, row: 1 },
+  ],
+  "foglio-snail": [
+    { node: 0, column: 1, row: 0 }, { node: 1, column: 2, row: 0 },
+    { node: 2, column: 2, row: 1 }, { node: 3, column: 1, row: 1 },
+    { node: 4, column: 0, row: 1 },
+  ],
+  paw: [
+    { node: 0, column: 1, row: 0 }, { node: 1, column: 2, row: 0 },
+    { node: 2, column: 2, row: 1 }, { node: 3, column: 3, row: 1 },
+    { node: 4, column: 2, row: 2 },
+  ],
+  banner: [
+    { node: 0, column: 1, row: 0 }, { node: 1, column: 2, row: 0 },
+    { node: 2, column: 2, row: 1 }, { node: 3, column: 1, row: 1 },
+    { node: 4, column: 0, row: 0 },
+  ],
+  bull: [
+    { node: 0, column: 1, row: 0 }, { node: 1, column: 2, row: 0 },
+    { node: 2, column: 2, row: 1 }, { node: 3, column: 0, row: 0 },
+    { node: 4, column: 3, row: 1 },
+  ],
+  stingray: [
+    { node: 0, column: 1, row: 0 }, { node: 1, column: 2, row: 0 },
+    { node: 2, column: 1, row: 1 }, { node: 3, column: 2, row: 1 },
+    { node: 4, column: 4, row: 1 },
+  ],
+  house: [
+    { node: 0, column: 1, row: 3 }, { node: 1, column: 1, row: 2 },
+    { node: 2, column: 2, row: 2 }, { node: 3, column: 2, row: 3 },
+    { node: 4, column: 1, row: 1 },
+  ],
+  hourglass: [
+    { node: 0, column: 0, row: 1 }, { node: 1, column: 0, row: 0 },
+    { node: 2, column: 1, row: 1 }, { node: 3, column: 2, row: 1 },
+    { node: 4, column: 2, row: 2 },
+  ],
+  kite: [
+    { node: 0, column: 2, row: 0 }, { node: 1, column: 1, row: 1 },
+    { node: 2, column: 3, row: 1 }, { node: 3, column: 2, row: 2 },
+    { node: 4, column: 2, row: 3 },
+  ],
+};
+
+const CANONICAL_JUNCTIONS: Partial<Record<TopologyId, Placement>> = {
+  kite: { node: -1, column: 2, row: 1 },
 };
 
 export interface EmbeddedEdge {
   edge: Edge;
   routedCells: readonly MacroPoint[];
   direction: RelativeDirection;
+  viaJunction: boolean;
 }
 
 export interface Embedding {
@@ -102,6 +157,8 @@ export interface Embedding {
   /** node indices whose cell touches the grid perimeter. */
   boundaryNodes: ReadonlySet<number>;
   edges: readonly EmbeddedEdge[];
+  /** Explicit shared filler cells; duplicate routes are legal only here. */
+  junctionCells: readonly MacroPoint[];
 }
 
 function key(column: number, row: number): string {
@@ -198,25 +255,37 @@ export function embed(form: TopologyForm, orientation: Orientation): Embedding {
 
   const claimed = new Set<string>();
   const edges: EmbeddedEdge[] = [];
+  const canonicalJunction = CANONICAL_JUNCTIONS[form.id];
+  const junctionCells = canonicalJunction
+    ? [transform(canonicalJunction, orientation)].map((p) => ({
+        column: p.column as MacroPoint["column"],
+        row: p.row as MacroPoint["row"],
+      }))
+    : [];
+  const junctionKeys = new Set(junctionCells.map((cell) => key(cell.column, cell.row)));
   // Route shorter edges first so tight adjacencies claim their cells before long
   // routes consume the shared filler between them.
   const ordered = [...form.edges].sort((a, b) => manhattan(cells, a) - manhattan(cells, b));
   for (const edge of ordered) {
     const from = cells.get(edge[0])!;
     const to = cells.get(edge[1])!;
-    const routed = routeEdge(from, to, rooms, claimed);
+    const usesJunction = form.id === "kite" && edge[0] < 4 && edge[1] < 4;
+    const routed = usesJunction ? [...junctionCells] : routeEdge(from, to, rooms, claimed);
     if (!routed) {
       throw new Error(
         `Cannot route edge ${edge[0]}-${edge[1]} of ${form.id} (${orientation}) within ${MAX_ROUTE_FILLERS} filler cells`,
       );
     }
-    for (const cell of routed) claimed.add(key(cell.column, cell.row));
-    edges.push({ edge, routedCells: routed, direction: relativeDirection(from, to) });
+    for (const cell of routed) {
+      const cellKey = key(cell.column, cell.row);
+      if (!junctionKeys.has(cellKey)) claimed.add(cellKey);
+    }
+    edges.push({ edge, routedCells: routed, direction: relativeDirection(from, to), viaJunction: usesJunction });
   }
   // Restore the form's declared edge order for stable downstream indexing.
   edges.sort((a, b) => form.edges.indexOf(a.edge) - form.edges.indexOf(b.edge));
 
-  return { topologyId: form.id, orientation, cells, boundaryNodes, edges };
+  return { topologyId: form.id, orientation, cells, boundaryNodes, edges, junctionCells };
 }
 
 function manhattan(cells: ReadonlyMap<number, MacroPoint>, edge: Edge): number {
@@ -231,7 +300,10 @@ export function occupiedCells(embedding: Embedding): {
   fillers: readonly MacroPoint[];
 } {
   const rooms = [...embedding.cells.values()];
-  const fillers: MacroPoint[] = [];
-  for (const e of embedding.edges) fillers.push(...e.routedCells);
+  const fillersByKey = new Map<string, MacroPoint>();
+  for (const e of embedding.edges) {
+    for (const cell of e.routedCells) fillersByKey.set(key(cell.column, cell.row), cell);
+  }
+  const fillers = [...fillersByKey.values()];
   return { rooms, fillers };
 }

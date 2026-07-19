@@ -31,7 +31,7 @@ export interface RoomStampResult {
 const templates: readonly RoomTemplate[] = [
   { id: "discovery-brazier", family: "discovery", pressures: ["light"], minDegree: 1, maxDegree: 4,
     stamp: (_s, place) => { place(8, "b"); place(12, "t"); } },
-  { id: "discovery-witness", family: "discovery", pressures: ["time"], minDegree: 1, maxDegree: 4, npc: true,
+  { id: "discovery-witness", family: "discovery", pressures: ["light", "time"], minDegree: 1, maxDegree: 4, npc: true,
     stamp: (_s, place) => { place(9, "N"); place(13, "c"); } },
   { id: "challenge-guard", family: "challenge", pressures: ["hp"], minDegree: 1, maxDegree: 4,
     stamp: (s, place) => { place(8, s.monsterGlyph); place(13, "c"); } },

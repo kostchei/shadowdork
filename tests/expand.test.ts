@@ -117,6 +117,11 @@ describe("tile expansion", () => {
       const expanded = expandDungeon(generateAbstractDungeon(seed));
       for (const content of expanded.roomContents ?? []) families.add(content.family);
       expect(expanded.roomContents).toHaveLength(5);
+      expect(expanded.roomContents?.every((content) => content.pressures.length > 0)).toBe(true);
+      const pressures = new Set(expanded.roomContents?.flatMap((content) => content.pressures));
+      expect(pressures.has("light")).toBe(true);
+      expect(pressures.has("hp")).toBe(true);
+      expect(pressures.has("inventory")).toBe(true);
       expect(expanded.talkableNpcs?.length ?? 0).toBeLessThanOrEqual(1);
       if ((expanded.talkableNpcs?.length ?? 0) > 0) runsWithNpc++;
     }
@@ -125,6 +130,25 @@ describe("tile expansion", () => {
     ]);
     expect(runsWithNpc).toBeGreaterThanOrEqual(35);
     expect(runsWithNpc).toBeLessThanOrEqual(65);
+  });
+
+  it("generates every authored NPC outcome with valid targets", () => {
+    const outcomes = new Set<string>();
+    for (let seed = 0; seed < 1000; seed++) {
+      const expanded = expandDungeon(generateAbstractDungeon(seed));
+      for (const npc of expanded.talkableNpcs ?? []) {
+        outcomes.add(npc.outcome);
+        if (npc.outcome === "reveal-route" || npc.outcome === "revelation") {
+          expect(expanded.connectors?.some((connector) => connector.id === npc.targetConnectorId)).toBe(true);
+        }
+        if (npc.outcome === "companion-eligible") {
+          expect(["thief", "priest", "wizard"]).toContain(npc.companionClass);
+        }
+      }
+    }
+    expect(outcomes).toEqual(new Set([
+      "give-torch", "reveal-route", "warning", "trade", "betrayal", "revelation", "companion-eligible",
+    ]));
   });
 
   it("retains semantic connector metadata and validates every physical form", () => {
@@ -146,6 +170,19 @@ describe("tile expansion", () => {
         }
       }
     }
+  });
+
+  it("retains the shared four-room junction in the staged kite topology", () => {
+    const expanded = expandDungeon(
+      generateAbstractDungeon(17, { topology: "kite", orientation: "identity" }),
+    );
+    expect(expanded.junctions).toHaveLength(1);
+    const junction = expanded.junctions![0]!;
+    expect(junction.roomIds).toHaveLength(4);
+    const routedThroughJunction = expanded.connectors!.filter((connector) =>
+      connector.waypoints.some((point) => point.x === junction.tile.x && point.y === junction.tile.y),
+    );
+    expect(routedThroughJunction.length).toBeGreaterThanOrEqual(3);
   });
 
   it("rejects a physical layout whose connector directions block reward/exit", () => {

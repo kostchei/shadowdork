@@ -6,6 +6,7 @@ import { RENDER_SCALE, GAME_H, GAME_W } from "../display";
 import {
   MAX_LEVEL,
   alignmentLabel,
+  partyCoinSlots,
   xpToNextLevel,
   type Character,
   type LevelUpResult,
@@ -734,7 +735,13 @@ export class HudScene extends Phaser.Scene {
       resolution: RENDER_SCALE,
     }).setOrigin(0.5);
 
-    const sub = this.add.text(w / 2, h / 2 - 120, `Capacity: ${c.inventory.slotsUsed()} / ${c.inventory.capacity} Slots Used`, {
+    const isLeader = c.id === this.dungeon.party.leader.character.id;
+    const totalCoins = this.dungeon.ctx.totalCoins;
+    const partySize = this.dungeon.party.aliveMembers().length;
+    const coinSlots = isLeader ? partyCoinSlots(totalCoins, partySize) : 0;
+    const usedSlots = c.inventory.slotsUsed() + coinSlots;
+
+    const sub = this.add.text(w / 2, h / 2 - 120, `Capacity: ${usedSlots} / ${c.inventory.capacity} Slots Used`, {
       ...UI_STYLE,
       fontSize: "12px",
       color: "#a0a4b0"
@@ -762,7 +769,10 @@ export class HudScene extends Phaser.Scene {
     });
 
     const stacks = c.inventory.all();
-    const gearList = stacks.map((s: any) => {
+    const coinsLine = isLeader && totalCoins > 0
+      ? `  ${totalCoins}x Coins (Purse) (${coinSlots === 0 ? "free" : `${coinSlots} slot${coinSlots > 1 ? "s" : ""}`})\n`
+      : "";
+    const gearList = coinsLine + stacks.map((s: any) => {
       const slots = s.def.slotCost === 0 ? "free" : `${s.def.slotCost} slot${s.def.slotCost > 1 ? "s" : ""}`;
       const equipped = c.wieldedWeapon?.id === s.def.id || c.wornArmor?.id === s.def.id ||
         (c.carriedShield?.id === s.def.id && !c.shieldStowed);

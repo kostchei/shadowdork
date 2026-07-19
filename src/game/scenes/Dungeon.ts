@@ -18,7 +18,7 @@ import {
   randomPlebName,
   spell,
 } from "../../data";
-import { DC, MAX_LEVEL, xpToReachNextLevel, type Alignment, type StatName } from "../../engine";
+import { DC, MAX_LEVEL, partyCoinSlots, xpToReachNextLevel, type Alignment, type StatName } from "../../engine";
 import { GameContext } from "../context";
 import { RENDER_SCALE } from "../display";
 import { CharacterSprite } from "../entities/CharacterSprite";
@@ -2628,6 +2628,17 @@ export class DungeonScene extends Phaser.Scene {
       const def = item(p.itemId);
 
       if (def.id === "coins") {
+        const partySize = this.party.aliveMembers().length;
+        const currentCoinSlots = partyCoinSlots(this.ctx.totalCoins, partySize);
+        const newCoinSlots = partyCoinSlots(this.ctx.totalCoins + p.qty, partySize);
+        const extraSlotsNeeded = newCoinSlots - currentCoinSlots;
+        const leader = this.party.leader;
+
+        if (extraSlotsNeeded > 0 && leader && leader.character.inventory.slotsFree() < extraSlotsNeeded) {
+          this.ctx.say(`Party gear slots are full! (Coins left behind)`, "#d07070");
+          continue;
+        }
+
         const pxCoord = p.sprite.x;
         const pyCoord = p.sprite.y;
         p.sprite.destroy();

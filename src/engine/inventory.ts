@@ -43,6 +43,12 @@ export interface ItemStack {
   qty: number;
 }
 
+export function partyCoinSlots(totalCoins: number, partySize = 1): number {
+  const freeAllowance = Math.max(1, partySize) * 100;
+  if (totalCoins <= freeAllowance) return 0;
+  return Math.ceil((totalCoins - freeAllowance) / 100);
+}
+
 function stackSlots(def: ItemDef, qty: number): number {
   if (def.slotCost === 0) return 0;
   const charged = Math.max(0, qty - (def.freeQty ?? 0));

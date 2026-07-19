@@ -11,7 +11,6 @@ import { isMuted, setMuted } from "../audio/context";
 import * as sfx from "../audio/sfx";
 import { SpatialEmitter, spatialOpts, type Vec2 } from "../audio/spatial";
 import {
-  classDef,
   createCharacter,
   highestAvailableSpellIndex,
   item,
@@ -77,14 +76,12 @@ const RETALIATE_WINDOW_MS = 4000;
 /** Gold granted when a companion vault reward cannot recruit (full or duplicate class). */
 const COMPANION_SUBSTITUTE_GOLD = 500;
 
-interface RescuableNpc {
-  sprite: Phaser.GameObjects.Image;
-  prop?: Phaser.GameObjects.Image;
-  className: "thief" | "priest" | "wizard";
-  name: string;
-  x: number;
-  y: number;
-  rescued: boolean;
+/** Compact-map marker precedence: player > landmark beat > plain room > empty. */
+function mapMarkerPriority(marker: string): number {
+  if (marker === "@") return 3;
+  if (marker === "o") return 1;
+  if (marker === "·") return 0;
+  return 2; // E / X / R landmark beats
 }
 
 interface TalkableNpc {
@@ -139,7 +136,6 @@ export class DungeonScene extends Phaser.Scene {
   private trapSystem!: TrapSystem;
   private fireEmitters: SpatialEmitter[] = [];
   private pickups: Pickup[] = [];
-  private npcs: RescuableNpc[] = [];
   private talkableNpcs: TalkableNpc[] = [];
   private npcInteractionStates = new Map<string, "unmet" | "heard" | "resolved">();
   private discoveredRoomIds = new Set<string>();
@@ -208,7 +204,6 @@ export class DungeonScene extends Phaser.Scene {
     this.gearSelectionIndex = 0;
     this.monsters = [];
     this.pickups = [];
-    this.npcs = [];
     this.talkableNpcs = [];
     this.npcInteractionStates = new Map(
       Object.entries(this.loadedState?.npcInteractionStates ?? {}) as [string, "unmet" | "heard" | "resolved"][],
@@ -556,21 +551,6 @@ export class DungeonScene extends Phaser.Scene {
             }
             break;
           }
-          case "2":
-            if (!this.loadedState || !this.loadedState.party.some((c) => c.className === "thief")) {
-              this.addNpc("thief", this.nextPlebName(), px, py, "cage");
-            }
-            break;
-          case "3":
-            if (!this.loadedState || !this.loadedState.party.some((c) => c.className === "priest")) {
-              this.addNpc("priest", this.nextPlebName(), px, py, "shrine");
-            }
-            break;
-          case "4":
-            if (!this.loadedState || !this.loadedState.party.some((c) => c.className === "wizard")) {
-              this.addNpc("wizard", this.nextPlebName(), px, py);
-            }
-            break;
           case "N": {
             const spec = this.activeDungeon.talkableNpcs?.find(
               (candidate) => candidate.tile.x === x && candidate.tile.y === y,
@@ -774,18 +754,6 @@ export class DungeonScene extends Phaser.Scene {
   ): CharacterSprite {
     const character = createCharacter(this.ctx.engine, id, name, cls, "human", alignment);
     return new CharacterSprite(this, this.ctx, x, y, character, this.light);
-  }
-
-  private addNpc(
-    className: "thief" | "priest" | "wizard",
-    name: string,
-    x: number,
-    y: number,
-    propKey?: string,
-  ): void {
-    const sprite = this.add.image(x, y, `char-${className}`).setDepth(8).setTint(0x777788);
-    const prop = propKey ? this.add.image(x, y + (propKey === "shrine" ? 14 : 0), propKey).setDepth(9) : undefined;
-    this.npcs.push({ sprite, prop, className, name, x, y, rescued: false });
   }
 
   private addTalkableNpc(spec: TalkableNpcSpec, x: number, y: number): void {
@@ -1381,29 +1349,6 @@ export class DungeonScene extends Phaser.Scene {
       return {
         label: `${state === "unmet" ? "speak with" : state === "heard" ? "continue with" : "recall words from"} ${talkable.spec.name}`,
         run: () => this.advanceNpcInteraction(talkable, leader),
-      };
-    }
-
-    // 3. Rescue an NPC
-    const npc = this.npcs.find(
-      (n) => !n.rescued && Phaser.Math.Distance.Between(leader.x, leader.y, n.x, n.y) < TILE * 1.6,
-    );
-    if (npc) {
-      return {
-        label: `rescue ${npc.name}`,
-        run: () => {
-          npc.rescued = true;
-          npc.sprite.destroy();
-          npc.prop?.destroy();
-          const recruit = this.spawnCharacter(`pc-${npc.className}`, npc.name, npc.className, npc.x, npc.y);
-          this.party.add(recruit);
-          this.partyGroup.add(recruit);
-          this.trapSystem.registerActor(recruit);
-          this.ctx.say(
-            `${npc.name} the ${classDef(npc.className).displayName} joins the party! (${this.party.size}/4)`,
-            "#60e080",
-          );
-        },
       };
     }
 
@@ -2278,7 +2223,11 @@ export class DungeonScene extends Phaser.Scene {
             : region.beat === "reward"
               ? "R"
               : "o";
-      cells[row]![column] = marker;
+      // Two rooms can bucket into one grid cell; keep the more informative marker so
+      // the player position and landmark beats are never clobbered by a plain room.
+      if (mapMarkerPriority(marker) > mapMarkerPriority(cells[row]![column]!)) {
+        cells[row]![column] = marker;
+      }
     }
     return cells.map((row) => row.join(" ")).join("\n");
   }

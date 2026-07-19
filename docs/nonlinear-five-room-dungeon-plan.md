@@ -1,7 +1,11 @@
 # Non-linear Five Room Dungeon Plan
 
-Status: design and implementation plan only. This document does not describe
-runtime behavior that has already shipped.
+Status: largely shipped. This began as a design/implementation plan; the topology
+catalog, grid embedding, abstract→physical pipeline, connector states, room-content
+pressures, talkable NPCs, and physical validation are now live (commits `311b294`,
+`11b8d43`, and follow-ups). See [nonlinear-dungeon-review-and-plan.md](nonlinear-dungeon-review-and-plan.md)
+for the post-ship review and remaining follow-ups. The sections below record the
+original design intent and remain the reference for terminology and invariants.
 
 ## Purpose
 

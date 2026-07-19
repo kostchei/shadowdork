@@ -907,7 +907,7 @@ export class HudScene extends Phaser.Scene {
     );
     if (region) this.roomText.setText(region.hud);
     this.mapText
-      .setVisible((this.dungeon.activeDungeon.connectors?.length ?? 0) >= 5)
+      .setVisible(this.dungeon.activeDungeon.connectors !== undefined)
       .setText(this.dungeon.compactMap);
 
     if (minTorchMs < 30_000) {

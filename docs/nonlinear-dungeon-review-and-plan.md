@@ -169,8 +169,17 @@ functions so they can be unit-tested for correct persisted state, and to shrink 
 ### Checkpoint E — Silent opens  `[ ]`
 - [ ] Throw on unresolved `targetConnectorId`; add an SFX cue on success.
 
-### Checkpoint G — Cleanups  `[ ]`
-- [ ] compactMap collision priority; HUD gate; dead rescue-tile parsing; docs; scratch diffs.
+### Checkpoint G — Cleanups  `[x]`
+- [x] compactMap collision priority: `mapMarkerPriority` ensures `@`/landmark beats are never
+      clobbered by a plain `o` when two rooms bucket into one grid cell.
+- [x] HUD map gate: `connectors?.length >= 5` → `connectors !== undefined`, so the map shows
+      for every procedural nonlinear layout (incl. 4-edge Tier-1 forms), not authored dungeons.
+- [x] Removed dead legacy rescue-tile handling: switch cases `2`/`3`/`4` (globally banned by
+      `validateGrid`) plus the now-orphaned `addNpc`, `RescuableNpc`, the `npcs` array, the
+      rescue interaction block, and the `classDef` import.
+- [x] Refreshed `nonlinear-five-room-dungeon-plan.md` status from "plan only" to "largely
+      shipped" with a pointer to this review.
+- [x] Scratch diffs: none present in the working tree (nothing to remove).
 
 ---
 

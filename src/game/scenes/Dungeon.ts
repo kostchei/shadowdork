@@ -949,8 +949,8 @@ export class DungeonScene extends Phaser.Scene {
           case "g":
           case "s":
           case "r":
-          case "O": {
-            const defId = { g: "goblin", s: "skeleton", r: "giant-rat", O: "gloom-ogre" }[ch];
+            const bossId = this.activeDungeon.bossMonsterId ?? "gloom-ogre";
+            const defId = { g: "goblin", s: "skeleton", r: "giant-rat", O: bossId }[ch];
             // One morale group per room: a leader in the room commands all of it.
             const region = roomAt(this.activeDungeon.regions, x, y);
             if (!region) throw new Error(`Monster at (${x},${y}) sits outside every room region`);

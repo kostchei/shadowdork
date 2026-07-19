@@ -419,6 +419,7 @@ export function expandDungeon(abstract: AbstractDungeon): DungeonDefinition {
     trapKinds: [],
     danger: base.danger,
     encounterMonsterId: base.encounterMonsterId,
+    bossMonsterId: base.bossMonsterId,
   };
   const physical = validatePhysicalDungeon(expanded);
   if (!physical.ok) throw new Error(`Invalid physical dungeon: ${physical.diagnostics.join(",")}`);

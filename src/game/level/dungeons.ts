@@ -280,6 +280,8 @@ export interface DungeonDefinition {
   danger: 1 | 2 | 3;
   /** Monster spawned by random encounters in this dungeon. */
   encounterMonsterId: string;
+  /** Champion/boss monster spawned in the climax room. */
+  bossMonsterId?: string;
 }
 
 export interface DungeonLayout {
@@ -974,6 +976,7 @@ const DUNGEON_BASES: readonly Omit<
     objective: "Reach the vault and claim its campaign reward",
     danger: 2,
     encounterMonsterId: "goblin",
+    bossMonsterId: "gloom-ogre",
     trapKinds: ["plate-gate", "counterweighted-lift", "rolling-stone", "collapsing-floor"],
     pools: {
       room1: [0, 3, 4],
@@ -999,6 +1002,7 @@ const DUNGEON_BASES: readonly Omit<
     objective: "Climb the reliquary and claim its reward",
     danger: 3,
     encounterMonsterId: "skeleton",
+    bossMonsterId: "draugr",
     trapKinds: ["alternating-spikes", "dart-gallery", "undead-barrier"],
     pools: {
       room1: [1, 3, 4],
@@ -1024,6 +1028,7 @@ const DUNGEON_BASES: readonly Omit<
     objective: "Cross the warrens and rob the fungal shrine",
     danger: 1,
     encounterMonsterId: "giant-rat",
+    bossMonsterId: "cave-creeper",
     trapKinds: ["crusher-gallery", "light-runes", "flooded-chamber"],
     pools: {
       room1: [2, 3, 4],
@@ -1048,7 +1053,8 @@ const DUNGEON_BASES: readonly Omit<
     tagline: "The sea is above you. The stars are below.",
     objective: "Claim the reward in the impossible sanctum",
     danger: 1,
-    encounterMonsterId: "skeleton",
+    encounterMonsterId: "shadow",
+    bossMonsterId: "shadow",
     trapKinds: ["flooded-chamber", "light-runes", "undead-barrier", "counterweighted-lift"],
     pools: {
       room1: [3, 4],

@@ -78,6 +78,25 @@ export class Inventory {
     return newSlots <= this.capacity;
   }
 
+  /**
+   * Whether removing `removeQty` of `removeId` first would free enough room to then
+   * add `addDef`. Evaluates the trade as one transaction: a full pack holding only
+   * the item being spent can still receive its counterpart. Non-mutating.
+   */
+  canSwap(removeId: string, addDef: ItemDef, removeQty = 1, addQty = 1): boolean {
+    const removeStack = this.stacks.find((s) => s.def.id === removeId);
+    if (!removeStack || removeStack.qty < removeQty) return false;
+    if (addDef.slotCost === 0) return true;
+    const freed = stackSlots(removeStack.def, removeStack.qty) - stackSlots(removeStack.def, removeStack.qty - removeQty);
+    const usedAfter = this.slotsUsed() - freed;
+    const existingQty =
+      removeId === addDef.id
+        ? removeStack.qty - removeQty
+        : this.stacks.find((s) => s.def.id === addDef.id)?.qty ?? 0;
+    const newSlots = usedAfter - stackSlots(addDef, existingQty) + stackSlots(addDef, existingQty + addQty);
+    return newSlots <= this.capacity;
+  }
+
   add(def: ItemDef, qty = 1, force = false): void {
     if (qty < 1) throw new Error(`Quantity must be >= 1, got ${qty}`);
     if (!force && !this.canAdd(def, qty)) {

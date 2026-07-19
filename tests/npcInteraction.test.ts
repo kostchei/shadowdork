@@ -7,7 +7,7 @@ import {
 } from "../src/game/level/npcInteraction";
 import type { TalkableNpcOutcome, TalkableNpcSpec } from "../src/game/level/dungeons";
 
-const FULL_INVENTORY: LeaderInventorySnapshot = { hasRation: true, canAddTorch: true, canAddGem: true };
+const FULL_INVENTORY: LeaderInventorySnapshot = { hasRation: true, canAddTorch: true, gemFitsAfterTrade: true };
 
 function spec(outcome: TalkableNpcOutcome, extra: Partial<TalkableNpcSpec> = {}): TalkableNpcSpec {
   return {
@@ -94,8 +94,8 @@ describe("resolveNpcInteraction — outcome effects", () => {
     expect(nextState(actions, "heard")).toBe("heard");
   });
 
-  it("blocks the trade with no gem space and stays heard", () => {
-    const actions = run("trade", "heard", { ...FULL_INVENTORY, canAddGem: false });
+  it("blocks the trade when the gem will not fit even after the ration is spent", () => {
+    const actions = run("trade", "heard", { ...FULL_INVENTORY, gemFitsAfterTrade: false });
     expect(types(actions)).toEqual(["say"]);
     expect(nextState(actions, "heard")).toBe("heard");
   });

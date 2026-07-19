@@ -146,8 +146,12 @@ functions so they can be unit-tested for correct persisted state, and to shrink 
 - [ ] Enforce party capacity + duplicate-class check before applying the NPC override.
 - [ ] Test duplicate-class and full-party cases.
 
-### Checkpoint D — Transactional trade  `[ ]`
-- [ ] Evaluate gem capacity against post-removal inventory; test the full-inventory case.
+### Checkpoint D — Transactional trade  `[x]`
+- [x] Added non-mutating `Inventory.canSwap(removeId, addDef)` evaluating the add against
+      post-removal capacity. Scene snapshot now feeds `gemFitsAfterTrade` from it, and the
+      pure trade branch consumes the ration before granting the gem.
+- [x] Tests: `tests/inventory.test.ts` (full-pack swap accepted, no-slot-freed rejected,
+      absent item rejected, non-mutating) + updated NPC trade case. Full suite green (262).
 
 ### Checkpoint E — Silent opens  `[ ]`
 - [ ] Throw on unresolved `targetConnectorId`; add an SFX cue on success.

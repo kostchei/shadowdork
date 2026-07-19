@@ -1536,7 +1536,7 @@ export class DungeonScene extends Phaser.Scene {
       inventory: {
         hasRation: inventory.has("ration"),
         canAddTorch: inventory.canAdd(item("torch")),
-        canAddGem: inventory.canAdd(item("gem")),
+        gemFitsAfterTrade: inventory.canSwap("ration", item("gem")),
       },
     });
     for (const action of actions) this.applyNpcAction(action, npc, leader);

@@ -34,7 +34,8 @@ export type NpcAction =
 export interface LeaderInventorySnapshot {
   hasRation: boolean;
   canAddTorch: boolean;
-  canAddGem: boolean;
+  /** Whether a gem fits *after* the ration is spent — the trade is one transaction. */
+  gemFitsAfterTrade: boolean;
 }
 
 export interface NpcInteractionInput {
@@ -113,7 +114,7 @@ export function resolveNpcInteraction({ spec, state, leaderName, inventory }: Np
       if (!inventory.hasRation) {
         return [{ type: "say", text: `${spec.name} still wants one ration for the gem.`, color: BLOCKED_COLOR }];
       }
-      if (!inventory.canAddGem) {
+      if (!inventory.gemFitsAfterTrade) {
         return [{ type: "say", text: `${leaderName} needs inventory space for the gem.`, color: BLOCKED_COLOR }];
       }
       return [

@@ -1107,6 +1107,197 @@ function generateOvergrownZiggurat(scene: Phaser.Scene): void {
   });
 }
 
+function generateDrownedStarCenote(scene: Phaser.Scene): void {
+  const p = "skin-drowned-star-cenote";
+
+  // Wall variants (0..2)
+  for (let variant = 0; variant < 3; variant++) {
+    texture(scene, `${p}-wall-${variant}`, TILE, TILE, (g) => {
+      // Deep teal/navy limestone base
+      g.fillStyle(0x04131a, 1);
+      g.fillRect(0, 0, 32, 32);
+
+      const seed = 350 + variant * 12;
+      const tL = domainWarp({ x: 1, y: 1 }, seed, 1.8, 0.1);
+      const tR = domainWarp({ x: 31, y: 1 }, seed + 1, 1.8, 0.1);
+      const bR = domainWarp({ x: 31, y: 31 }, seed + 2, 1.8, 0.1);
+      const bL = domainWarp({ x: 1, y: 31 }, seed + 3, 1.8, 0.1);
+      const points = [tL, tR, bR, bL].map((pt) => new Phaser.Geom.Point(pt.x, pt.y));
+
+      const baseColor = variant === 0 ? 0x0c2733 : variant === 1 ? 0x0f3442 : 0x143e4f;
+      castPolygonShadow(g, points, 3.0, 0.65);
+      g.fillStyle(baseColor, 1);
+      g.fillPoints(points, true);
+      sdfBevelField(g, 2, 2, 28, 28, 2.5, seed, baseColor);
+
+      // Waterline moss & cyan bioluminescent star-algae flecks
+      g.lineStyle(1, 0x1e5569, 0.85);
+      g.strokePoints(points, true);
+
+      // Hanging water droplets / glowing cyan star nodes
+      g.fillStyle(0x00f2d6, 0.85);
+      if (variant === 0) {
+        g.fillCircle(8, 10, 1.5); g.fillCircle(22, 20, 2); g.fillCircle(14, 26, 1);
+      } else if (variant === 1) {
+        g.fillCircle(5, 24, 2); g.fillCircle(19, 8, 1.5); g.fillCircle(27, 14, 1);
+      } else {
+        g.fillCircle(12, 6, 2); g.fillCircle(26, 24, 1.5); g.fillCircle(7, 18, 1);
+      }
+
+      // Wet algae moss patches
+      g.fillStyle(0x00665c, 0.7);
+      g.fillCircle(4, 4, 3); g.fillCircle(28, 28, 4);
+    });
+  }
+
+  // Platform (32x12): Carved wet stone pier with dripping teal water
+  texture(scene, `${p}-platform`, TILE, 12, (g) => {
+    g.fillStyle(0x061922, 1); g.fillRect(0, 2, 32, 10);
+    g.fillStyle(0x114254, 1); g.fillRect(0, 0, 32, 4);
+    g.fillStyle(0x00f2d6, 0.9);
+    for (let x = 2; x < 30; x += 7) g.fillTriangle(x, 10, x + 5, 10, x + 2, 12);
+    g.fillStyle(0x00a896, 0.75);
+    for (let x = 4; x < 30; x += 9) g.fillRect(x, 4, 2, 6);
+  });
+
+  // Weak Wall (32x32): Fractured limestone with glowing cyan star-water bursting
+  texture(scene, `${p}-weak`, TILE, TILE, (g) => {
+    g.fillStyle(0x04131a, 1); g.fillRect(0, 0, 32, 32);
+    g.fillStyle(0x0d2f3d, 1); g.fillRect(2, 2, 28, 28);
+    g.lineStyle(2, 0x00f2d6, 0.95);
+    g.beginPath(); g.moveTo(4, 4); g.lineTo(14, 14); g.lineTo(8, 22); g.lineTo(26, 28); g.strokePath();
+    g.lineStyle(1, 0xffffff, 0.9);
+    g.beginPath(); g.moveTo(4, 4); g.lineTo(14, 14); g.lineTo(8, 22); g.lineTo(26, 28); g.strokePath();
+    g.fillStyle(0x00f2d6, 0.9);
+    g.fillCircle(14, 14, 2.5); g.fillCircle(8, 22, 2);
+  });
+
+  // Climb (32x32): Braided jungle roots and hanging vine ladder with glowing buds
+  texture(scene, `${p}-climb`, TILE, TILE, (g) => {
+    g.fillStyle(0x061922, 1); g.fillRect(0, 0, 32, 32);
+    // Braided root cables
+    g.fillStyle(0x283b2c, 1); g.fillRect(5, 0, 5, 32); g.fillRect(22, 0, 5, 32);
+    g.fillStyle(0x3e5c45, 1); g.fillRect(6, 0, 3, 32); g.fillRect(23, 0, 3, 32);
+    // Cross vine rungs
+    g.fillStyle(0x4d7556, 1);
+    for (let y = 3; y < 32; y += 8) g.fillRect(7, y, 18, 3);
+    // Bioluminescent cyan flower buds on vines
+    g.fillStyle(0x00f2d6, 0.95);
+    for (let y = 4; y < 32; y += 8) { g.fillCircle(5, y + 1, 1.5); g.fillCircle(26, y + 1, 1.5); }
+  });
+
+  // Portcullis (32x32): Verdigris bronze gate encrusted with barnacles and moss
+  texture(scene, `${p}-portcullis`, TILE, TILE, (g) => {
+    g.fillStyle(0x04131a, 0.95); g.fillRect(1, 1, 30, 6); g.fillRect(1, 25, 30, 5);
+    for (let x = 4; x < 30; x += 6) {
+      g.fillStyle(0x133e38, 1); g.fillRect(x, 2, 4, 27);
+      g.fillStyle(0x247368, 0.85); g.fillRect(x + 1, 3, 1, 23);
+      // Verdigris / barnacle spots
+      g.fillStyle(0x52b8aa, 0.9); g.fillRect(x, 12 + (x % 5), 3, 2);
+    }
+  });
+
+  // Door (32x64): Submerged stone vault portal carved with star-pool glyph
+  texture(scene, `${p}-door`, TILE, TILE * 2, (g) => {
+    g.fillStyle(0x04131a, 1); g.fillRect(1, 5, 30, 59);
+    g.fillStyle(0x0e2c38, 1); g.fillRect(4, 8, 24, 56);
+    g.fillStyle(0x1a4a5e, 0.85); g.fillRect(4, 20, 24, 4); g.fillRect(4, 43, 24, 4);
+    // Glowing star-pool emblem
+    g.fillStyle(0x00f2d6, 0.95); g.fillCircle(16, 33, 7);
+    g.fillStyle(0x0e2c38, 1); g.fillCircle(16, 33, 4);
+    g.fillStyle(0xffffff, 0.9); g.fillCircle(16, 33, 2);
+    // Radiating star points
+    g.fillStyle(0x00f2d6, 0.85);
+    g.fillTriangle(16, 22, 14, 27, 18, 27);
+    g.fillTriangle(16, 44, 14, 39, 18, 39);
+    g.fillTriangle(5, 33, 10, 31, 10, 35);
+    g.fillTriangle(27, 33, 22, 31, 22, 35);
+  });
+
+  // Backdrop (320x180): Deep cenote cavern with circular overhead skylight beam
+  texture(scene, `${p}-backdrop`, 320, 180, (g) => {
+    // Deep abyssal navy sky down to glowing turquoise pool
+    g.fillStyle(0x030d12, 1); g.fillRect(0, 0, 320, 180);
+    g.fillStyle(0x072533, 0.85); g.fillRect(0, 90, 320, 90);
+
+    // Cavern skylight dome & stalactites
+    g.fillStyle(0x091d26, 1);
+    for (let x = 0; x < 320; x += 30) {
+      const h = 20 + Math.abs(latticeNoise(x, 7, 112)) * 40;
+      g.fillTriangle(x, 0, x + 30, 0, x + 15, h);
+    }
+
+    // Circular overhead cenote skylight (center-top)
+    g.fillStyle(0x165b6e, 0.9); g.fillCircle(160, 25, 32);
+    g.fillStyle(0x00f2d6, 0.8); g.fillCircle(160, 25, 22);
+    g.fillStyle(0xffffff, 0.9); g.fillCircle(160, 25, 12);
+
+    // Volumetric skylight beam rays descending into the pool
+    g.fillStyle(0x00f2d6, 0.18);
+    g.fillTriangle(160, 25, 40, 180, 280, 180);
+    g.fillStyle(0xffffff, 0.12);
+    g.fillTriangle(160, 25, 90, 180, 230, 180);
+
+    // Submerged stone ledges & ruins
+    g.fillStyle(0x0b2936, 1);
+    g.fillRect(10, 110, 70, 70);
+    g.fillRect(240, 110, 70, 70);
+    g.fillRect(100, 140, 120, 40);
+
+    // Translucent glowing teal star-pool surface
+    g.fillStyle(0x00a896, 0.85); g.fillRect(0, 150, 320, 30);
+    g.fillStyle(0x00f2d6, 0.95); g.fillRect(0, 152, 320, 28);
+    g.fillStyle(0xffffff, 0.8);
+    for (let x = 0; x < 320; x += 18) {
+      const y = 153 + Math.abs(latticeNoise(x, 15, 199)) * 6;
+      g.fillRect(x, y, 12, 1.5);
+    }
+
+    // Floating star motes in light beam
+    g.fillStyle(0x00f2d6, 0.9);
+    for (let mote = 0; mote < 12; mote++) {
+      const mx = 120 + Math.abs(latticeNoise(mote, 2, 77)) * 80;
+      const my = 40 + Math.abs(latticeNoise(mote, 5, 88)) * 90;
+      g.fillCircle(mx, my, 1.5);
+    }
+  });
+
+  // Decorations:
+  // gong (30x24): Star-shaped pedestal with glowing bioluminescent pearl
+  texture(scene, `${p}-gong`, 30, 24, (g) => {
+    g.fillStyle(0x0a2733, 1); g.fillRect(6, 16, 18, 8);
+    g.fillStyle(0x134659, 1); g.fillTriangle(15, 6, 4, 18, 26, 18);
+    g.fillStyle(0x00f2d6, 0.95); g.fillCircle(15, 10, 5);
+    g.fillStyle(0xffffff, 0.9); g.fillCircle(14, 9, 2);
+  });
+
+  // rack (30x18): Submerged stone altar with glowing luminescent sea-kelp
+  texture(scene, `${p}-rack`, 30, 18, (g) => {
+    g.fillStyle(0x0b2936, 1); g.fillRect(4, 12, 22, 6);
+    g.fillStyle(0x134659, 1); g.fillRect(2, 10, 26, 3);
+    g.lineStyle(2, 0x00f2d6, 0.9);
+    g.beginPath(); g.moveTo(6, 10); g.lineTo(9, 2); g.lineTo(12, 8); g.strokePath();
+    g.beginPath(); g.moveTo(18, 10); g.lineTo(21, 1); g.lineTo(24, 7); g.strokePath();
+  });
+
+  // banner (18x40): Tattered aquamarine silk banner with starfish emblem
+  texture(scene, `${p}-banner`, 18, 40, (g) => {
+    g.fillStyle(0x134659, 1); g.fillRect(0, 0, 18, 3);
+    g.fillStyle(0x007a78, 1); g.fillRect(2, 3, 14, 30);
+    g.fillTriangle(2, 33, 16, 33, 9, 39);
+    g.fillStyle(0x00f2d6, 0.95); g.fillCircle(9, 16, 5);
+    g.fillStyle(0xffffff, 0.9); g.fillCircle(9, 16, 2);
+  });
+
+  // crenel (30x35): Water-spouting stone nozzle with glowing cyan droplets
+  texture(scene, `${p}-crenel`, 30, 35, (g) => {
+    g.fillStyle(0x0b2936, 1); g.fillRect(6, 12, 18, 23);
+    g.fillStyle(0x175369, 1); g.fillRect(4, 8, 22, 4);
+    g.fillStyle(0x00f2d6, 0.95); g.fillCircle(15, 18, 4);
+    g.fillStyle(0x00f2d6, 0.85); g.fillRect(14, 22, 2, 10); g.fillCircle(15, 33, 2);
+  });
+}
+
 function generateNulnFungalGrottos(scene: Phaser.Scene): void {
   const p = "skin-nuln-fungal-grottos";
   for (let variant = 0; variant < 3; variant++) {
@@ -1415,6 +1606,9 @@ export function ensureVisualSkinTextures(
   } else if (skin.id === "overgrown-basalt-ziggurat") {
     prefix = "skin-overgrown-basalt-ziggurat";
     generateOvergrownZiggurat(scene);
+  } else if (skin.id === "drowned-star-cenote") {
+    prefix = "skin-drowned-star-cenote";
+    generateDrownedStarCenote(scene);
   } else if (skin.id === "nuln-fungal-grottos") {
     prefix = "skin-nuln-fungal-grottos";
     generateNulnFungalGrottos(scene);

@@ -1014,6 +1014,183 @@ function generateRimeSeaCaves(scene: Phaser.Scene): void {
   });
 }
 
+function generateFrostJarlTomb(scene: Phaser.Scene): void {
+  const p = "skin-frost-jarl-tomb";
+
+  // Wall variants (0..2)
+  for (let variant = 0; variant < 3; variant++) {
+    texture(scene, `${p}-wall-${variant}`, TILE, TILE, (g) => {
+      // Glacial slate base
+      g.fillStyle(0x0c1c28, 1);
+      g.fillRect(0, 0, 32, 32);
+
+      const seed = 500 + variant * 14;
+      const tL = domainWarp({ x: 1, y: 1 }, seed, 1.6, 0.1);
+      const tR = domainWarp({ x: 31, y: 1 }, seed + 1, 1.6, 0.1);
+      const bR = domainWarp({ x: 31, y: 31 }, seed + 2, 1.6, 0.1);
+      const bL = domainWarp({ x: 1, y: 31 }, seed + 3, 1.6, 0.1);
+      const points = [tL, tR, bR, bL].map((pt) => new Phaser.Geom.Point(pt.x, pt.y));
+
+      const baseColor = variant === 0 ? 0x162c3d : variant === 1 ? 0x1b364a : 0x214159;
+      castPolygonShadow(g, points, 3.0, 0.65);
+      g.fillStyle(baseColor, 1);
+      g.fillPoints(points, true);
+      sdfBevelField(g, 2, 2, 28, 28, 2.5, seed, baseColor);
+      g.lineStyle(1, 0x3d6888, 0.85); g.strokePoints(points, true);
+
+      // Frost-bloom crystals on rock surface
+      frostBloom(g, 6, 6, 4, seed);
+      frostBloom(g, 24, 24, 5, seed + 1);
+
+      // Glowing silver-blue runic inscriptions
+      g.lineStyle(1, 0x8cd6ff, 0.9);
+      if (variant === 0) {
+        g.beginPath(); g.moveTo(8, 12); g.lineTo(16, 8); g.lineTo(24, 12); g.lineTo(16, 24); g.strokePath();
+      } else if (variant === 1) {
+        g.beginPath(); g.moveTo(16, 6); g.lineTo(16, 26); g.moveTo(8, 14); g.lineTo(24, 14); g.strokePath();
+      } else {
+        g.beginPath(); g.moveTo(10, 8); g.lineTo(22, 24); g.moveTo(22, 8); g.lineTo(10, 24); g.strokePath();
+      }
+      g.fillStyle(0xd6f0ff, 0.95);
+      g.fillCircle(16, 16, 1.5);
+    });
+  }
+
+  // Platform (32x12): Frost-crusted timber planks with longship rib supports
+  texture(scene, `${p}-platform`, TILE, 12, (g) => {
+    g.fillStyle(0x0e1821, 1); g.fillRect(0, 2, 32, 10);
+    g.fillStyle(0x36281e, 1); g.fillRect(0, 0, 32, 4); // Timber plank
+    g.fillStyle(0x8cb6d4, 0.9); g.fillRect(0, 0, 32, 1); // Frost crust top
+    // Longship rib brackets under beam
+    g.fillStyle(0x1a2e3d, 1);
+    for (let x = 3; x < 32; x += 10) g.fillTriangle(x, 4, x + 6, 4, x + 3, 11);
+  });
+
+  // Weak Wall (32x32): Shattered tomb wall revealing glowing ice crystals
+  texture(scene, `${p}-weak`, TILE, TILE, (g) => {
+    g.fillStyle(0x0c1c28, 1); g.fillRect(0, 0, 32, 32);
+    g.fillStyle(0x182f42, 1); g.fillRect(2, 2, 28, 28);
+    g.lineStyle(2, 0x64b5f6, 0.95);
+    g.beginPath(); g.moveTo(4, 4); g.lineTo(14, 14); g.lineTo(8, 22); g.lineTo(26, 28); g.strokePath();
+    g.lineStyle(1, 0xffffff, 0.95);
+    g.beginPath(); g.moveTo(4, 4); g.lineTo(14, 14); g.lineTo(8, 22); g.lineTo(26, 28); g.strokePath();
+    g.fillStyle(0x80d8ff, 0.9);
+    g.fillTriangle(14, 14, 18, 10, 16, 18);
+  });
+
+  // Climb (32x32): Iron-shod oak burial ladder with frost rungs
+  texture(scene, `${p}-climb`, TILE, TILE, (g) => {
+    g.fillStyle(0x0c1c28, 1); g.fillRect(0, 0, 32, 32);
+    // Vertical iron-shod oak beams
+    g.fillStyle(0x2d1f17, 1); g.fillRect(5, 0, 5, 32); g.fillRect(22, 0, 5, 32);
+    g.fillStyle(0x4a5b6c, 1); g.fillRect(5, 0, 1, 32); g.fillRect(26, 0, 1, 32);
+    // Frost-crusted rungs
+    for (let y = 3; y < 32; y += 8) {
+      g.fillStyle(0x3d2b20, 1); g.fillRect(6, y, 20, 3);
+      g.fillStyle(0xb3e5fc, 0.9); g.fillRect(6, y, 20, 1);
+    }
+  });
+
+  // Portcullis (32x32): Heavy oak and iron burial grate with frosted tips
+  texture(scene, `${p}-portcullis`, TILE, TILE, (g) => {
+    g.fillStyle(0x09141e, 0.95); g.fillRect(1, 1, 30, 6); g.fillRect(1, 25, 30, 5);
+    for (let x = 4; x < 30; x += 6) {
+      g.fillStyle(0x281e18, 1); g.fillRect(x, 2, 4, 27);
+      g.fillStyle(0x4a5d6e, 0.85); g.fillRect(x + 1, 3, 1, 23);
+      // Frosted spikes
+      g.fillStyle(0xe1f5fe, 0.95); g.fillTriangle(x, 29, x + 4, 29, x + 2, 32);
+    }
+  });
+
+  // Door (32x64): Monumental Jarl portal with twin dragon prows and glowing crest
+  texture(scene, `${p}-door`, TILE, TILE * 2, (g) => {
+    g.fillStyle(0x08131c, 1); g.fillRect(1, 5, 30, 59);
+    g.fillStyle(0x281f19, 1); g.fillRect(4, 8, 24, 56);
+    g.fillStyle(0x3d4e5e, 1); g.fillRect(4, 20, 24, 4); g.fillRect(4, 43, 24, 4);
+    // Dragon prow carved emblem
+    g.fillStyle(0x80d8ff, 0.95); g.fillTriangle(16, 26, 8, 38, 24, 38);
+    g.fillStyle(0x182f42, 1); g.fillTriangle(16, 30, 11, 36, 21, 36);
+    g.fillStyle(0xffffff, 0.9); g.fillCircle(16, 33, 2);
+  });
+
+  // Backdrop (320x180): Glacial burial vault with longship ribs and aurora haze
+  texture(scene, `${p}-backdrop`, 320, 180, (g) => {
+    // Deep arctic night sky down to icy blue mist
+    g.fillStyle(0x050c14, 1); g.fillRect(0, 0, 320, 180);
+    g.fillStyle(0x0d2233, 0.85); g.fillRect(0, 90, 320, 90);
+
+    // Glacial ice dome roof
+    g.fillStyle(0x122c42, 1);
+    for (let x = 0; x < 320; x += 32) {
+      const h = 25 + Math.abs(latticeNoise(x, 9, 131)) * 40;
+      g.fillTriangle(x, 0, x + 32, 0, x + 16, h);
+    }
+
+    // Colossal longship hull timber ribs forming vault arches
+    for (let rib = 0; rib < 5; rib++) {
+      const rx = 30 + rib * 65;
+      g.lineStyle(6, 0x2b1e17, 1);
+      g.beginPath(); g.arc(rx, 140, 60, Math.PI * 1.15, Math.PI * 1.85); g.strokePath();
+      g.lineStyle(1.5, 0x80d8ff, 0.75);
+      g.beginPath(); g.arc(rx, 140, 60, Math.PI * 1.15, Math.PI * 1.85); g.strokePath();
+    }
+
+    // Snow-covered burial mound ledges
+    g.fillStyle(0x132636, 1);
+    g.fillRect(15, 115, 75, 65);
+    g.fillRect(230, 115, 75, 65);
+    g.fillRect(100, 140, 120, 40);
+
+    // Glowing runestones standing on ledges
+    for (const rsX of [50, 270]) {
+      g.fillStyle(0x1f394d, 1); g.fillRect(rsX - 6, 85, 12, 30);
+      g.lineStyle(1.5, 0x80d8ff, 0.95);
+      g.lineBetween(rsX, 90, rsX, 110);
+      g.lineBetween(rsX - 3, 97, rsX + 3, 97);
+    }
+
+    // Icy floor snow crust with aurora blue glow
+    g.fillStyle(0x274966, 0.9); g.fillRect(0, 152, 320, 28);
+    g.fillStyle(0x80d8ff, 0.85);
+    for (let x = 0; x < 320; x += 20) {
+      const y = 153 + Math.abs(latticeNoise(x, 18, 221)) * 6;
+      g.fillRect(x, y, 14, 1.5);
+    }
+  });
+
+  // Decorations:
+  // gong (30x24): Carved runestone pillar with glowing runic inscriptions
+  texture(scene, `${p}-gong`, 30, 24, (g) => {
+    g.fillStyle(0x162c3d, 1); g.fillRect(10, 4, 10, 18);
+    g.fillStyle(0x214159, 1); g.fillRect(8, 20, 14, 4);
+    g.lineStyle(1.5, 0x80d8ff, 0.95);
+    g.lineBetween(15, 6, 15, 18); g.lineBetween(12, 10, 18, 10);
+  });
+
+  // rack (30x18): Viking weapon rack with frosted battleaxes and round shields
+  texture(scene, `${p}-rack`, 30, 18, (g) => {
+    g.fillStyle(0x2d1f17, 1); g.fillRect(2, 13, 26, 4);
+    g.fillStyle(0x4a5d6e, 1); g.fillCircle(8, 9, 5); g.fillCircle(22, 9, 5);
+    g.fillStyle(0x80d8ff, 0.9); g.fillCircle(8, 9, 2); g.fillCircle(22, 9, 2);
+  });
+
+  // banner (18x40): Woven clan banner with wolf heraldry and frost trim
+  texture(scene, `${p}-banner`, 18, 40, (g) => {
+    g.fillStyle(0x3d4e5e, 1); g.fillRect(0, 0, 18, 3);
+    g.fillStyle(0x1a2e3d, 1); g.fillRect(2, 3, 14, 30);
+    g.fillTriangle(2, 33, 16, 33, 9, 39);
+    g.fillStyle(0x80d8ff, 0.95); g.fillTriangle(9, 10, 5, 22, 13, 22);
+    g.fillStyle(0xffffff, 0.9); g.fillCircle(9, 16, 2);
+  });
+
+  // crenel (30x35): Carved dragon-prow timber beam with rising frost particles
+  texture(scene, `${p}-crenel`, 30, 35, (g) => {
+    g.fillStyle(0x2b1e17, 1); g.fillRect(6, 10, 18, 25);
+    g.fillStyle(0x80d8ff, 0.95); g.fillTriangle(15, 2, 6, 12, 24, 12);
+    g.fillStyle(0xffffff, 0.9); g.fillRect(10, 1, 2, 2); g.fillRect(18, 1, 2, 2);
+  });
+}
+
 function generateOvergrownZiggurat(scene: Phaser.Scene): void {
   const p = "skin-overgrown-basalt-ziggurat";
   for (let variant = 0; variant < 3; variant++) {
@@ -1603,6 +1780,9 @@ export function ensureVisualSkinTextures(
     prefix = "skin-rime-sea-caves";
     openSky = true;
     generateRimeSeaCaves(scene);
+  } else if (skin.id === "frost-jarl-tomb") {
+    prefix = "skin-frost-jarl-tomb";
+    generateFrostJarlTomb(scene);
   } else if (skin.id === "overgrown-basalt-ziggurat") {
     prefix = "skin-overgrown-basalt-ziggurat";
     generateOvergrownZiggurat(scene);

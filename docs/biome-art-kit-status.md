@@ -51,7 +51,7 @@ Legend: ✅ dedicated kit · ⛔ falls back to generic legacy masonry ·
 | | `djurum-approach` | ✅ ☀ 🕳 | `generateDjurumApproach` |
 | | `burning-mines` | ✅ | `generateBurningMines` |
 | **Midnight Sun** | `rime-sea-caves` | ✅ ☀ 🕳 | `generateRimeSeaCaves` |
-| | `frost-jarl-tomb` | ⛔ | — |
+| | `frost-jarl-tomb` | ✅ | `generateFrostJarlTomb` |
 | | `dverg-forges` | ⛔ | — |
 | **River of Night** | `overgrown-basalt-ziggurat` | ✅ | `generateOvergrownZiggurat` |
 | | `drowned-star-cenote` | ✅ | `generateDrownedStarCenote` |
@@ -63,7 +63,7 @@ Legend: ✅ dedicated kit · ⛔ falls back to generic legacy masonry ·
 | | `sunken-thieves-guild` | ⛔ | — |
 | | `hidden-face-temple` | ⛔ | — |
 
-Totals: **9 kits done, 9 missing.** Open-terrain survival is wired for exactly
+Totals: **10 kits done, 8 missing.** Open-terrain survival is wired for exactly
 three skins (all three finished open-sky kits).
 
 ## What each missing skin needs

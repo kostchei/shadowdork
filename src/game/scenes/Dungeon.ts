@@ -2593,23 +2593,36 @@ export class DungeonScene extends Phaser.Scene {
         .find((m) => Phaser.Math.Distance.Between(m.x, m.y, p.sprite.x, p.sprite.y) < 26);
       if (!collector) continue;
       const def = item(p.itemId);
-      if (!collector.character.inventory.canAdd(def, p.qty)) {
-        // Not a fallback — a rules outcome: slots are hard capacity.
+      let addQty = p.qty;
+      if (def.id === "coins" && !collector.character.inventory.canAdd(def, p.qty)) {
+        const currentCoins = collector.character.inventory.count("coins");
+        const freeCoinsAvailable = Math.max(0, 100 - currentCoins);
+        if (freeCoinsAvailable > 0 && freeCoinsAvailable < p.qty) {
+          addQty = freeCoinsAvailable;
+          p.qty -= addQty;
+        } else if (!collector.character.inventory.canAdd(def, 1)) {
+          this.ctx.say(`${collector.character.name}'s gear slots are full! (Coins left behind)`, "#d07070");
+          continue;
+        }
+      } else if (!collector.character.inventory.canAdd(def, p.qty)) {
         this.ctx.say(`${collector.character.name}'s gear slots are full! (${def.name} left behind)`, "#d07070");
         continue;
       }
-      collector.character.inventory.add(def, p.qty);
+
+      collector.character.inventory.add(def, addQty);
       const pxCoord = p.sprite.x;
       const pyCoord = p.sprite.y;
-      p.sprite.destroy();
+      if (addQty === p.qty) {
+        p.sprite.destroy();
+      }
 
       const jewel =
         def.id === "gem" || def.id === "jeweled-idol" || def.id === "crown-of-the-deep";
       sfx.pickupChime(jewel, this.spatial({ x: pxCoord, y: pyCoord }));
       sparkleBurst(this, pxCoord, pyCoord, jewel);
       // Coins bank toward 100-coin XP thresholds; other treasure is XP outright.
-      const xp = def.id === "coins" ? this.ctx.bankCoins(p.qty) : (def.xpValue ?? 0);
-      const label = p.qty > 1 ? `${p.qty} ${def.name}` : def.name;
+      const xp = def.id === "coins" ? this.ctx.bankCoins(addQty) : (def.xpValue ?? 0);
+      const label = addQty > 1 ? `${addQty} ${def.name}` : def.name;
       if (xp > 0) {
         floatText(this, collector.x, collector.y - 24, `${label} +${xp} XP`, "#e8c840");
         for (const m of this.party.members) {

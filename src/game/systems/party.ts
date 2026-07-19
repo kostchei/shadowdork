@@ -37,6 +37,17 @@ export class PartyManager {
     this.members.push(member);
   }
 
+  /** Remove permanent casualties before a replacement joins the expedition. */
+  pruneDeadMembers(): CharacterSprite[] {
+    const leader = this.members[this.leaderIdx];
+    const removed = this.members.filter((member) => member.character.dead);
+    for (let i = this.members.length - 1; i >= 0; i--) {
+      if (this.members[i]!.character.dead) this.members.splice(i, 1);
+    }
+    this.leaderIdx = leader && !leader.character.dead ? this.members.indexOf(leader) : 0;
+    return removed;
+  }
+
   /** Any member who can still act (not dead, not down). */
   aliveMembers(): CharacterSprite[] {
     return this.members.filter((m) => m.alive);

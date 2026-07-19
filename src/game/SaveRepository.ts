@@ -190,7 +190,10 @@ export class SaveRepository {
     if (obj.openedConnectorIds !== undefined && (!Array.isArray(obj.openedConnectorIds) || !obj.openedConnectorIds.every((id: unknown) => typeof id === "string"))) return false;
     if (obj.npcInteractionStates !== undefined) {
       if (!obj.npcInteractionStates || typeof obj.npcInteractionStates !== "object" || Array.isArray(obj.npcInteractionStates)) return false;
-      if (!Object.values(obj.npcInteractionStates).every((state) => state === "unmet" || state === "heard" || state === "resolved")) return false;
+      if (!Object.values(obj.npcInteractionStates).every((state) =>
+        state === "unmet" || state === "heard" || state === "resolved" ||
+        state === "hostile-npc" || state === "hostile-allies" || state === "departed"
+      )) return false;
     }
     if (obj.discoveredRoomIds !== undefined && (!Array.isArray(obj.discoveredRoomIds) || !obj.discoveredRoomIds.every((id: unknown) => typeof id === "string"))) return false;
     if (typeof obj.hasCrown !== "boolean") return false;

@@ -55,7 +55,7 @@ function npcDialogue(outcome: TalkableNpcOutcome): { introduction: string; resol
     };
     case "betrayal": return {
       introduction: "You took your time. My friends were beginning to doubt me.",
-      resolution: "The signal is given. Steel answers from the dark.",
+      resolution: "Fine. No signal tonight—but leave before I reconsider.",
     };
     case "revelation": return {
       introduction: "The old mechanisms still answer the keeper's phrase.",
@@ -360,12 +360,14 @@ export function expandDungeon(abstract: AbstractDungeon): DungeonDefinition {
       if (gate) outcomes.push("revelation");
       const outcome = outcomes[npcHash % outcomes.length]!;
       const dialogue = npcDialogue(outcome);
+      const alignmentRoll = (npcHash >>> 12) % 6;
       talkableNpcs.push({
         id: `npc-${room.node}`,
         roomId: room.id,
         tile: { x: ox + stamped.npcLocalX, y },
         name: NPC_NAMES[npcHash % NPC_NAMES.length]!,
         role: NPC_ROLES[(npcHash >>> 4) % NPC_ROLES.length]!,
+        alignment: alignmentRoll < 3 ? "law" : alignmentRoll < 5 ? "neutral" : "chaos",
         introduction: dialogue.introduction,
         resolution: dialogue.resolution,
         outcome,

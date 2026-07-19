@@ -138,6 +138,7 @@ describe("tile expansion", () => {
       const expanded = expandDungeon(generateAbstractDungeon(seed));
       for (const npc of expanded.talkableNpcs ?? []) {
         outcomes.add(npc.outcome);
+        expect(["law", "neutral", "chaos"]).toContain(npc.alignment);
         if (npc.outcome === "reveal-route" || npc.outcome === "revelation") {
           expect(expanded.connectors?.some((connector) => connector.id === npc.targetConnectorId)).toBe(true);
         }

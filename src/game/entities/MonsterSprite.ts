@@ -26,6 +26,7 @@ export class MonsterSprite extends Phaser.Physics.Arcade.Sprite {
   patrolDir: 1 | -1 = 1;
   private patrolOriginX: number;
   private shadow: Phaser.GameObjects.Image;
+  private readonly customTexture: boolean;
 
   constructor(
     scene: Phaser.Scene,
@@ -34,11 +35,13 @@ export class MonsterSprite extends Phaser.Physics.Arcade.Sprite {
     def: MonsterDef,
     groupId: string,
     dice: Dice,
+    textureKey?: string,
   ) {
-    super(scene, x, y, `monster-${def.id}`);
+    super(scene, x, y, textureKey ?? `monster-${def.id}`);
     this.def = def;
     this.groupId = groupId;
     this.hp = Math.max(1, dice.roll(def.hitDice));
+    this.customTexture = textureKey !== undefined;
     this.patrolOriginX = x;
     this.shadow = scene.add.image(x, y + 14, "entity-shadow").setDepth(7).setAlpha(0.62);
     scene.add.existing(this);
@@ -83,7 +86,7 @@ export class MonsterSprite extends Phaser.Physics.Arcade.Sprite {
       const dir = target && target.x > this.x ? -1 : 1;
       this.setVelocityX(dir * this.speed * 1.4);
       this.setFlipX(dir === -1);
-      this.play(`monster-${this.def.id}-walk`, true);
+      if (!this.customTexture) this.play(`monster-${this.def.id}-walk`, true);
       return;
     }
 
@@ -119,9 +122,9 @@ export class MonsterSprite extends Phaser.Physics.Arcade.Sprite {
 
     const isMoving = Math.abs(body.velocity.x) > 10;
     if (isMoving) {
-      this.play(`monster-${this.def.id}-walk`, true);
+      if (!this.customTexture) this.play(`monster-${this.def.id}-walk`, true);
     } else {
-      this.play(`monster-${this.def.id}-idle`, true);
+      if (!this.customTexture) this.play(`monster-${this.def.id}-idle`, true);
     }
   }
 

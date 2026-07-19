@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  companionPartySnapshot,
   chooseCompanionRecruit,
   PARTY_CAP,
   type CompanionCandidate,
@@ -64,5 +65,14 @@ describe("chooseCompanionRecruit", () => {
   it("validates the fallback too when it would duplicate a class", () => {
     const decision = chooseCompanionRecruit(null, fallback, party(["fighter", "priest"]));
     expect(decision).toEqual({ kind: "skip", reason: "duplicate-class", className: "priest" });
+  });
+
+  it("does not let dead companions consume capacity or block their replacement class", () => {
+    const snapshot = companionPartySnapshot([
+      { className: "fighter", dead: false },
+      { className: "thief", dead: true },
+    ]);
+    expect(snapshot).toEqual({ size: 1, classes: ["fighter"] });
+    expect(chooseCompanionRecruit(npc, fallback, snapshot)).toEqual({ kind: "recruit", candidate: npc });
   });
 });

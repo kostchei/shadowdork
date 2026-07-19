@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  betrayalFoePersists,
+  betrayalCharismaDc,
+  persistedBetrayalFoe,
   resolveNpcInteraction,
   type LeaderInventorySnapshot,
   type NpcAction,
@@ -17,6 +18,7 @@ function spec(outcome: TalkableNpcOutcome, extra: Partial<TalkableNpcSpec> = {})
     tile: { x: 3, y: 3 },
     name: "Wren",
     role: "scout",
+    alignment: "neutral",
     introduction: "intro",
     resolution: "resolution",
     outcome,
@@ -30,7 +32,16 @@ function run(
   inventory: LeaderInventorySnapshot = FULL_INVENTORY,
   extra: Partial<TalkableNpcSpec> = {},
 ): NpcAction[] {
-  return resolveNpcInteraction({ spec: spec(outcome, extra), state, leaderName: "Ada", inventory });
+  return resolveNpcInteraction({
+    spec: spec(outcome, extra),
+    state,
+    leaderName: "Ada",
+    inventory,
+    betrayalCheck: outcome === "betrayal" && state === "heard"
+      ? { success: false, natural: 4, total: 5, dc: 11 }
+      : undefined,
+    leaderLevel: 2,
+  });
 }
 
 function types(actions: NpcAction[]): string[] {
@@ -58,7 +69,7 @@ describe("resolveNpcInteraction — conversation state machine", () => {
     expect(actions.some((a) => a.type === "persist")).toBe(false);
   });
 
-  it.each<TalkableNpcOutcome>(["give-torch", "warning", "trade", "betrayal", "companion-eligible", "reveal-route", "revelation"])(
+  it.each<TalkableNpcOutcome>(["give-torch", "warning", "trade", "companion-eligible", "reveal-route", "revelation"])(
     "drives %s from heard to resolved and persists",
     (outcome) => {
       const actions = run(outcome, "heard", FULL_INVENTORY, { targetConnectorId: "conn-0-1" });
@@ -115,22 +126,67 @@ describe("resolveNpcInteraction — outcome effects", () => {
     );
   });
 
-  it("spawns the ambush for betrayal", () => {
+  it("spawns and persists the ambush when the Charisma check fails", () => {
     const actions = run("betrayal", "heard");
-    expect(actions).toContainEqual({ type: "spawn-betrayal" });
+    expect(actions).toContainEqual({ type: "spawn-betrayal", foe: "allies" });
+    expect(nextState(actions, "heard")).toBe("hostile-allies");
+  });
+
+  it("defuses betrayal and does not spawn an ambush when the Charisma check succeeds", () => {
+    const actions = resolveNpcInteraction({
+      spec: spec("betrayal", { alignment: "law" }),
+      state: "heard",
+      leaderName: "Ada",
+      inventory: FULL_INVENTORY,
+      betrayalCheck: { success: true, natural: 12, total: 14, dc: 9 },
+      leaderLevel: 3,
+    });
+    expect(types(actions)).not.toContain("spawn-betrayal");
+    expect(nextState(actions, "heard")).toBe("resolved");
+  });
+
+  it("makes the betraying NPC fight personally against a level 3+ leader", () => {
+    const actions = resolveNpcInteraction({
+      spec: spec("betrayal"),
+      state: "heard",
+      leaderName: "Ada",
+      inventory: FULL_INVENTORY,
+      betrayalCheck: { success: false, natural: 3, total: 4, dc: 11 },
+      leaderLevel: 3,
+    });
+    expect(actions).toContainEqual({ type: "spawn-betrayal", foe: "npc" });
+    expect(nextState(actions, "heard")).toBe("hostile-npc");
   });
 });
 
-describe("betrayalFoePersists — reload reconstitution", () => {
-  it("re-spawns the foe only once a betrayal is resolved", () => {
-    expect(betrayalFoePersists("betrayal", "resolved")).toBe(true);
-    expect(betrayalFoePersists("betrayal", "heard")).toBe(false);
-    expect(betrayalFoePersists("betrayal", "unmet")).toBe(false);
+describe("betrayalCharismaDc", () => {
+  it.each(["law", "neutral", "chaos"] as const)("uses DC 9 for matching %s alignments", (alignment) => {
+    expect(betrayalCharismaDc(alignment, alignment)).toBe(9);
+  });
+
+  it("uses DC 11 when alignments differ without being opposed", () => {
+    expect(betrayalCharismaDc("neutral", "law")).toBe(11);
+    expect(betrayalCharismaDc("chaos", "neutral")).toBe(11);
+  });
+
+  it("uses DC 13 for Law versus Chaos in either direction", () => {
+    expect(betrayalCharismaDc("law", "chaos")).toBe(13);
+    expect(betrayalCharismaDc("chaos", "law")).toBe(13);
+  });
+});
+
+describe("persistedBetrayalFoe — reload reconstitution", () => {
+  it("re-spawns the foe only after a failed check makes the betrayer hostile", () => {
+    expect(persistedBetrayalFoe("betrayal", "hostile-npc")).toBe("npc");
+    expect(persistedBetrayalFoe("betrayal", "hostile-allies")).toBe("allies");
+    expect(persistedBetrayalFoe("betrayal", "resolved")).toBeNull();
+    expect(persistedBetrayalFoe("betrayal", "heard")).toBeNull();
+    expect(persistedBetrayalFoe("betrayal", "unmet")).toBeNull();
   });
 
   it("never re-spawns a foe for non-betrayal outcomes", () => {
     for (const outcome of ["give-torch", "warning", "trade", "reveal-route", "revelation", "companion-eligible"] as const) {
-      expect(betrayalFoePersists(outcome, "resolved")).toBe(false);
+      expect(persistedBetrayalFoe(outcome, "hostile-npc")).toBeNull();
     }
   });
 });

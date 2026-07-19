@@ -47,8 +47,15 @@ import {
 } from "../level/dungeons";
 import { expandDungeon } from "../level/expand";
 import { generateAbstractDungeon, type GenerateOptions } from "../level/generate";
-import { betrayalFoePersists, resolveNpcInteraction, type NpcAction } from "../level/npcInteraction";
-import { chooseCompanionRecruit, type CompanionCandidate, type CompanionClass } from "../systems/companion";
+import {
+  betrayalCharismaDc,
+  persistedBetrayalFoe,
+  resolveNpcInteraction,
+  type NpcAction,
+  type BetrayalFoeKind,
+  type NpcInteractionState,
+} from "../level/npcInteraction";
+import { companionPartySnapshot, chooseCompanionRecruit, type CompanionCandidate, type CompanionClass } from "../systems/companion";
 import type { TopologyId } from "../level/topology";
 import type { Orientation } from "../level/embedding";
 import { roomAt, roomAtTolerant } from "../level/geometry";
@@ -137,7 +144,7 @@ export class DungeonScene extends Phaser.Scene {
   private fireEmitters: SpatialEmitter[] = [];
   private pickups: Pickup[] = [];
   private talkableNpcs: TalkableNpc[] = [];
-  private npcInteractionStates = new Map<string, "unmet" | "heard" | "resolved">();
+  private npcInteractionStates = new Map<string, NpcInteractionState>();
   private discoveredRoomIds = new Set<string>();
   private campfires: { x: number; y: number; free: boolean }[] = [];
   private shrines: { x: number; y: number }[] = [];
@@ -206,7 +213,7 @@ export class DungeonScene extends Phaser.Scene {
     this.pickups = [];
     this.talkableNpcs = [];
     this.npcInteractionStates = new Map(
-      Object.entries(this.loadedState?.npcInteractionStates ?? {}) as [string, "unmet" | "heard" | "resolved"][],
+      Object.entries(this.loadedState?.npcInteractionStates ?? {}) as [string, NpcInteractionState][],
     );
     this.discoveredRoomIds = new Set(this.loadedState?.discoveredRoomIds ?? []);
     this.campfires = [];
@@ -758,12 +765,14 @@ export class DungeonScene extends Phaser.Scene {
 
   private addTalkableNpc(spec: TalkableNpcSpec, x: number, y: number): void {
     const state = this.npcInteractionStates.get(spec.id) ?? "unmet";
-    if (betrayalFoePersists(spec.outcome, state)) {
+    const persistedFoe = persistedBetrayalFoe(spec.outcome, state);
+    if (persistedFoe) {
       // The betrayer departed, but their ambush is a saved consequence: re-create
       // the foe at their post instead of silently dropping it on reload.
-      this.createBetrayalFoe(x, y, spec.roomId);
+      this.createBetrayalFoe(x, y, spec, persistedFoe);
       return;
     }
+    if (state === "departed") return;
     if (
       state === "resolved" &&
       spec.outcome === "companion-eligible" &&
@@ -1482,15 +1491,24 @@ export class DungeonScene extends Phaser.Scene {
   private advanceNpcInteraction(npc: TalkableNpc, leader: CharacterSprite): void {
     const { spec } = npc;
     const inventory = leader.character.inventory;
+    const state = this.npcInteractionStates.get(spec.id) ?? "unmet";
+    const betrayalDc = spec.outcome === "betrayal" && state === "heard"
+      ? betrayalCharismaDc(leader.character.alignment, spec.alignment)
+      : undefined;
+    const betrayalCheck = betrayalDc === undefined
+      ? undefined
+      : this.ctx.engine.check({ actor: leader.character, stat: "CHA", dc: betrayalDc, kind: "stat" });
     const actions = resolveNpcInteraction({
       spec,
-      state: this.npcInteractionStates.get(spec.id) ?? "unmet",
+      state,
       leaderName: leader.character.name,
       inventory: {
         hasRation: inventory.has("ration"),
         canAddTorch: inventory.canAdd(item("torch")),
         gemFitsAfterTrade: inventory.canSwap("ration", item("gem")),
       },
+      betrayalCheck,
+      leaderLevel: leader.character.level,
     });
     for (const action of actions) this.applyNpcAction(action, npc, leader);
   }
@@ -1513,7 +1531,7 @@ export class DungeonScene extends Phaser.Scene {
         }
         break;
       case "spawn-betrayal":
-        this.spawnNpcBetrayal(npc);
+        this.spawnNpcBetrayal(npc, action.foe);
         break;
       case "set-state":
         this.npcInteractionStates.set(npc.spec.id, action.state);
@@ -1545,14 +1563,17 @@ export class DungeonScene extends Phaser.Scene {
    * list. Group/trap membership is added by the caller: live betrayals wire it up
    * immediately, while reload-time spawns rely on buildLevel's post-pass.
    */
-  private createBetrayalFoe(x: number, y: number, roomId: string): MonsterSprite {
+  private createBetrayalFoe(x: number, y: number, spec: TalkableNpcSpec, kind: BetrayalFoeKind): MonsterSprite {
+    const base = monster(this.activeDungeon.encounterMonsterId);
+    const def = kind === "npc" ? { ...base, name: spec.name, leader: true } : base;
     const foe = new MonsterSprite(
       this,
       x,
       y,
-      monster(this.activeDungeon.encounterMonsterId),
-      roomId,
+      def,
+      spec.roomId,
       this.ctx.engine.dice,
+      kind === "npc" ? "char-wizard" : undefined,
     );
     this.morale.register(foe);
     this.monsters.push(foe);
@@ -1560,13 +1581,17 @@ export class DungeonScene extends Phaser.Scene {
     return foe;
   }
 
-  private spawnNpcBetrayal(npc: TalkableNpc): void {
-    const foe = this.createBetrayalFoe(npc.sprite.x, npc.sprite.y, npc.spec.roomId);
+  private spawnNpcBetrayal(npc: TalkableNpc, kind: BetrayalFoeKind): void {
+    const foe = this.createBetrayalFoe(npc.sprite.x, npc.sprite.y, npc.spec, kind);
     this.monsterGroup.add(foe);
     this.trapSystem.registerActor(foe);
     npc.sprite.destroy();
     npc.marker.destroy();
-    this.ctx.say(`${npc.spec.name}'s allies spring the ambush!`, "#d07070");
+    this.talkableNpcs = this.talkableNpcs.filter((candidate) => candidate !== npc);
+    this.ctx.say(
+      kind === "npc" ? `${npc.spec.name} draws steel!` : `${npc.spec.name}'s allies spring the ambush!`,
+      "#d07070",
+    );
     this.emitNoiseAt(foe.x, foe.y);
   }
 
@@ -1586,22 +1611,27 @@ export class DungeonScene extends Phaser.Scene {
             id: `pc-${eligibleNpc.spec.id}`,
             name: eligibleNpc.spec.name,
             className: eligibleNpc.spec.companionClass!,
-            alignment: "neutral",
+            alignment: eligibleNpc.spec.alignment,
             fromNpc: true,
           }
         : null;
       const decision = chooseCompanionRecruit(
         npcCandidate,
         { id: `pc-${reward.className}`, name: reward.name, className: reward.className, alignment: reward.alignment, fromNpc: false },
-        { size: this.party.size, classes: this.party.members.map((member) => member.character.className as CompanionClass) },
+        companionPartySnapshot(this.party.members.map((member) => ({
+          className: member.character.className as CompanionClass,
+          dead: member.character.dead,
+        }))),
       );
       if (decision.kind === "skip") {
         this.grantGoldReward(COMPANION_SUBSTITUTE_GOLD);
+        if (eligibleNpc) this.departNpc(eligibleNpc);
         message = decision.reason === "party-full"
-          ? `Four already march together — the recruit takes ${COMPANION_SUBSTITUTE_GOLD} gold and parts ways.`
+          ? `Four already march together — the recruit leaves ${COMPANION_SUBSTITUTE_GOLD} gold and parts ways.`
           : `A ${decision.className} already travels with you — the recruit leaves ${COMPANION_SUBSTITUTE_GOLD} gold instead.`;
       } else {
         const { candidate } = decision;
+        for (const casualty of this.party.pruneDeadMembers()) casualty.destroy();
         const recruit = this.spawnCharacter(
           candidate.id,
           candidate.name,
@@ -1614,8 +1644,7 @@ export class DungeonScene extends Phaser.Scene {
         this.partyGroup.add(recruit);
         this.trapSystem.registerActor(recruit);
         if (candidate.fromNpc && eligibleNpc) {
-          eligibleNpc.sprite.destroy();
-          eligibleNpc.marker.destroy();
+          this.departNpc(eligibleNpc);
         }
         message = `${candidate.name} joins the party and will travel to future dungeons! (${this.party.size}/4)`;
       }
@@ -1658,6 +1687,13 @@ export class DungeonScene extends Phaser.Scene {
     sparkleBurst(this, x, y, true);
     this.ctx.say(message, "#e8c840");
     this.saveToSlot(0);
+  }
+
+  private departNpc(npc: TalkableNpc): void {
+    this.npcInteractionStates.set(npc.spec.id, "departed");
+    npc.sprite.destroy();
+    npc.marker.destroy();
+    this.talkableNpcs = this.talkableNpcs.filter((candidate) => candidate !== npc);
   }
 
   private grantGoldReward(amount: number): number {

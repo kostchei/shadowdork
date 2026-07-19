@@ -29,6 +29,17 @@ export interface PartySnapshot {
   classes: readonly CompanionClass[];
 }
 
+export interface CompanionPartyMember {
+  className: CompanionClass;
+  dead: boolean;
+}
+
+/** Only survivors consume a future expedition slot or block a replacement class. */
+export function companionPartySnapshot(members: readonly CompanionPartyMember[]): PartySnapshot {
+  const survivors = members.filter((member) => !member.dead);
+  return { size: survivors.length, classes: survivors.map((member) => member.className) };
+}
+
 export type CompanionDecision =
   | { kind: "recruit"; candidate: CompanionCandidate }
   | { kind: "skip"; reason: "party-full" | "duplicate-class"; className: CompanionClass };

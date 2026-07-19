@@ -11,6 +11,7 @@
  */
 
 import type { RoomRegion } from "./geometry";
+import type { Alignment } from "../../engine";
 import type {
   ContentFamily,
   ConnectorDirection,
@@ -53,6 +54,8 @@ export interface TalkableNpcSpec {
   tile: TilePoint;
   name: string;
   role: string;
+  /** Seeded disposition used by social checks and companion recruitment. */
+  alignment: Alignment;
   introduction: string;
   resolution: string;
   outcome: TalkableNpcOutcome;

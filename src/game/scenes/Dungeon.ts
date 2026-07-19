@@ -846,7 +846,6 @@ export class DungeonScene extends Phaser.Scene {
                 else if (role === "overhang") textureKey = textures.overhang ?? textureKey;
                 else if (role === "hidden-ceiling") {
                   textureKey = textures.overhang ?? textureKey;
-                  visible = false;
                 }
               }
             }
@@ -877,13 +876,12 @@ export class DungeonScene extends Phaser.Scene {
           case "|": {
             // Non-solid: the ladder is a climb route, not a wall. Render it, but
             // keep it out of the `walls` collision group so the party can walk
-            // through and under it. Traversal is driven entirely by the climb
-            // zone in the lane beside it (see the scene's climb handling).
+            // through and under it. Traversal is driven by the climb zone.
             if (textures.climbBackdrop) {
               this.add.image(px, py, textures.climbBackdrop).setTint(foregroundTint).setDepth(1);
             }
             this.add.image(px, py, textures.climb).setTint(foregroundTint).setDepth(2);
-            const zone = this.add.rectangle(px - TILE, py, TILE, TILE, 0, 0);
+            const zone = this.add.rectangle(px, py, TILE * 2.6, TILE * 1.2, 0, 0);
             this.climbTiles.push(zone);
             break;
           }
@@ -1177,7 +1175,8 @@ export class DungeonScene extends Phaser.Scene {
   }
 
   private addPickup(x: number, y: number, itemId: string, qty: number): void {
-    const sprite = this.physics.add.image(x, y, `pickup-${itemId}`).setDepth(6);
+    const textureKey = this.textures.exists(`pickup-${itemId}`) ? `pickup-${itemId}` : "pickup-ration";
+    const sprite = this.physics.add.image(x, y, textureKey).setDepth(6);
     sprite.setBounce(0.2);
     this.tweens.add({
       targets: sprite,
@@ -1407,52 +1406,79 @@ export class DungeonScene extends Phaser.Scene {
     }
   }
 
-  private equippableGear() {
-    return this.party.leader.character.inventory.all().filter((stack) =>
-      stack.def.weaponVisual !== undefined || stack.def.armor !== undefined || stack.def.shield === true);
+  private allInventoryItems() {
+    return this.party.leader.character.inventory.all();
   }
 
   private refreshGearOverlay(): void {
     const hud = this.scene.get("Hud") as HudScene;
-    const gear = this.equippableGear();
-    if (gear.length > 0) this.gearSelectionIndex = Phaser.Math.Wrap(this.gearSelectionIndex, 0, gear.length);
+    const items = this.allInventoryItems();
+    if (items.length > 0) this.gearSelectionIndex = Phaser.Math.Wrap(this.gearSelectionIndex, 0, items.length);
+    else this.gearSelectionIndex = 0;
     hud.hideGearOverlay();
-    hud.showGearOverlay(this.party.leader.character, gear[this.gearSelectionIndex]?.def.id);
+    hud.showGearOverlay(this.party.leader.character, items[this.gearSelectionIndex]?.def.id);
   }
 
   private updateGearOverlayInput(): void {
-    const gear = this.equippableGear();
-    if (gear.length === 0) return;
+    const items = this.allInventoryItems();
+    if (items.length === 0) return;
     if (this.justDown("UP")) {
-      this.gearSelectionIndex = Phaser.Math.Wrap(this.gearSelectionIndex - 1, 0, gear.length);
+      this.gearSelectionIndex = Phaser.Math.Wrap(this.gearSelectionIndex - 1, 0, items.length);
       this.refreshGearOverlay();
       return;
     }
     if (this.justDown("DOWN")) {
-      this.gearSelectionIndex = Phaser.Math.Wrap(this.gearSelectionIndex + 1, 0, gear.length);
+      this.gearSelectionIndex = Phaser.Math.Wrap(this.gearSelectionIndex + 1, 0, items.length);
       this.refreshGearOverlay();
       return;
     }
-    if (!this.justDown("E")) return;
-    const member = this.party.leader;
-    const def = gear[this.gearSelectionIndex]!.def;
-    try {
-      if (def.weaponVisual) {
-        if (member.torchLit && def.twoHanded) {
-          throw new Error(`${member.character.name} cannot wield ${def.name} while carrying a torch`);
+    // EQUIP ('E')
+    if (this.justDown("E")) {
+      const member = this.party.leader;
+      const def = items[this.gearSelectionIndex]?.def;
+      if (def) {
+        try {
+          if (def.weaponVisual) {
+            if (member.torchLit && def.twoHanded) {
+              throw new Error(`${member.character.name} cannot wield ${def.name} while carrying a torch`);
+            }
+            member.character.equipWeapon(def);
+            this.ctx.say(`${member.character.name} equips ${def.name}.`, "#e0c060");
+          } else if (def.armor) {
+            member.character.equipArmor(def);
+            this.ctx.say(`${member.character.name} equips ${def.name}.`, "#e0c060");
+          } else if (def.shield) {
+            member.character.equipShield(def);
+            if (member.torchLit) member.character.shieldStowed = true;
+            this.ctx.say(`${member.character.name} equips ${def.name}.`, "#e0c060");
+          } else {
+            this.ctx.say(`${def.name} cannot be equipped.`, "#a0a4b0");
+          }
+        } catch (error) {
+          this.ctx.say(error instanceof Error ? error.message : String(error), "#d07070");
         }
-        member.character.equipWeapon(def);
-      } else if (def.armor) {
-        member.character.equipArmor(def);
-      } else if (def.shield) {
-        member.character.equipShield(def);
-        if (member.torchLit) member.character.shieldStowed = true;
+        this.refreshGearOverlay();
       }
-      this.ctx.say(`${member.character.name} equips ${def.name}.`, "#e0c060");
-    } catch (error) {
-      this.ctx.say(error instanceof Error ? error.message : String(error), "#d07070");
+      return;
     }
-    this.refreshGearOverlay();
+    // DROP ('D')
+    if (this.justDown("D")) {
+      const member = this.party.leader;
+      const stack = items[this.gearSelectionIndex];
+      if (stack) {
+        const def = stack.def;
+        if (member.character.wieldedWeapon?.id === def.id) member.character.wieldedWeapon = null;
+        if (member.character.wornArmor?.id === def.id) member.character.wornArmor = null;
+        if (member.character.carriedShield?.id === def.id) member.character.carriedShield = null;
+        
+        const countToDrop = Math.min(stack.qty, def.bundleSize || 1);
+        member.character.inventory.remove(def.id, countToDrop);
+        this.addPickup(member.x, member.y, def.id, countToDrop);
+        this.ctx.say(`${member.character.name} dropped ${def.name}.`, "#a0a4b0");
+        this.refreshGearOverlay();
+      }
+      return;
+    }
   }
 
   private updateLeaderMarker(time: number): void {
@@ -1593,25 +1619,39 @@ export class DungeonScene extends Phaser.Scene {
       return;
     }
 
-    // Ladder climbing: sticky hold on contact until up/down input or walking off
-    leader.touchingClimbable = this.climbTiles.some(
-      (z) => Math.abs(z.x - leader.x) <= TILE && Math.abs(z.y - leader.y) <= TILE * 1.5,
+    // Ladder climbing: instant attachment and fall arrest on contact
+    const nearClimbTile = this.climbTiles.find(
+      (z) => Math.abs(z.x - leader.x) <= TILE * 1.4 && Math.abs(z.y - leader.y) <= TILE * 1.4,
     );
+    leader.touchingClimbable = nearClimbTile !== undefined;
     const body = leader.body as Phaser.Physics.Arcade.Body;
     const downInput = (this.keys.S && this.keys.S.isDown) || (this.keys.DOWN && this.keys.DOWN.isDown);
 
     if (leader.touchingClimbable) {
       const isGrounded = body.blocked.down;
-      if (!isGrounded || up || downInput || leader.climbing) {
-        leader.climbing = true;
-        body.setAllowGravity(false);
-        if (up) {
-          leader.setVelocityY(-120);
-        } else if (downInput) {
-          leader.setVelocityY(120);
+      const wantsJumpOff = leader.climbing && (this.justDown("SPACE") || (up && (left || right)));
+      if (wantsJumpOff) {
+        leader.climbing = false;
+        body.setAllowGravity(true);
+        leader.tryJump(time);
+      } else if (!isGrounded || up || downInput || leader.climbing) {
+        const climbTilesAbove = this.climbTiles.some(
+          (z) => Math.abs(z.x - leader.x) <= TILE * 1.4 && z.y < leader.y - 6,
+        );
+        if (up && !climbTilesAbove && leader.climbing) {
+          leader.climbing = false;
+          body.setAllowGravity(true);
+          leader.setVelocityY(-160);
         } else {
-          // Stationary sticky hold on ladder until up or down arrow is hit
-          leader.setVelocityY(0);
+          leader.climbing = true;
+          body.setAllowGravity(false);
+          if (up) {
+            leader.setVelocityY(-120);
+          } else if (downInput) {
+            leader.setVelocityY(120);
+          } else {
+            leader.setVelocityY(0);
+          }
         }
       } else if (leader.climbing) {
         leader.climbing = false;
@@ -2369,7 +2409,7 @@ export class DungeonScene extends Phaser.Scene {
     for (const member of this.party.members) {
       if (member === leader || !member.alive || member.mode === "hold") continue;
       const touching = this.climbTiles.some(
-        (zone) => Math.abs(zone.x - member.x) <= TILE && Math.abs(zone.y - member.y) <= TILE * 1.5,
+        (zone) => Math.abs(zone.x - member.x) <= TILE * 1.5 && Math.abs(zone.y - member.y) <= TILE * 1.5,
       );
       const verticalGap = leader.y - member.y;
       if (touching && Math.abs(verticalGap) > TILE) {

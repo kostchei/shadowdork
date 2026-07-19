@@ -69,8 +69,10 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
   private shadow: Phaser.GameObjects.Image;
   private torchEmitter: Phaser.GameObjects.Particles.ParticleEmitter | null = null;
   private torchCrackle: AmbienceHandle | null = null;
-  /** Highest point (lowest y) reached while airborne — falls measure from here. */
+  /** Highest point (lowest y) reached while airborne — falls measure from launch/peak. */
   private fallPeakY: number | null = null;
+  /** Y position where airborne phase started. */
+  private fallStartY: number | null = null;
   /** Horizontal distance walked since the last footstep sound. */
   private stepAccum = 0;
   private prevStepX = 0;
@@ -302,9 +304,11 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
   private trackFalling(): void {
     if (this.character.dead || this.climbing) {
       this.fallPeakY = null;
+      this.fallStartY = null;
       return;
     }
     if (!this.grounded) {
+      if (this.fallStartY === null) this.fallStartY = this.y;
       if (this.fallPeakY === null || this.y < this.fallPeakY) this.fallPeakY = this.y;
       
       // Ledge grab detection when falling
@@ -338,6 +342,7 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
                   this.y = ledgeY + 15;
                   this.x = side === "left" ? (tileX + 1) * TILE + 10 : tileX * TILE - 10;
                   this.fallPeakY = null; // Reset fall distance for damage
+                  this.fallStartY = null;
                 }
               }
             }
@@ -346,9 +351,13 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
       }
       return;
     }
-    if (this.fallPeakY === null) return;
-    const tilesFallen = (this.y - this.fallPeakY) / TILE;
+    if (this.fallPeakY === null && this.fallStartY === null) return;
+    const startY = this.fallStartY ?? this.y;
     this.fallPeakY = null;
+    this.fallStartY = null;
+    
+    // Net downward fall distance from launch point (or peak if falling without jump)
+    const tilesFallen = Math.max(0, this.y - startY) / TILE;
     if (tilesFallen <= SAFE_FALL_TILES) {
       if (tilesFallen > 0.4 && this.isLeader) landCrunch();
       return;

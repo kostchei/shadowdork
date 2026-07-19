@@ -241,17 +241,13 @@ describe("inventory gear slots", () => {
     expect(() => wiz.inventory.add(item("torch"))).toThrow(/Cannot carry/);
   });
 
-  it("first 100 coins are free, then 1 slot per 100", () => {
+  it("coins are free (0 slots, stored in shared party purse)", () => {
     const engine = makeEngine();
     const f = createCharacter(engine, "f", "Fighter", "fighter");
     f.inventory = new Inventory(f.inventory.capacity);
     const before = f.inventory.slotsUsed();
-    f.inventory.add(item("coins"), 100);
+    f.inventory.add(item("coins"), 300);
     expect(f.inventory.slotsUsed()).toBe(before); // free
-    f.inventory.add(item("coins"), 1);
-    expect(f.inventory.slotsUsed()).toBe(before + 1); // 101st coin starts a slot
-    f.inventory.add(item("coins"), 199);
-    expect(f.inventory.slotsUsed()).toBe(before + 2); // 300 total = 2 charged slots
   });
 
   it("fighters haul extra slots equal to their CON modifier", () => {

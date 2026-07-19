@@ -51,7 +51,7 @@ const ITEM_LIST: readonly ItemDef[] = [
 
   // Treasure — treasure IS XP (minor 1, major 2-3, legendary 10)
   // First 100 coins ride free; every 100 after costs a slot. XP: 1 per 100 banked (handled by the game).
-  { id: "coins", name: "Coins", slotCost: 1, bundleSize: 100, freeQty: 100, tags: ["treasure"], xpValue: 1 },
+  { id: "coins", name: "Coins", slotCost: 0, bundleSize: 100, freeQty: 100, tags: ["treasure"], xpValue: 1 },
   { id: "gem", name: "Gem", slotCost: 0, bundleSize: 10, tags: ["treasure"], xpValue: 2 },
   { id: "jeweled-idol", name: "Jeweled Idol", slotCost: 0, bundleSize: 1, tags: ["treasure"], xpValue: 3 },
   { id: "crown-of-the-deep", name: "Crown of the Deep", slotCost: 0, bundleSize: 1, tags: ["treasure"], xpValue: 10 },

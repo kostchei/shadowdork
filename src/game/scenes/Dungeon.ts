@@ -2626,44 +2626,50 @@ export class DungeonScene extends Phaser.Scene {
         .find((m) => Phaser.Math.Distance.Between(m.x, m.y, p.sprite.x, p.sprite.y) < 26);
       if (!collector) continue;
       const def = item(p.itemId);
-      let addQty = p.qty;
-      if (def.id === "coins" && !collector.character.inventory.canAdd(def, p.qty)) {
-        const currentCoins = collector.character.inventory.count("coins");
-        const freeCoinsAvailable = Math.max(0, 100 - currentCoins);
-        if (freeCoinsAvailable > 0 && freeCoinsAvailable < p.qty) {
-          addQty = freeCoinsAvailable;
-          p.qty -= addQty;
-        } else if (!collector.character.inventory.canAdd(def, 1)) {
-          this.ctx.say(`${collector.character.name}'s gear slots are full! (Coins left behind)`, "#d07070");
-          continue;
+
+      if (def.id === "coins") {
+        const pxCoord = p.sprite.x;
+        const pyCoord = p.sprite.y;
+        p.sprite.destroy();
+        sfx.pickupChime(false, this.spatial({ x: pxCoord, y: pyCoord }));
+        sparkleBurst(this, pxCoord, pyCoord, false);
+
+        const xp = this.ctx.bankCoins(p.qty);
+        const label = `${p.qty} coins`;
+        if (xp > 0) {
+          floatText(this, collector.x, collector.y - 24, `${label} +${xp} XP`, "#e8c840");
+          for (const m of this.party.members) {
+            if (!m.character.dead) this.ctx.engine.awardXp(m.character, xp);
+          }
+          this.ctx.say(`Treasure! ${label} — party gains ${xp} XP.`, "#e8c840");
+        } else {
+          floatText(this, collector.x, collector.y - 24, `+${p.qty} coins`, "#e8c840");
         }
-      } else if (!collector.character.inventory.canAdd(def, p.qty)) {
+        continue;
+      }
+
+      if (!collector.character.inventory.canAdd(def, p.qty)) {
         this.ctx.say(`${collector.character.name}'s gear slots are full! (${def.name} left behind)`, "#d07070");
         continue;
       }
 
-      collector.character.inventory.add(def, addQty);
+      collector.character.inventory.add(def, p.qty);
       const pxCoord = p.sprite.x;
       const pyCoord = p.sprite.y;
-      if (addQty === p.qty) {
-        p.sprite.destroy();
-      }
+      p.sprite.destroy();
 
       const jewel =
         def.id === "gem" || def.id === "jeweled-idol" || def.id === "crown-of-the-deep";
       sfx.pickupChime(jewel, this.spatial({ x: pxCoord, y: pyCoord }));
       sparkleBurst(this, pxCoord, pyCoord, jewel);
-      // Coins bank toward 100-coin XP thresholds; other treasure is XP outright.
-      const xp = def.id === "coins" ? this.ctx.bankCoins(addQty) : (def.xpValue ?? 0);
-      const label = addQty > 1 ? `${addQty} ${def.name}` : def.name;
+      const xp = def.xpValue ?? 0;
+      const label = p.qty > 1 ? `${p.qty} ${def.name}` : def.name;
       if (xp > 0) {
         floatText(this, collector.x, collector.y - 24, `${label} +${xp} XP`, "#e8c840");
         for (const m of this.party.members) {
           if (!m.character.dead) this.ctx.engine.awardXp(m.character, xp);
         }
         this.ctx.say(`Treasure! ${label} — party gains ${xp} XP.`, "#e8c840");
-      } else if (def.id === "coins") {
-        floatText(this, collector.x, collector.y - 24, `+${p.qty} coins`, "#e8c840");
       } else {
         floatText(this, collector.x, collector.y - 24, def.name, "#c0c0c0");
       }

@@ -135,9 +135,14 @@ export function deserializeCharacter(state: SavedCharacter, engine: Engine): Cha
   c.effects = state.effects.map((e) => ({ ...e }));
   c.shieldStowed = state.shieldStowed;
 
-  // Restore inventory (stripping legacy unused starter items if present)
+  // Restore inventory (stripping legacy unused items and coins which live in shared party purse)
   for (const itemState of state.inventory) {
-    if (itemState.itemId === "iron-spikes" || itemState.itemId === "grappling-hook" || itemState.itemId === "rope") {
+    if (
+      itemState.itemId === "iron-spikes" ||
+      itemState.itemId === "grappling-hook" ||
+      itemState.itemId === "rope" ||
+      itemState.itemId === "coins"
+    ) {
       continue;
     }
     c.inventory.add(item(itemState.itemId), itemState.qty, true);

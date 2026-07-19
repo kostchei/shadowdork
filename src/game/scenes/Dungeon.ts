@@ -60,7 +60,13 @@ import { companionPartySnapshot, chooseCompanionRecruit, type CompanionCandidate
 import type { TopologyId } from "../level/topology";
 import type { Orientation } from "../level/embedding";
 import type { EnvironmentTextureKeys, VisualPalette, VisualSkin } from "../visual/model";
-import { parseVisualSkinId, visualSkinById } from "../visual/skins";
+import {
+  parseVisualSkinId,
+  visualSkinById,
+  resolveSkinForZone,
+  zoneForRun,
+  zonePackInfo,
+} from "../visual/skins";
 import { ensureVisualSkinTextures } from "../visual/textures/materials";
 import {
   openSurfaceTileRole,
@@ -89,6 +95,7 @@ import {
   progressFromSavedParty,
   type DungeonReward,
 } from "../progression";
+import { rollBiomeOffer, type BiomeOffer } from "../biomeChoice";
 
 /**
  * How long after being hit a character keeps swinging back. Monsters attack
@@ -187,7 +194,11 @@ export class DungeonScene extends Phaser.Scene {
   private followerAi = new Map<string, { nextMoraleAt: number; rescueTargetId: string | null }>();
   private dyingLabels = new Map<string, Phaser.GameObjects.Text>();
   private gameOver = false;
-  private won = false;
+  won = false;
+  /** The descent choice rolled on victory; the HUD renders it as scroll cards. */
+  biomeOffer: BiomeOffer | null = null;
+  /** Which offered scroll is currently highlighted. */
+  biomeSelectionIndex = 0;
   private lastHurtAt = new Map<string, number>();
   private encounterWaves = 0;
   private interactPrompt!: Phaser.GameObjects.Text;
@@ -240,6 +251,8 @@ export class DungeonScene extends Phaser.Scene {
     this.dangerKillPending = this.loadedState?.dangerKillPending ?? false;
     this.dangerLastLeaderPos = undefined;
     this.won = false;
+    this.biomeOffer = null;
+    this.biomeSelectionIndex = 0;
     this.gamePaused = false;
     // A capture-only query flag keeps the normal title flow unchanged while
     // allowing deterministic, unobscured art-direction screenshots.
@@ -281,7 +294,19 @@ export class DungeonScene extends Phaser.Scene {
     const layoutSeed = (runSeed + dungeonIndex) >>> 0;
     this.activeDungeon = this.resolveActiveDungeon(layoutSeed);
     const requestedSkin = parseVisualSkinId(new URLSearchParams(window.location.search).get("skin"));
-    this.visualSkin = requestedSkin ? visualSkinById(requestedSkin) : undefined;
+    if (requestedSkin) {
+      // A dev/QA override always wins so the regression matrix stays reachable.
+      this.visualSkin = visualSkinById(requestedSkin);
+    } else if (this.loadedState?.skinId) {
+      // A save from the biome-choice era carries the exact skin it advanced into.
+      this.visualSkin = visualSkinById(this.loadedState.skinId);
+    } else if (!this.loadedState) {
+      // A fresh campaign starts in a random scroll; the skin within it is seeded.
+      this.visualSkin = resolveSkinForZone(zoneForRun(runSeed), layoutSeed);
+    } else {
+      // A legacy save predating biome choice keeps the original four-theme look.
+      this.visualSkin = undefined;
+    }
     this.openSkyDaytime = (layoutSeed & 1) === 0;
     this.environmentTextures = ensureVisualSkinTextures(
       this,
@@ -1256,6 +1281,7 @@ export class DungeonScene extends Phaser.Scene {
     }
 
     if (this.gameOver || this.won) {
+      if (this.won && this.biomeOffer) this.updateBiomeChoiceInput();
       if (this.keys.R!.isDown) this.restartRun();
       return;
     }
@@ -1476,6 +1502,19 @@ export class DungeonScene extends Phaser.Scene {
     const k = this.keys[key];
     if (!k) throw new Error(`Key "${key}" not registered`);
     return Phaser.Input.Keyboard.JustDown(k);
+  }
+
+  /** Move the descent-choice cursor with arrows or select a scroll by number. */
+  private updateBiomeChoiceInput(): void {
+    const offer = this.biomeOffer;
+    if (!offer) return;
+    const count = offer.zones.length;
+    if (this.justDown("LEFT")) this.biomeSelectionIndex = (this.biomeSelectionIndex + count - 1) % count;
+    if (this.justDown("RIGHT")) this.biomeSelectionIndex = (this.biomeSelectionIndex + 1) % count;
+    const numberKeys: readonly [string, number][] = [["ONE", 0], ["TWO", 1], ["THREE", 2], ["FOUR", 3]];
+    for (const [key, index] of numberKeys) {
+      if (index < count && this.justDown(key)) this.biomeSelectionIndex = index;
+    }
   }
 
   private updateLeaderInput(time: number, delta: number): void {
@@ -1868,6 +1907,10 @@ export class DungeonScene extends Phaser.Scene {
           }
           sfx.doorThump();
           this.won = true;
+          const dungeonIndex = this.registry.get("dungeonIndex") ?? 0;
+          const runSeed = this.registry.get("runSeed") ?? 0;
+          this.biomeOffer = rollBiomeOffer(dungeonIndex, runSeed);
+          this.biomeSelectionIndex = 0;
           this.ctx.events.emit("won");
         },
       };
@@ -2741,6 +2784,8 @@ export class DungeonScene extends Phaser.Scene {
       timestamp: Date.now(),
       dungeonIndex: this.registry.get("dungeonIndex") ?? 0,
       runSeed: this.registry.get("runSeed") ?? 0,
+      zone: this.visualSkin?.zone,
+      skinId: this.visualSkin?.id,
       roomId: this.currentRoomId,
       activatedRequirementIds: [...this.activatedRequirements],
       openedConnectorIds: [...this.openedConnectors],
@@ -2787,6 +2832,9 @@ export class DungeonScene extends Phaser.Scene {
     const nextIndex = dungeonIndex + 1;
 
     if (this.won) {
+      if (!this.biomeOffer) throw new Error("Cannot advance: no biome offer was rolled on victory");
+      const chosenZone = this.biomeOffer.zones[this.biomeSelectionIndex];
+      if (!chosenZone) throw new Error("Biome selection index is out of range");
       const survivors = this.party.members
         .map((member) => serializeCharacter(member.character))
         .filter((member) => !member.dead);
@@ -2798,6 +2846,7 @@ export class DungeonScene extends Phaser.Scene {
         },
         dungeonIndex,
         survivors,
+        chosenZone,
       );
       try {
         SaveRepository.save(0, nextState);

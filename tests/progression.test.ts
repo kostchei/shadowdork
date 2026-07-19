@@ -7,6 +7,7 @@ import {
   type PartyProgress,
 } from "../src/game/progression";
 import { isPlebName, spell } from "../src/data";
+import { skinsForZone } from "../src/game/visual/skins";
 
 const fighter: PartyProgress = { className: "fighter", level: 1, knownSpellIds: [] };
 const thief: PartyProgress = { className: "thief", level: 1, knownSpellIds: [] };
@@ -109,9 +110,10 @@ describe("between-dungeon persistence", () => {
     const vex = saved("Vex", "thief");
     const fallen = saved("Odessa", "priest", true);
     const next = nextDungeonSave(
-      { coinsBanked: 740, messages: [{ text: "Vault opened", color: "#fff" }] },
+      { coinsBanked: 740, messages: [{ text: "Vault opened", color: "#fff" }], runSeed: 99 },
       7,
       [brakka, vex, fallen],
+      "red-sands",
       1234,
     );
 
@@ -119,6 +121,7 @@ describe("between-dungeon persistence", () => {
       slotId: 0,
       timestamp: 1234,
       dungeonIndex: 8,
+      zone: "red-sands",
       currentRoom: 1,
       hasCrown: false,
       kills: 0,
@@ -126,5 +129,8 @@ describe("between-dungeon persistence", () => {
       rescuedIds: ["fighter", "thief"],
     });
     expect(next.party.map((member) => member.name)).toEqual(["Brakka", "Vex"]);
+    // The stored skin belongs to the chosen scroll.
+    expect(next.skinId).toBeDefined();
+    expect(skinsForZone("red-sands").some((s) => s.id === next.skinId)).toBe(true);
   });
 });

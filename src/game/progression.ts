@@ -1,6 +1,8 @@
 import type { Alignment } from "../engine";
 import { characterTitle } from "../engine";
 import type { SaveSlot, SavedCharacter } from "./state";
+import type { ZonePackId } from "./visual/model";
+import { resolveSkinForZone } from "./visual/skins";
 import { classDef, plebNameForSeed, spellsForClass } from "../data";
 
 export type RewardKind = "companion" | "magic-weapon" | "magic-armor" | "gold" | "spells";
@@ -192,14 +194,23 @@ export function nextDungeonSave(
   current: Pick<SaveSlot, "coinsBanked" | "messages" | "runSeed">,
   dungeonIndex: number,
   party: SavedCharacter[],
+  chosenZone: ZonePackId,
   timestamp = Date.now(),
 ): SaveSlot {
+  const nextIndex = dungeonIndex + 1;
+  // Resolve the skin from the next layout seed so returning to a scroll can
+  // surface a different one of its three skins. Must match the layout seed the
+  // Dungeon scene derives on entry: (runSeed + dungeonIndex).
+  const layoutSeed = ((current.runSeed ?? 0) + nextIndex) >>> 0;
+  const skin = resolveSkinForZone(chosenZone, layoutSeed);
   return {
     ...current,
     slotId: 0,
     timestamp,
-    dungeonIndex: dungeonIndex + 1,
+    dungeonIndex: nextIndex,
     runSeed: current.runSeed,
+    zone: chosenZone,
+    skinId: skin.id,
     currentRoom: 1,
     hasCrown: false,
     kills: 0,

@@ -10,6 +10,7 @@ import type {
 } from "../engine";
 import { Character as EngineCharacter } from "../engine";
 import { item } from "../data";
+import type { VisualSkinId, ZonePackId } from "./visual/model";
 
 export interface SavedInventoryItem {
   itemId: string;
@@ -48,6 +49,10 @@ export interface SaveSlot {
   dungeonIndex: number;
   /** Stable layout seed for this expedition; absent in saves from before procedural runs. */
   runSeed?: number;
+  /** The cursed-scroll biome the party is currently in; absent in saves from before biome choice. */
+  zone?: ZonePackId;
+  /** The specific visual skin resolved within that scroll for this dungeon. */
+  skinId?: VisualSkinId;
   /** Region id of the room last occupied, e.g. "room-3" or "sanctuary". */
   roomId?: string;
   /** @deprecated Legacy 1-based room index (1-6); read only to migrate old saves. */

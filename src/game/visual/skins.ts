@@ -42,13 +42,72 @@ export function parseVisualSkinId(value: string | null): VisualSkinId | undefine
   return value && SKINS_BY_ID.has(value as VisualSkinId) ? value as VisualSkinId : undefined;
 }
 
-/** Stable selection for the eventual default rotation; it never consumes rules RNG. */
-export function visualSkinForRun(seed: number): VisualSkin {
+/** The six cursed scrolls, in declaration order, used as the biome-choice pool. */
+export const ZONE_PACKS = [
+  "diablerie",
+  "red-sands",
+  "midnight-sun",
+  "river-of-night",
+  "dwellers-in-the-deep",
+  "city-of-masks",
+] as const satisfies readonly ZonePackId[];
+
+export interface ZonePackInfo {
+  id: ZonePackId;
+  /** The scroll name shown on the descent-choice card. */
+  scrollName: string;
+  /** One-line flavor beneath the scroll name. */
+  flavor: string;
+}
+
+export const ZONE_PACK_INFO: Record<ZonePackId, ZonePackInfo> = {
+  "diablerie": { id: "diablerie", scrollName: "DIABLERIE", flavor: "Black forests, wet caves, dissolving keeps." },
+  "red-sands": { id: "red-sands", scrollName: "RED SANDS", flavor: "Dunes, iron fortresses, and burning mines." },
+  "midnight-sun": { id: "midnight-sun", scrollName: "MIDNIGHT SUN", flavor: "Ice caves, frost tombs, and dverg forges." },
+  "river-of-night": { id: "river-of-night", scrollName: "RIVER OF NIGHT", flavor: "Jungle ziggurats, cenotes, canopy towns." },
+  "dwellers-in-the-deep": { id: "dwellers-in-the-deep", scrollName: "DWELLERS IN THE DEEP", flavor: "Abyssal archives, fungal grottos, sea-forts." },
+  "city-of-masks": { id: "city-of-masks", scrollName: "CITY OF MASKS", flavor: "Rooftops, sunken guilds, masked temples." },
+};
+
+export function zonePackInfo(zone: ZonePackId): ZonePackInfo {
+  const info = ZONE_PACK_INFO[zone];
+  if (!info) throw new Error(`Unknown zone pack "${zone}"`);
+  return info;
+}
+
+function hashSeed(seed: number): number {
   let value = seed >>> 0;
   value ^= value >>> 16;
   value = Math.imul(value, 0x7feb352d);
   value ^= value >>> 15;
   value = Math.imul(value, 0x846ca68b);
   value ^= value >>> 16;
-  return VISUAL_SKINS[(value >>> 0) % VISUAL_SKINS.length]!;
+  return value >>> 0;
+}
+
+/** Stable selection for the eventual default rotation; it never consumes rules RNG. */
+export function visualSkinForRun(seed: number): VisualSkin {
+  return VISUAL_SKINS[hashSeed(seed) % VISUAL_SKINS.length]!;
+}
+
+/** The visual skins that belong to one scroll; throws if the scroll declares none. */
+export function skinsForZone(zone: ZonePackId): readonly VisualSkin[] {
+  const list = VISUAL_SKINS.filter((entry) => entry.zone === zone);
+  if (list.length === 0) throw new Error(`No visual skins declared for zone "${zone}"`);
+  return list;
+}
+
+/**
+ * Deterministically pick one skin within a scroll from a seed. Returning to the
+ * same scroll on a later descent advances the seed, so the specific skin can
+ * refresh to a different one of the scroll's three.
+ */
+export function resolveSkinForZone(zone: ZonePackId, seed: number): VisualSkin {
+  const list = skinsForZone(zone);
+  return list[hashSeed(seed) % list.length]!;
+}
+
+/** The random scroll a fresh campaign starts in; never consumes rules RNG. */
+export function zoneForRun(seed: number): ZonePackId {
+  return ZONE_PACKS[hashSeed(seed ^ 0x5bd1e995) % ZONE_PACKS.length]!;
 }

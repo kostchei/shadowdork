@@ -68,24 +68,47 @@ Vite and opens the game directly in Chrome.
   and keeps trading blows until the aggressor dies or leaves reach — retreat is
   a choice you make with your feet. Weapons have reach: the spear and staff
   strike from beyond a monster's claws.
+| H | Toggle followers between FOLLOW and HOLD |
+| L | Spend the leader's luck token to reroll (while the reroll prompt is up) |
+| Tab / 1–4 | Swap leader |
+| R | Enter the next dungeon after a win or party wipe |
+| Esc | Pause / unpause the game |
+| C | Toggle character stats sheet (pauses game) |
+| I | Toggle gear / inventory panel (pauses game) |
+
+## How Shadowdark maps to the game
+
+- **Every rules event is a d20 roll** through a single `resolveCheck` service —
+  the floating number over a swing is the natural die.
+- **Light is the level design.** Outside your light radius the dungeon is genuinely
+  black. Torches burn in real time (3 real minutes in the playtest config —
+  a config value, not a rule change), cost a gear slot, and can't be held with a
+  two-handed weapon. Monsters see fine in the dark and attack unlit characters
+  with advantage; you act in darkness at disadvantage.
+- **Advantage/disadvantage is positional**: attack from above = advantage,
+  thief backstab vs unaware = advantage, airborne or in darkness = disadvantage.
+- **Fights are exchanges.** Anyone a monster strikes swings back automatically
+  and keeps trading blows until the aggressor dies or leaves reach — retreat is
+  a choice you make with your feet. Weapons have reach: the spear and staff
+  strike from beyond a monster's claws.
 - **Spells have no slots.** Casting is a spell check vs DC 10 + tier. Failure loses
   the spell until rest. Natural 1: wizards roll the live mishap table; priests are
   cut off pending atonement. Natural 20 doubles the effect.
 - **Death timers**: at 0 HP a character collapses with a visible 1d4+CON round
   countdown. Stabilize (DC 15) or heal them in time, or they're gone for the run.
-- **Treasure is XP**, and loot is collected automatically by
-  walking over it. Slain monsters spill coins and gems where they fall. Coins bank
-  toward 1 XP per full 100 (first 100 carried free, then 1 slot per 100). Level-up
-  rolls HP and a live 2d6 talent on the class table.
+- **Treasure is XP**, and loot is collected automatically by walking over it.
+  Slain monsters spill coins and gems where they fall. Coins bank toward 1 XP per full 100.
+  Each living party member carries 100 free coins in the shared purse (e.g. 4 members = 400 free coins);
+  beyond that, every 100 coins costs 1 slot in the leader's inventory. Level-up rolls HP and a live 2d6 class talent.
 - **Rest spot after room five**: free full recovery plus a fresh torch per member.
   Mid-dungeon campfires still demand a ration.
 - **Morale**: when half a monster group falls, survivors check DC 15 WIS or rout.
-- **Persistent party:** start solo as the Fighter. Each five-room dungeon ends
-  with exactly one major reward: a magic weapon, magic armour, 500 gold, one
-  missing party member, or a new Wizard/Cleric spell. Surviving companions stay
-  with you between dungeons, so the full party is assembled over a campaign.
-  A caster's first discovered spell is always tier 1; later spell rewards are
-  randomly drawn from unknown class spells unlocked by that character's level.
+- **Persistent party & Cursed Scroll Expeditions:** start solo as the Fighter.
+  Entering a Cursed Scroll Destination rolls **1d6 vaults (1 to 6)** to play consecutively
+  within that destination, with each of its 3 biomes appearing a maximum of 2 times.
+  Completing all 1d6 vaults of a destination triggers a choice of **1d6 Destination options**,
+  each displaying its 3 biomes. Surviving companions stay with you between dungeons,
+  and every member advances one level upon descending into the next vault or scroll.
 
 ## Architecture
 

@@ -128,10 +128,17 @@ gone for the run. Solo, that's death.
 **Auto-loot**: walking over treasure collects it (if gear slots allow — slots
 are a hard cap, not a penalty). Slain monsters spill coins and gems where they
 fall. **Treasure is the only XP**: gems 2, idols 3, the crown 10; coins bank
-toward 1 XP per full 100 collected (first 100 coins are carried free, then 1
-slot per 100 — RAW). Level-up rolls HP and a live 2d6 class talent — a
+toward 1 XP per full 100 collected (each living party member carries 100 free coins
+in the shared party purse, e.g. 4 members = 400 free coins; beyond that, every 100 coins
+costs 1 slot in the party leader's gear). Level-up rolls HP and a live 2d6 class talent — a
 slot-machine moment the whole party shares, since treasure XP is awarded
 party-wide.
+
+**Cursed Scroll Expeditions**: Entering a Cursed Scroll Destination rolls **1d6 vaults (1 to 6)**
+to play consecutively within that destination, with each of its 3 biomes appearing a maximum of 2 times.
+Completing all 1d6 vaults of a destination triggers a choice of **1d6 Destination options**, each displaying
+its 3 biomes. Surviving companions stay with you between dungeons, and every member advances one level
+upon descending into the next vault or scroll.
 
 ## Controls
 

@@ -5,23 +5,15 @@ Author target: campaign progression
 Drafted: 2026-07-19
 Decisions locked: 2026-07-19 (see "Resolved decisions")
 
-## Concept (from the request)
+## Concept (as implemented)
 
-Each dungeon run is a self-contained "1d6 adventure" (the five-room dungeon).
-When the party clears a dungeon and reaches the exit, the game offers a **choice
-of biome for the next level**:
+Each Cursed Scroll Destination is a multi-vault expedition:
 
-- Roll **1d6** at completion. That roll is the *number of biome options* offered.
-  Sometimes you get a single forced destination (roll of 1), sometimes the whole
-  spread (roll of 6).
-- The options are drawn from the **six cursed scrolls** — the six zone packs
-  declared in `src/game/visual/model.ts` (`ZonePackId`). The **current scroll is
-  eligible**: a roll of 1 can legitimately re-offer the biome you just cleared,
-  and the pool is all six with no exclusion.
-- The player confirms one option under the prompt **"Choose your destination."**
-  On descent, **every surviving party member advances one level** — their XP is
-  topped up to the next-level threshold and a normal level-up fires (capped at
-  level 10) — and the party **carries into the chosen biome**.
+- **1d6 Vaults per Destination**: When the party enters a **Cursed Scroll Destination**, the game rolls **1d6 vaults (1 to 6)** to complete consecutively within that destination.
+- **Max 2x Biome Repetition**: Each of the 3 biomes (skins) declared for that Cursed Scroll appears a **maximum of 2 times** during the destination's 1d6 vaults.
+- **1d6 Destination Choices on Completion**: After completing all 1d6 vaults in the active destination, the game rolls **1d6** to determine the number of **Destination options** offered for the next scroll expedition.
+- **Biome Preview**: Each Destination choice card clearly displays its **3 biomes**.
+- **Descent Progression**: On descent into the next vault or destination, **every surviving party member advances one level** — their XP is topped up to the next-level threshold and a normal level-up fires (capped at level 10) — and the party **carries into the chosen vault/biome**.
 
 This layers a *player-directed* dimension onto what is currently a fully
 deterministic, linear `dungeonIndex + 1` march.

@@ -60,6 +60,13 @@ export interface SaveSlot {
   npcInteractionStates?: Record<string, "unmet" | "heard" | "resolved" | "hostile-npc" | "hostile-allies" | "departed">;
   /** Stable ids of rooms revealed on the compact expedition map. */
   discoveredRoomIds?: string[];
+  /** Remaining real-time pressure in open terrain; absent for older saves and enclosed dungeons. */
+  survivalRemainingMs?: number;
+  /** Open-terrain danger track and progress toward its next travel-and-kill trigger. */
+  dangerFlags?: number;
+  dangerChecks?: number;
+  dangerDistancePx?: number;
+  dangerKillPending?: boolean;
   hasCrown: boolean;
   kills: number;
   coinsBanked: number;

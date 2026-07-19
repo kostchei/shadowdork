@@ -65,6 +65,11 @@ export interface VisualSkin {
 
 export interface EnvironmentTextureKeys {
   wall(variant: number): string;
+  /** Optional topology-aware alternatives used by open-surface skins. */
+  supportWall?(variant: number): string;
+  overhang?: string;
+  climbBackdrop?: string;
+  openSky?: boolean;
   platform: string;
   weakWall: string;
   climb: string;

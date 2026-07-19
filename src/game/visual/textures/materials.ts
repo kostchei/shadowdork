@@ -1,7 +1,18 @@
 import Phaser from "phaser";
 import { TILE } from "../../textures";
 import type { EnvironmentTextureKeys, VisualSkin } from "../model";
-import { creviceGrime, domainWarp, latticeNoise, lipShadowAlpha } from "./math";
+import {
+  creviceGrime,
+  curvatureDivergence,
+  displaceShadow,
+  domainWarp,
+  heightFieldNormal,
+  latticeNoise,
+  lipShadowAlpha,
+  roundedBoxSdf,
+  sdfBevelHeight,
+  valueNoise,
+} from "./math";
 
 const PREFIX = "skin-iron-fortress";
 
@@ -17,6 +28,71 @@ function texture(
   draw(graphics);
   graphics.generateTexture(key, width, height);
   graphics.destroy();
+}
+
+const SURFACE_LIGHT = { x: -0.65, y: -1 } as const;
+
+function scaledColor(color: number, factor: number): number {
+  const scale = Math.max(0, factor);
+  const red = Math.min(255, Math.round(((color >>> 16) & 0xff) * scale));
+  const green = Math.min(255, Math.round(((color >>> 8) & 0xff) * scale));
+  const blue = Math.min(255, Math.round((color & 0xff) * scale));
+  return (red << 16) | (green << 8) | blue;
+}
+
+function castPolygonShadow(
+  graphics: Phaser.GameObjects.Graphics,
+  points: readonly Phaser.Geom.Point[],
+  elevation: number,
+  alpha = 0.58,
+): void {
+  const shadow = points.map((point) => {
+    const displaced = displaceShadow(point, elevation, SURFACE_LIGHT, 1);
+    return new Phaser.Geom.Point(displaced.x, displaced.y);
+  });
+  graphics.fillStyle(0x020306, alpha);
+  graphics.fillPoints(shadow, true);
+}
+
+function sdfBevelField(
+  graphics: Phaser.GameObjects.Graphics,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+  seed: number,
+  baseColor: number,
+): void {
+  const centerX = x + width / 2;
+  const centerY = y + height / 2;
+  const halfSize = { x: width / 2, y: height / 2 };
+  const distance = (px: number, py: number): number => {
+    const warped = domainWarp({ x: px, y: py }, seed, 0.75, 0.16);
+    return roundedBoxSdf({ x: warped.x - centerX, y: warped.y - centerY }, halfSize, radius);
+  };
+  const sampleHeight = (px: number, py: number): number => {
+    const bevel = sdfBevelHeight(distance(px, py), Math.max(1.5, radius + 0.5));
+    const roughness = valueNoise(px * 0.22, py * 0.22, seed + 1709) * 0.08;
+    return Math.max(0, bevel + roughness * bevel);
+  };
+
+  for (let py = y; py < y + height; py += 2) {
+    for (let px = x; px < x + width; px += 2) {
+      if (distance(px + 1, py + 1) > 0) continue;
+      const normal = heightFieldNormal(sampleHeight, px + 1, py + 1, 1);
+      const curvature = curvatureDivergence(sampleHeight, px + 1, py + 1, 1);
+      const lightLength = Math.hypot(SURFACE_LIGHT.x, SURFACE_LIGHT.y, 1);
+      const light = Math.max(0, (
+        normal.x * SURFACE_LIGHT.x + normal.y * SURFACE_LIGHT.y + normal.z
+      ) / lightLength);
+      const crevice = Math.max(0, -curvature) * 1.8;
+      const grime = creviceGrime(px, py, seed) * 0.12;
+      const shade = 0.62 + light * 0.55 - Math.min(0.28, crevice) - grime;
+      graphics.fillStyle(scaledColor(baseColor, shade), 0.96);
+      graphics.fillRect(px, py, Math.min(2, x + width - px), Math.min(2, y + height - py));
+    }
+  }
 }
 
 function noiseCurve(
@@ -192,8 +268,10 @@ function basaltBlock(
   const points = [topLeft, topRight, bottomRight, bottomLeft].map((point) => new Phaser.Geom.Point(point.x, point.y));
   const grime = creviceGrime(x + width / 2, y + height / 2, seed);
   const base = grime > 0.48 ? 0x292b30 : 0x33363b;
+  castPolygonShadow(graphics, points, 2.5);
   graphics.fillStyle(base, 1);
   graphics.fillPoints(points, true);
+  sdfBevelField(graphics, x + 1, y + 1, width - 2, height - 2, 2.5, seed, base);
   graphics.lineStyle(1, 0x54585d, 0.85);
   graphics.beginPath();
   graphics.moveTo(topLeft.x, topLeft.y);
@@ -354,8 +432,11 @@ function generateMugdulblubKeep(scene: Phaser.Scene): void {
       const bR = domainWarp({ x: 30, y: 30 }, seed + 2, 2.2, 0.1);
       const bL = domainWarp({ x: 2, y: 30 }, seed + 3, 2.2, 0.1);
       const points = [tL, tR, bR, bL].map((pt) => new Phaser.Geom.Point(pt.x, pt.y));
-      g.fillStyle(creviceGrime(16, 16, seed) > 0.45 ? 0x223028 : 0x2e4035, 1);
+      const base = creviceGrime(16, 16, seed) > 0.45 ? 0x223028 : 0x2e4035;
+      castPolygonShadow(g, points, 2.8);
+      g.fillStyle(base, 1);
       g.fillPoints(points, true);
+      sdfBevelField(g, 3, 3, 26, 26, 4.5, seed, base);
       g.lineStyle(1, 0x4d6655, 0.8); g.strokePoints(points, true);
       // Slime drips
       g.fillStyle(0x6eb043, 0.85);
@@ -446,6 +527,89 @@ function generateMugdulblubKeep(scene: Phaser.Scene): void {
   });
 }
 
+function generateDjurumApproach(scene: Phaser.Scene): void {
+  const p = "skin-djurum-approach";
+  for (let variant = 0; variant < 3; variant++) {
+    texture(scene, `${p}-wall-${variant}`, TILE, TILE, (g) => {
+      const seed = 180 + variant * 17;
+      g.fillStyle(0x581d1a, 1); g.fillRect(0, 0, 32, 32);
+      g.fillStyle(0xb9442f, 1); g.fillRect(0, 0, 32, 10);
+      g.fillStyle(0xe36b3f, 0.95);
+      for (let x = 0; x < 32; x += 4) {
+        const y = 2 + Math.abs(latticeNoise(x, variant, seed)) * 4;
+        g.fillRect(x, y, 5, 5);
+      }
+      g.fillStyle(0x2d0d0d, lipShadowAlpha(1, 0.9, 2.4)); g.fillRect(0, 10, 32, 5);
+      g.lineStyle(1, 0x8e2b24, 0.72); g.lineBetween(0, 20, 32, 18 + variant * 2);
+    });
+  }
+
+  for (let variant = 0; variant < 3; variant++) {
+    texture(scene, `${p}-support-${variant}`, TILE, TILE, (g) => {
+      const seed = 210 + variant * 23;
+      g.fillStyle(variant === 1 ? 0x742820 : 0x61201c, 1); g.fillRect(0, 0, 32, 32);
+      for (let y = 2; y < 32; y += 6) {
+        const edge = latticeNoise(variant, y, seed) * 2;
+        g.fillStyle(y % 12 === 2 ? 0xa93c2b : 0x842b23, 0.88);
+        g.fillRect(edge, y, 32 - Math.max(0, edge), 3);
+      }
+      g.fillStyle(0xf08b58, 0.3);
+      for (let speck = 0; speck < 7; speck++) {
+        g.fillRect(Math.abs(latticeNoise(seed, speck, 19)) * 30, Math.abs(latticeNoise(seed, speck, 31)) * 30, 1, 1);
+      }
+    });
+  }
+
+  texture(scene, `${p}-overhang`, TILE, TILE, (g) => {
+    g.fillStyle(0x461514, 0.96); g.fillRect(0, 24, 32, 8);
+    g.fillStyle(0xb6402f, 1); g.fillRect(0, 23, 32, 4);
+    g.fillStyle(0x24090a, lipShadowAlpha(1, 0.92, 2)); g.fillRect(0, 28, 32, 4);
+  });
+
+  texture(scene, `${p}-platform`, TILE, 12, (g) => {
+    g.fillStyle(0x551b18, 1); g.fillRect(0, 3, 32, 9);
+    g.fillStyle(0xcf4d32, 1); g.fillRect(0, 0, 32, 4);
+    g.fillStyle(0x29090a, 0.8); g.fillRect(0, 8, 32, 4);
+  });
+  texture(scene, `${p}-weak`, TILE, TILE, (g) => {
+    g.fillStyle(0x642019, 1); g.fillRect(1, 1, 30, 30);
+    g.lineStyle(2, 0xf07848, 0.9); g.lineBetween(4, 2, 14, 15); g.lineBetween(14, 15, 9, 30); g.lineBetween(14, 15, 29, 22);
+  });
+  texture(scene, `${p}-climb`, TILE, TILE, (g) => {
+    g.fillStyle(0x6b3b24, 1); g.fillRect(0, 0, 32, 32);
+    g.fillStyle(0x39241b, 1); g.fillRect(6, 0, 3, 32); g.fillRect(23, 0, 3, 32);
+    g.fillStyle(0xb87845, 1); for (let y = 3; y < 32; y += 8) g.fillRect(7, y, 18, 3);
+  });
+  texture(scene, `${p}-portcullis`, TILE, TILE, (g) => {
+    g.fillStyle(0x3b2219, 0.96); g.fillRect(0, 1, 32, 6);
+    for (let x = 4; x < 30; x += 6) { g.fillStyle(0x493025, 1); g.fillRect(x, 2, 4, 28); }
+  });
+  texture(scene, `${p}-door`, TILE, TILE * 2, (g) => {
+    g.fillStyle(0x4c291d, 1); g.fillRect(2, 5, 28, 59);
+    g.fillStyle(0x7c4528, 1); g.fillRect(5, 9, 22, 55);
+    g.fillStyle(0xd28a48, 0.9); g.fillTriangle(9, 33, 23, 33, 16, 20);
+  });
+
+  texture(scene, `${p}-backdrop-night`, 320, 180, (g) => {
+    g.fillStyle(0x19070b, 1); g.fillRect(0, 0, 320, 180);
+    g.fillStyle(0x48131b, 1); g.fillCircle(265, 38, 18);
+    g.fillStyle(0x531a19, 1); g.fillTriangle(0, 180, 110, 84, 190, 180); g.fillTriangle(120, 180, 245, 104, 320, 180);
+    g.fillStyle(0x8f291f, 0.72); g.fillRect(0, 150, 320, 30);
+  });
+  texture(scene, `${p}-backdrop-day`, 320, 180, (g) => {
+    g.fillStyle(0xc76f67, 1); g.fillRect(0, 0, 320, 180);
+    g.fillStyle(0xffcf7b, 0.96); g.fillCircle(260, 34, 15);
+    g.fillStyle(0x8f2f29, 1); g.fillTriangle(0, 180, 110, 82, 190, 180); g.fillTriangle(120, 180, 245, 102, 320, 180);
+    g.fillStyle(0xb83f2c, 0.94); g.fillRect(0, 151, 320, 29);
+    g.fillStyle(0xe97643, 0.7); for (let x = 0; x < 320; x += 22) g.fillRect(x, 154 + x % 9, 16, 2);
+  });
+
+  texture(scene, `${p}-gong`, 30, 24, (g) => { g.fillStyle(0x8c572f, 1); g.fillCircle(15, 12, 10); g.fillStyle(0xe4a458, 0.8); g.fillCircle(15, 12, 3); });
+  texture(scene, `${p}-rack`, 30, 18, (g) => { g.fillStyle(0x4b3023, 1); g.fillRect(2, 13, 26, 4); g.lineStyle(2, 0x9a6b43, 1); g.lineBetween(7, 14, 12, 2); g.lineBetween(23, 14, 18, 2); });
+  texture(scene, `${p}-banner`, 28, 38, (g) => { g.fillStyle(0x57261b, 1); g.fillRect(5, 2, 18, 29); g.fillTriangle(5, 31, 14, 38, 23, 31); g.fillStyle(0xe0a050, 0.9); g.fillCircle(14, 16, 5); });
+  texture(scene, `${p}-crenel`, 30, 35, (g) => { g.fillStyle(0x5b3422, 1); g.fillTriangle(3, 35, 14, 2, 18, 35); g.fillTriangle(14, 35, 25, 10, 29, 35); });
+}
+
 function generateRimeSeaCaves(scene: Phaser.Scene): void {
   const p = "skin-rime-sea-caves";
   for (let variant = 0; variant < 3; variant++) {
@@ -457,8 +621,11 @@ function generateRimeSeaCaves(scene: Phaser.Scene): void {
       const bR = domainWarp({ x: 31, y: 31 }, seed + 2, 1.5, 0.12);
       const bL = domainWarp({ x: 1, y: 31 }, seed + 3, 1.5, 0.12);
       const points = [tL, tR, bR, bL].map((pt) => new Phaser.Geom.Point(pt.x, pt.y));
-      g.fillStyle(creviceGrime(16, 16, seed) > 0.45 ? 0x1b2d3c : 0x273e52, 1);
+      const base = creviceGrime(16, 16, seed) > 0.45 ? 0x1b2d3c : 0x273e52;
+      castPolygonShadow(g, points, 2.2, 0.48);
+      g.fillStyle(base, 1);
       g.fillPoints(points, true);
+      sdfBevelField(g, 2, 2, 28, 28, 3.5, seed, base);
       // Frost glaze rim
       g.lineStyle(1.5, 0x75c7e8, 0.9); g.strokePoints(points, true);
       g.fillStyle(0xd6f3ff, 0.7);
@@ -466,6 +633,26 @@ function generateRimeSeaCaves(scene: Phaser.Scene): void {
       frostBloom(g, variant % 2 === 0 ? 10 : 22, variant === 1 ? 10 : 21, 7, seed);
     });
   }
+
+  for (let variant = 0; variant < 3; variant++) {
+    texture(scene, `${p}-support-${variant}`, TILE, TILE, (g) => {
+      const seed = 260 + variant * 13;
+      g.fillStyle(variant === 1 ? 0x172d40 : 0x102536, 1); g.fillRect(0, 0, 32, 32);
+      for (let y = 2; y < 32; y += 6) {
+        const shift = latticeNoise(variant, y, seed) * 2;
+        g.fillStyle(y % 12 === 2 ? 0x24455c : 0x1c374b, 0.9);
+        g.fillRect(1 + shift, y, 30 - Math.abs(shift), 3);
+      }
+      g.lineStyle(1, 0x6aa9c3, 0.5); g.lineBetween(3, 3, 27, 29);
+    });
+  }
+
+  texture(scene, `${p}-overhang`, TILE, TILE, (g) => {
+    g.fillStyle(0x10283a, 0.95); g.fillRect(0, 23, 32, 7);
+    g.fillStyle(0x8bdcf4, 0.9); g.fillRect(0, 23, 32, 2);
+    g.fillStyle(0xcdf5ff, 0.82);
+    for (let x = 3; x < 31; x += 6) g.fillTriangle(x, 29, x + 4, 29, x + 2, 32);
+  });
 
   texture(scene, `${p}-platform`, TILE, 12, (g) => {
     g.fillStyle(0x132536, 1); g.fillRect(0, 2, 32, 10);
@@ -503,7 +690,7 @@ function generateRimeSeaCaves(scene: Phaser.Scene): void {
     g.fillStyle(0xd6f3ff, 0.95); g.fillCircle(16, 32, 5);
   });
 
-  texture(scene, `${p}-backdrop`, 320, 180, (g) => {
+  texture(scene, `${p}-backdrop-night`, 320, 180, (g) => {
     g.fillStyle(0x050d17, 1); g.fillRect(0, 0, 320, 180);
     // Jagged frozen sea cave mouth & ice floes
     g.fillStyle(0x13273d, 1);
@@ -515,6 +702,18 @@ function generateRimeSeaCaves(scene: Phaser.Scene): void {
     g.fillStyle(0x8ae0ff, 0.85);
     for (let i = 0; i < 8; i++) g.fillRect(i * 40 + 10, 148, 22, 4);
     for (let i = 0; i < 7; i++) frostBloom(g, 24 + i * 47, 35 + (i % 3) * 28, 8 + (i % 2) * 3, 230 + i);
+  });
+
+  texture(scene, `${p}-backdrop-day`, 320, 180, (g) => {
+    g.fillStyle(0x8dc4db, 1); g.fillRect(0, 0, 320, 180);
+    g.fillStyle(0xe9f7ff, 0.85); g.fillCircle(260, 34, 16);
+    g.fillStyle(0x547f9a, 1); g.fillRect(0, 132, 320, 48);
+    g.fillStyle(0xcaf1ff, 0.96);
+    for (let i = 0; i < 9; i++) {
+      const x = i * 38 - 8;
+      g.fillTriangle(x, 152, x + 34, 146 + (i % 3) * 3, x + 27, 161);
+    }
+    g.fillStyle(0xffffff, 0.35); g.fillRect(0, 132, 320, 2);
   });
 
   texture(scene, `${p}-gong`, 30, 24, (g) => {
@@ -548,8 +747,11 @@ function generateOvergrownZiggurat(scene: Phaser.Scene): void {
       const bR = domainWarp({ x: 31, y: 31 }, seed + 2, 1.8, 0.1);
       const bL = domainWarp({ x: 1, y: 31 }, seed + 3, 1.8, 0.1);
       const points = [tL, tR, bR, bL].map((pt) => new Phaser.Geom.Point(pt.x, pt.y));
-      g.fillStyle(creviceGrime(16, 16, seed) > 0.45 ? 0x18241d : 0x223328, 1);
+      const base = creviceGrime(16, 16, seed) > 0.45 ? 0x18241d : 0x223328;
+      castPolygonShadow(g, points, 3.2, 0.62);
+      g.fillStyle(base, 1);
       g.fillPoints(points, true);
+      sdfBevelField(g, 2, 2, 28, 28, 2.5, seed, base);
       g.lineStyle(1, 0x3d5945, 0.85); g.strokePoints(points, true);
       // Noise-warped vines cross the block face and sprout alternating leaves.
       noiseCurve(g, 6, 0, 31, seed + 11, 0x489654, 2, true);
@@ -638,8 +840,11 @@ function generateNulnFungalGrottos(scene: Phaser.Scene): void {
       const bR = domainWarp({ x: 31, y: 31 }, seed + 2, 1.6, 0.1);
       const bL = domainWarp({ x: 1, y: 31 }, seed + 3, 1.6, 0.1);
       const points = [tL, tR, bR, bL].map((pt) => new Phaser.Geom.Point(pt.x, pt.y));
-      g.fillStyle(creviceGrime(16, 16, seed) > 0.45 ? 0x15241b : 0x1f3326, 1);
+      const base = creviceGrime(16, 16, seed) > 0.45 ? 0x15241b : 0x1f3326;
+      castPolygonShadow(g, points, 2.4, 0.52);
+      g.fillStyle(base, 1);
       g.fillPoints(points, true);
+      sdfBevelField(g, 2, 2, 28, 28, 5, seed, base);
       g.lineStyle(1, 0x3d664a, 0.8); g.strokePoints(points, true);
       // Shelf fungi are stacked fan wedges with luminous cap rims.
       for (const shelf of [{ x: 3, y: 9, r: 6 }, { x: 23, y: 23, r: 7 }]) {
@@ -730,17 +935,26 @@ function generateRooftopScamper(scene: Phaser.Scene): void {
   const p = "skin-rooftop-scamper";
   for (let variant = 0; variant < 2; variant++) {
     texture(scene, `${p}-wall-${variant}`, TILE, TILE, (g) => {
-      g.fillStyle(0x0c0c18, 1); g.fillRect(0, 0, TILE, TILE);
+      // A roof edge is one capped façade cell, never a column of shingles.
+      g.fillStyle(variant === 0 ? 0x403944 : 0x383442, 1); g.fillRect(0, 0, TILE, TILE);
+      g.lineStyle(1, 0x5d5360, 0.45); g.lineBetween(1, 18, 31, 18);
       if (variant === 0) {
         // Staggered rectangular shingles with bright bevels and deep lower lips.
-        for (let row = 0; row < 2; row++) {
+        for (let row = 0; row < 1; row++) {
           const y = row * 16;
           const offset = row % 2 === 0 ? -4 : 0;
           for (let x = offset; x < TILE; x += 12) {
+            castPolygonShadow(g, [
+              new Phaser.Geom.Point(x + 1, y + 1),
+              new Phaser.Geom.Point(x + 11, y + 1),
+              new Phaser.Geom.Point(x + 11, y + 13),
+              new Phaser.Geom.Point(x + 1, y + 13),
+            ], 2, 0.62);
             g.fillStyle(0x090912, lipShadowAlpha(0, 0.95, 2));
             g.fillRect(x + 1, y + 12, 10, 4);
             g.fillStyle(0x944935, 1);
             g.fillRect(x + 1, y + 1, 10, 12);
+            sdfBevelField(g, x + 1, y + 1, 10, 12, 2, 500 + row * 41 + x, 0x944935);
             g.fillStyle(0xc46953, 0.9);
             g.fillRect(x + 2, y + 2, 8, 2);
             g.lineStyle(1, 0x6b3028, 0.9);
@@ -751,10 +965,17 @@ function generateRooftopScamper(scene: Phaser.Scene): void {
         // Spanish barrel tiles: convex caps alternate with concave troughs,
         // and each staggered row ends in a rounded, shadowed overhang.
         g.fillStyle(0x302b39, 1); g.fillRect(1, 1, 30, 30);
-        for (let row = 0; row < 2; row++) {
+        g.fillStyle(0x383442, 1); g.fillRect(1, 14, 30, 17);
+        for (let row = 0; row < 1; row++) {
           const y = row * 16;
           const offset = row % 2 === 0 ? -5 : 0;
           for (let x = offset; x < TILE; x += 10) {
+            castPolygonShadow(g, [
+              new Phaser.Geom.Point(x + 1, y + 1),
+              new Phaser.Geom.Point(x + 9, y + 1),
+              new Phaser.Geom.Point(x + 9, y + 13),
+              new Phaser.Geom.Point(x + 1, y + 13),
+            ], 2.5, 0.66);
             g.fillStyle(0x17141f, 0.95);
             g.fillRect(x + 8, y + 1, 3, 13);
             g.fillCircle(x + 5, y + 13, 5);
@@ -772,6 +993,28 @@ function generateRooftopScamper(scene: Phaser.Scene): void {
       }
     });
   }
+
+  for (let variant = 0; variant < 3; variant++) {
+    texture(scene, `${p}-support-${variant}`, TILE, TILE, (g) => {
+      g.fillStyle(variant === 1 ? 0x4a4045 : 0x403942, 1); g.fillRect(0, 0, 32, 32);
+      g.fillStyle(0x27232e, 0.72); g.fillRect(0, 15, 32, 2);
+      const offset = variant % 2 === 0 ? 0 : 8;
+      g.lineStyle(1, 0x65565b, 0.62);
+      for (let x = -offset; x < 32; x += 16) g.lineBetween(x, 0, x, 15);
+      for (let x = offset; x < 32; x += 16) g.lineBetween(x, 17, x, 32);
+      if (variant === 2) {
+        g.fillStyle(0x171923, 1); g.fillRect(9, 5, 14, 20);
+        g.fillStyle(0xd7a65f, 0.55); g.fillRect(11, 7, 5, 7); g.fillRect(17, 7, 4, 7);
+      }
+    });
+  }
+
+  texture(scene, `${p}-overhang`, TILE, TILE, (g) => {
+    g.fillStyle(0x17151f, 0.92); g.fillRect(0, 24, 32, 8);
+    g.fillStyle(0x944935, 1); g.fillRect(0, 23, 32, 4);
+    g.fillStyle(0xd69a72, 0.82); g.fillRect(0, 23, 32, 1);
+    g.fillStyle(0x090912, lipShadowAlpha(1, 0.95, 2)); g.fillRect(0, 28, 32, 4);
+  });
 
   texture(scene, `${p}-platform`, TILE, 12, (g) => {
     g.fillStyle(0x1d1a29, 1); g.fillRect(0, 2, 32, 10);
@@ -809,7 +1052,7 @@ function generateRooftopScamper(scene: Phaser.Scene): void {
     g.fillStyle(0xffbe73, 0.95); g.fillCircle(16, 32, 5);
   });
 
-  texture(scene, `${p}-backdrop`, 320, 180, (g) => {
+  texture(scene, `${p}-backdrop-night`, 320, 180, (g) => {
     g.fillStyle(0x080812, 1); g.fillRect(0, 0, 320, 180);
     // Moonlit roof ridges & chimneys
     g.fillStyle(0x1a1829, 1);
@@ -819,6 +1062,18 @@ function generateRooftopScamper(scene: Phaser.Scene): void {
     }
     // Full moon
     g.fillStyle(0xfff2d6, 0.9); g.fillCircle(260, 45, 20);
+  });
+
+  texture(scene, `${p}-backdrop-day`, 320, 180, (g) => {
+    g.fillStyle(0x8fa8bd, 1); g.fillRect(0, 0, 320, 180);
+    g.fillStyle(0xdbe5e8, 0.7); g.fillCircle(55, 38, 18);
+    g.fillCircle(78, 40, 13); g.fillCircle(98, 37, 17);
+    g.fillStyle(0x596170, 1);
+    for (let x = 0; x < 320; x += 50) {
+      g.fillTriangle(x, 180, x + 50, 180, x + 25, 104 + (x % 3) * 7);
+      g.fillRect(x + 35, 92, 8, 30);
+    }
+    g.fillStyle(0xf7dfad, 0.95); g.fillCircle(260, 35, 14);
   });
 
   texture(scene, `${p}-gong`, 30, 24, (g) => {
@@ -855,19 +1110,26 @@ export function ensureVisualSkinTextures(
   scene: Phaser.Scene,
   skin: VisualSkin | undefined,
   legacyBackdrop: string,
+  daytime = false,
 ): EnvironmentTextureKeys {
   if (!skin) return genericKeys(legacyBackdrop);
 
   let prefix = "";
   let wallVariantCount = 3;
+  let openSky = false;
   if (skin.id === "iron-fortress") {
     prefix = "skin-iron-fortress";
     generateIronFortress(scene);
   } else if (skin.id === "mugdulblub-keep") {
     prefix = "skin-mugdulblub-keep";
     generateMugdulblubKeep(scene);
+  } else if (skin.id === "djurum-approach") {
+    prefix = "skin-djurum-approach";
+    openSky = true;
+    generateDjurumApproach(scene);
   } else if (skin.id === "rime-sea-caves") {
     prefix = "skin-rime-sea-caves";
+    openSky = true;
     generateRimeSeaCaves(scene);
   } else if (skin.id === "overgrown-basalt-ziggurat") {
     prefix = "skin-overgrown-basalt-ziggurat";
@@ -878,6 +1140,7 @@ export function ensureVisualSkinTextures(
   } else if (skin.id === "rooftop-scamper") {
     prefix = "skin-rooftop-scamper";
     wallVariantCount = 2;
+    openSky = true;
     generateRooftopScamper(scene);
   } else {
     return genericKeys(legacyBackdrop);
@@ -885,12 +1148,16 @@ export function ensureVisualSkinTextures(
 
   return {
     wall: (variant) => `${prefix}-wall-${variant % wallVariantCount}`,
+    supportWall: openSky ? (variant) => `${prefix}-support-${variant % 3}` : undefined,
+    overhang: openSky ? `${prefix}-overhang` : undefined,
+    climbBackdrop: openSky ? `${prefix}-support-1` : undefined,
+    openSky: openSky || undefined,
     platform: `${prefix}-platform`,
     weakWall: `${prefix}-weak`,
     climb: `${prefix}-climb`,
     portcullis: `${prefix}-portcullis`,
     door: `${prefix}-door`,
-    backdrop: `${prefix}-backdrop`,
+    backdrop: openSky ? `${prefix}-backdrop-${daytime ? "day" : "night"}` : `${prefix}-backdrop`,
     foregroundTint: 0xffffff,
     decorations: {
       mushrooms: `${prefix}-gong`,

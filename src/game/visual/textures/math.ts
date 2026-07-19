@@ -3,6 +3,10 @@ export interface Point {
   y: number;
 }
 
+export interface Vector3 extends Point {
+  z: number;
+}
+
 function smoothstep(value: number): number {
   return value * value * (3 - 2 * value);
 }
@@ -55,6 +59,70 @@ export function domainWarp(point: Point, seed: number, amplitude = 3, frequency 
 export function lipShadowAlpha(distanceBelowLip: number, strength = 0.65, sigma = 2.2): number {
   if (distanceBelowLip < 0) return 0;
   return strength * Math.exp(-(distanceBelowLip * distanceBelowLip) / (2 * sigma * sigma));
+}
+
+/** Signed distance to a rounded rectangle centered at the origin. */
+export function roundedBoxSdf(point: Point, halfSize: Point, radius: number): number {
+  const safeRadius = Math.max(0, Math.min(radius, halfSize.x, halfSize.y));
+  const qx = Math.abs(point.x) - Math.max(0, halfSize.x - safeRadius);
+  const qy = Math.abs(point.y) - Math.max(0, halfSize.y - safeRadius);
+  const outside = Math.hypot(Math.max(qx, 0), Math.max(qy, 0));
+  return outside + Math.min(Math.max(qx, qy), 0) - safeRadius;
+}
+
+/** Converts negative interior SDF distance into a smooth 0..1 bevel height. */
+export function sdfBevelHeight(signedDistance: number, bevelWidth: number): number {
+  if (!(bevelWidth > 0) || signedDistance >= 0) return 0;
+  const depth = Math.min(1, -signedDistance / bevelWidth);
+  return smoothstep(depth);
+}
+
+/** Finite-difference normal for any procedural height field. */
+export function heightFieldNormal(
+  sampleHeight: (x: number, y: number) => number,
+  x: number,
+  y: number,
+  step = 1,
+): Vector3 {
+  const safeStep = Math.max(0.0001, Math.abs(step));
+  const dx = (sampleHeight(x + safeStep, y) - sampleHeight(x - safeStep, y)) / (2 * safeStep);
+  const dy = (sampleHeight(x, y + safeStep) - sampleHeight(x, y - safeStep)) / (2 * safeStep);
+  const length = Math.hypot(dx, dy, 1);
+  return { x: -dx / length, y: -dy / length, z: 1 / length };
+}
+
+/** Divergence of the height-field normal; negative values identify crevices. */
+export function curvatureDivergence(
+  sampleHeight: (x: number, y: number) => number,
+  x: number,
+  y: number,
+  step = 1,
+): number {
+  const safeStep = Math.max(0.0001, Math.abs(step));
+  const nx0 = heightFieldNormal(sampleHeight, x - safeStep, y, safeStep).x;
+  const nx1 = heightFieldNormal(sampleHeight, x + safeStep, y, safeStep).x;
+  const ny0 = heightFieldNormal(sampleHeight, x, y - safeStep, safeStep).y;
+  const ny1 = heightFieldNormal(sampleHeight, x, y + safeStep, safeStep).y;
+  return (nx1 - nx0 + ny1 - ny0) / (2 * safeStep);
+}
+
+/**
+ * Projects an elevated point away from a directional light to form a cast
+ * shadow. Light direction is the surface-to-light vector in screen space.
+ */
+export function displaceShadow(
+  point: Point,
+  elevation: number,
+  lightDirection: Point,
+  scale = 1,
+): Point {
+  const length = Math.hypot(lightDirection.x, lightDirection.y);
+  if (length === 0 || elevation === 0 || scale === 0) return { ...point };
+  const distance = elevation * scale;
+  return {
+    x: point.x - lightDirection.x / length * distance,
+    y: point.y - lightDirection.y / length * distance,
+  };
 }
 
 export function creviceGrime(x: number, y: number, seed: number): number {

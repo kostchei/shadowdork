@@ -191,7 +191,7 @@ export class HudScene extends Phaser.Scene {
 
     this.drawChrome(this.dungeon.party.members.length);
 
-    this.ctx.events.on("gameover", () => this.showOverlay("THE DARK CLAIMS YOU", "#ff6159"));
+    this.ctx.events.on("gameover", () => this.showOverlay(this.dungeon.gameOverTitle, "#ff6159"));
     this.ctx.events.on("won", () => this.showOverlay("THE REWARD IS YOURS", "#ffd45f"));
     this.ctx.events.on("levelup", (payload: { name: string; result: LevelUpResult }) =>
       this.levelUpCeremony(payload.name, payload.result),
@@ -906,11 +906,19 @@ export class HudScene extends Phaser.Scene {
     if (leader.mode === "hold") leaderDetails.push("HOLDING");
     this.leaderDetail.setText(leaderDetails.length > 0 ? leaderDetails.join("   |   ") : "Leader ready");
 
-    this.objectiveText.setText(
-      this.dungeon.hasCrown
-        ? "REWARD CLAIMED - REACH THE EXIT"
-        : `VAULT REWARD: ${this.dungeon.rewardLabel.toUpperCase()}`,
-    );
+    const objective = this.dungeon.hasCrown
+      ? "REWARD CLAIMED - REACH THE EXIT"
+      : `VAULT REWARD: ${this.dungeon.rewardLabel.toUpperCase()}`;
+    const survival = this.dungeon.survivalClock;
+    const survivalSeconds = survival ? Math.ceil(survival.remainingMs / 1000) : 0;
+    const danger = this.dungeon.dangerTrack;
+    const dangerIcons = danger
+      ? `${danger.icon.repeat(danger.count)}${"·".repeat(danger.maximum - danger.count)}`
+      : "";
+    const deadline = survival
+      ? `${survival.label} ${dangerIcons} ${Math.floor(survivalSeconds / 60)}:${String(survivalSeconds % 60).padStart(2, "0")}`
+      : "";
+    this.objectiveText.setText(deadline ? `${deadline}  |  ${objective}` : objective);
     this.objectiveText.setColor(this.dungeon.hasCrown ? "#72d887" : "#e3c56d");
 
     const region = roomAtTolerant(
@@ -918,7 +926,11 @@ export class HudScene extends Phaser.Scene {
       Math.floor(leader.x / TILE),
       Math.floor(leader.y / TILE),
     );
-    if (region) this.roomText.setText(region.hud);
+    if (region) {
+      this.roomText.setText(
+        region.id === this.dungeon.safeZoneRoomId ? `${region.hud}  |  SAFE ZONE` : region.hud,
+      );
+    }
     this.mapText
       .setVisible(this.dungeon.activeDungeon.connectors !== undefined)
       .setText(this.dungeon.compactMap);

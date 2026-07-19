@@ -7,6 +7,10 @@ for review but are not part of the shipped game runtime.
 
 - `biome-samples/` — fixed-seed 960×540 captures for all 18 visual skins, plus
   a labeled HTML gallery and contact sheet.
+- `sdf-shadow-qa/` — fixed-seed visual checks for rounded SDF bevels,
+  curvature shading, and displaced cast shadows.
+- `open-terrain-qa/` — day/night checks for supported rooftops, desert ground,
+  ice floes, tunnel overhangs, and façade-attached climb routes.
 
 ## Conventions
 

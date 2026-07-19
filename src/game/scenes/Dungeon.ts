@@ -18,7 +18,7 @@ import {
   randomPlebName,
   spell,
 } from "../../data";
-import { DC, type Alignment } from "../../engine";
+import { DC, type Alignment, type StatName } from "../../engine";
 import { GameContext } from "../context";
 import { RENDER_SCALE } from "../display";
 import { CharacterSprite } from "../entities/CharacterSprite";
@@ -61,6 +61,18 @@ import type { Orientation } from "../level/embedding";
 import type { EnvironmentTextureKeys, VisualPalette, VisualSkin } from "../visual/model";
 import { parseVisualSkinId, visualSkinById } from "../visual/skins";
 import { ensureVisualSkinTextures } from "../visual/textures/materials";
+import {
+  openSurfaceTileRole,
+  openTerrainSurvivalDurationMs,
+  dangerRuleForSkin,
+  openTerrainDangerDc,
+  OPEN_TERRAIN_DANGER_DISTANCE_TILES,
+  OPEN_TERRAIN_MAX_FLAGS,
+  safeZonePresentation,
+  selectOpenTerrainRoomRoles,
+  survivalPressureForSkin,
+  type OpenTerrainSurvivalPressure,
+} from "../visual/openTerrain";
 import { roomAt, roomAtTolerant } from "../level/geometry";
 import {
   canTraverseConnector,
@@ -85,6 +97,7 @@ import {
 const RETALIATE_WINDOW_MS = 4000;
 /** Gold granted when a companion vault reward cannot recruit (full or duplicate class). */
 const COMPANION_SUBSTITUTE_GOLD = 500;
+const SURVIVAL_TIMER_ID = "open-terrain-survival";
 
 /** Compact-map marker precedence: player > landmark beat > plain room > empty. */
 function mapMarkerPriority(marker: string): number {
@@ -127,6 +140,16 @@ export class DungeonScene extends Phaser.Scene {
   activeDungeon!: DungeonDefinition;
   visualSkin?: VisualSkin;
   private environmentTextures!: EnvironmentTextureKeys;
+  private openSkyDaytime = false;
+  private undergroundRoomId?: string;
+  private safeZoneId?: string;
+  private survivalPressure?: OpenTerrainSurvivalPressure;
+  private terminalGameOverTitle = "THE DARK CLAIMS YOU";
+  private dangerFlags = 0;
+  private dangerChecks = 0;
+  private dangerDistancePx = 0;
+  private dangerKillPending = false;
+  private dangerLastLeaderPos?: { x: number; y: number };
 
   private walls!: Phaser.Physics.Arcade.StaticGroup;
   private weakWalls!: Phaser.Physics.Arcade.StaticGroup;
@@ -208,6 +231,12 @@ export class DungeonScene extends Phaser.Scene {
     if (!this.ctx) throw new Error("GameContext missing from registry");
 
     this.gameOver = false;
+    this.terminalGameOverTitle = "THE DARK CLAIMS YOU";
+    this.dangerFlags = this.loadedState?.dangerFlags ?? 0;
+    this.dangerChecks = this.loadedState?.dangerChecks ?? 0;
+    this.dangerDistancePx = this.loadedState?.dangerDistancePx ?? 0;
+    this.dangerKillPending = this.loadedState?.dangerKillPending ?? false;
+    this.dangerLastLeaderPos = undefined;
     this.won = false;
     this.gamePaused = false;
     // A capture-only query flag keeps the normal title flow unchanged while
@@ -251,11 +280,19 @@ export class DungeonScene extends Phaser.Scene {
     this.activeDungeon = this.resolveActiveDungeon(layoutSeed);
     const requestedSkin = parseVisualSkinId(new URLSearchParams(window.location.search).get("skin"));
     this.visualSkin = requestedSkin ? visualSkinById(requestedSkin) : undefined;
+    this.openSkyDaytime = (layoutSeed & 1) === 0;
     this.environmentTextures = ensureVisualSkinTextures(
       this,
       this.visualSkin,
       `bg-${this.activeDungeon.theme.backdrop}`,
+      this.openSkyDaytime,
     );
+    const openTerrainRooms = this.environmentTextures.openSky
+      ? selectOpenTerrainRoomRoles(this.activeDungeon.regions, this.visualSkin?.id, layoutSeed)
+      : {};
+    this.undergroundRoomId = openTerrainRooms.undergroundRoomId;
+    this.safeZoneId = openTerrainRooms.safeZoneRoomId;
+    this.survivalPressure = survivalPressureForSkin(this.visualSkin?.id);
     this.lastRoomId = this.resolveLoadedRoomId();
     this.discoveredRoomIds.add(this.lastRoomId);
     this.currentReward = chooseDungeonReward(
@@ -287,9 +324,20 @@ export class DungeonScene extends Phaser.Scene {
     this.weakWalls = this.physics.add.staticGroup();
     this.portcullises = this.physics.add.staticGroup();
     this.party = new PartyManager(this.ctx);
-    this.light = new LightSystem(this, this.ctx, this.presentationPalette.darkness);
+    this.light = new LightSystem(
+      this,
+      this.ctx,
+      this.presentationPalette.darkness,
+      this.environmentTextures.openSky
+        && this.openSkyDaytime
+        && this.lastRoomId !== this.undergroundRoomId
+        ? 0.28
+        : 0.84,
+    );
+    this.startSurvivalTimer();
 
     this.buildLevel();
+    this.createSafeZoneVignette(layoutSeed);
     this.createConnectorTelegraphs();
     this.activateRoomRequirements(this.lastRoomId, false);
     this.lightTorch(this.party.leader, "You light a torch.");
@@ -374,8 +422,11 @@ export class DungeonScene extends Phaser.Scene {
       spawnWave: (monsterId, count, x) => this.spawnEncounterWave(monsterId, count, x),
     });
 
+    const deadline = this.survivalPressure
+      ? ` ${this.survivalPressure.label}: ${Math.ceil(openTerrainSurvivalDurationMs(this.ctx.engine.config.torchMs) / 60_000)} minutes.`
+      : "";
     this.ctx.say(
-      `${this.dungeonDisplayName}. ${this.activeDungeon.objective}. Watch your torch. ESC shows controls.`,
+      `${this.dungeonDisplayName}. ${this.activeDungeon.objective}.${deadline} Watch your torch. ESC shows controls.`,
       "#f0e090",
     );
     this.cameras.main.fadeIn(450, 0, 0, 0);
@@ -435,34 +486,258 @@ export class DungeonScene extends Phaser.Scene {
     return this.currentReward.title;
   }
 
+  get gameOverTitle(): string {
+    return this.terminalGameOverTitle;
+  }
+
+  get survivalClock(): { label: string; remainingMs: number } | undefined {
+    if (!this.survivalPressure) return undefined;
+    const remainingMs = this.ctx.engine.clock.hasTimer(SURVIVAL_TIMER_ID)
+      ? this.ctx.engine.clock.timerRemaining(SURVIVAL_TIMER_ID)
+      : 0;
+    return { label: this.survivalPressure.label, remainingMs };
+  }
+
+  get dangerTrack(): { icon: string; count: number; maximum: number } | undefined {
+    const rule = dangerRuleForSkin(this.visualSkin?.id, this.openSkyDaytime);
+    return rule ? { icon: rule.icon, count: this.dangerFlags, maximum: OPEN_TERRAIN_MAX_FLAGS } : undefined;
+  }
+
+  get safeZoneRoomId(): string | undefined {
+    return this.safeZoneId;
+  }
+
+  private safeZoneAnchor(): { x: number; y: number } | undefined {
+    const region = this.activeDungeon.regions.find((entry) => entry.id === this.safeZoneId);
+    if (!region) return undefined;
+    const centerX = (region.x1 + region.x2) / 2;
+    const candidates: { x: number; y: number; score: number }[] = [];
+    for (let y = region.y1; y <= region.y2; y++) {
+      for (let x = region.x1; x <= region.x2; x++) {
+        const cell = this.activeDungeon.grid[y]?.[x];
+        const below = this.activeDungeon.grid[y + 1]?.[x];
+        if ((cell === "." || cell === "P") && (below === "#" || below === "%" || below === "=")) {
+          candidates.push({ x, y, score: Math.abs(x - centerX) + Math.abs(y - region.y2) * 0.2 });
+        }
+      }
+    }
+    const tile = candidates.sort((a, b) => a.score - b.score)[0];
+    return tile
+      ? { x: tile.x * TILE + TILE / 2, y: tile.y * TILE + TILE / 2 }
+      : { x: region.labelX * TILE, y: region.y2 * TILE };
+  }
+
+  private createSafeZoneVignette(seed: number): void {
+    const presentation = safeZonePresentation(this.visualSkin?.id, seed);
+    const anchor = this.safeZoneAnchor();
+    if (!presentation || !anchor) return;
+    const { x, y } = anchor;
+    const g = this.add.graphics().setDepth(2);
+
+    if (presentation.kind === "inn" || presentation.kind === "brothel") {
+      const brothel = presentation.kind === "brothel";
+      g.fillStyle(brothel ? 0x49263f : 0x51382c, 0.96);
+      g.fillRoundedRect(x - 76, y - 112, 152, 112, 6);
+      g.fillStyle(0x251c22, 1);
+      g.fillRect(x - 16, y - 58, 32, 58);
+      g.fillStyle(brothel ? 0xd55f91 : 0xe5b96a, 0.84);
+      g.fillRoundedRect(x - 61, y - 78, 28, 31, 4);
+      g.fillRoundedRect(x + 33, y - 78, 28, 31, 4);
+      g.lineStyle(5, brothel ? 0x8f315f : 0x8e5638, 1);
+      g.lineBetween(x - 82, y - 106, x, y - 132);
+      g.lineBetween(x, y - 132, x + 82, y - 106);
+      this.add.text(x, y - 98, presentation.name, {
+        fontFamily: "Georgia, serif",
+        fontSize: "10px",
+        color: brothel ? "#f3a4c4" : "#f0cf86",
+        stroke: "#160f12",
+        strokeThickness: 3,
+        resolution: RENDER_SCALE,
+      }).setOrigin(0.5).setDepth(3);
+    } else if (presentation.kind === "cave-pool" || presentation.kind === "oasis") {
+      g.fillStyle(0x2c91a3, 0.72);
+      g.fillEllipse(x - 18, y - 3, 142, 25);
+      g.lineStyle(3, 0x79d8d2, 0.75);
+      g.strokeEllipse(x - 18, y - 3, 130, 17);
+      if (presentation.kind === "oasis") {
+        g.fillStyle(0x6d4827, 1);
+        g.fillRect(x + 42, y - 92, 10, 88);
+        g.lineStyle(8, 0x2f7a45, 1);
+        for (const [dx, dy] of [[-42, -15], [-31, -32], [0, -42], [33, -31], [43, -10]] as const) {
+          g.lineBetween(x + 47, y - 88, x + 47 + dx, y - 88 + dy);
+        }
+      }
+    } else {
+      g.fillStyle(0x27343e, 1);
+      g.fillEllipse(x - 45, y - 45, 100, 92);
+      g.fillEllipse(x + 40, y - 52, 116, 104);
+      g.fillStyle(0x10181e, 1);
+      g.fillEllipse(x, y - 16, 118, 64);
+      this.add.image(x, y - 2, "campfire").setDepth(4);
+      this.add.image(x, y - 16, "light-radial")
+        .setScale(0.72)
+        .setTint(0xffb45c)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setAlpha(0.16)
+        .setDepth(3);
+      this.light.addSource(CAMPFIRE_RADIUS, () => ({ x, y: y - 8 }), {
+        tint: 0xe0a868,
+        tintAlpha: 0.45,
+      });
+      flameAt(this, x, y - 6, "campfire");
+    }
+
+    this.add.text(x, y - 145, `SAFE ZONE\n${presentation.name}`, {
+      fontFamily: "Georgia, serif",
+      fontSize: "13px",
+      align: "center",
+      color: "#8fe0a3",
+      stroke: "#07130b",
+      strokeThickness: 4,
+      resolution: RENDER_SCALE,
+    }).setOrigin(0.5).setDepth(4);
+  }
+
+  private startSurvivalTimer(): void {
+    if (!this.survivalPressure) return;
+    const restored = this.loadedState?.survivalRemainingMs;
+    const duration = restored === undefined
+      ? openTerrainSurvivalDurationMs(this.ctx.engine.config.torchMs)
+      : Math.max(1, restored);
+    this.ctx.engine.clock.addTimer(SURVIVAL_TIMER_ID, duration, () => {
+      if (this.won || this.gameOver) return;
+      this.gameOver = true;
+      this.terminalGameOverTitle = this.survivalPressure!.failureTitle;
+      this.ctx.say(this.survivalPressure!.failureMessage, "#ff6159");
+      this.ctx.events.emit("gameover");
+    });
+  }
+
+  private updateOpenTerrainDanger(currentRoom: string): void {
+    const rule = dangerRuleForSkin(this.visualSkin?.id, this.openSkyDaytime);
+    if (!rule) return;
+    const leader = this.party.leader;
+    const previous = this.dangerLastLeaderPos;
+    this.dangerLastLeaderPos = { x: leader.x, y: leader.y };
+
+    if (currentRoom === this.safeZoneId) {
+      if (this.dangerFlags > 0 || this.dangerChecks > 0 || this.dangerKillPending) {
+        this.ctx.say("Shelter clears the expedition's danger track.", "#72d887");
+      }
+      this.dangerFlags = 0;
+      this.dangerChecks = 0;
+      this.dangerDistancePx = 0;
+      this.dangerKillPending = false;
+      return;
+    }
+
+    if (previous) {
+      const step = Math.hypot(leader.x - previous.x, leader.y - previous.y);
+      // Room teleports and load placement are not travel; ordinary movement is.
+      this.dangerDistancePx += Math.min(step, TILE * 2);
+    }
+    if (
+      this.dangerKillPending
+      && this.dangerDistancePx >= OPEN_TERRAIN_DANGER_DISTANCE_TILES * TILE
+    ) {
+      this.resolveOpenTerrainDanger(rule);
+    }
+  }
+
+  private resolveOpenTerrainDanger(rule: NonNullable<ReturnType<typeof dangerRuleForSkin>>): void {
+    const checkIndex = this.dangerChecks++;
+    const dc = openTerrainDangerDc(checkIndex);
+    this.dangerDistancePx = 0;
+    this.dangerKillPending = false;
+
+    let avoided = false;
+    if (rule.saveStats) {
+      const actor = this.party.leader.character;
+      const stat = rule.saveStats.reduce((best, candidate) =>
+        actor.mod(candidate) > actor.mod(best) ? candidate : best,
+      ) as StatName;
+      if (rule.encounter) this.ctx.say(rule.encounter, "#e3c56d");
+      const result = this.ctx.engine.check({ actor, stat, dc, kind: "stat" });
+      avoided = result.success;
+      this.ctx.say(
+        `${actor.name}: ${stat} ${result.total} vs DC ${dc} — ${avoided ? "danger avoided" : `${rule.icon} gained`}.`,
+        avoided ? "#72d887" : "#ff9c4a",
+      );
+    } else {
+      this.ctx.say(`The journey takes its toll: ${rule.icon} gained.`, "#ff9c4a");
+    }
+    if (avoided) return;
+
+    this.dangerFlags++;
+    if (this.dangerFlags >= OPEN_TERRAIN_MAX_FLAGS) {
+      this.gameOver = true;
+      this.terminalGameOverTitle = rule.failureTitle;
+      this.ctx.say(rule.failureMessage, "#ff6159");
+      this.ctx.events.emit("gameover");
+    }
+  }
+
   private createAtmosphere(dungeonIndex: number): void {
     const worldW = this.activeDungeon.width * TILE;
     const worldH = this.activeDungeon.height * TILE;
     const theme = this.presentationPalette;
 
-    this.add
-      .tileSprite(0, 0, worldW, worldH, "bg-cavern")
-      .setOrigin(0)
-      .setScrollFactor(0.12, 0.05)
-      .setTint(theme.haze)
-      .setAlpha(0.72)
-      .setDepth(-30);
-    // Themed math-built backdrop: columns, tentacle swirls, or aztec fractals.
-    this.add
-      .tileSprite(0, 0, worldW, worldH, this.environmentTextures.backdrop)
-      .setOrigin(0)
-      .setScrollFactor(0.22, 0.08)
-      .setTint(theme.stoneTint)
-      .setAlpha(0.42)
-      .setDepth(-26);
-    // Bump-noise grain so the walls of the void aren't a flat wash.
-    this.add
-      .tileSprite(0, 0, worldW, worldH, "bg-bumps")
-      .setOrigin(0)
-      .setScrollFactor(0.45, 0.25)
-      .setTint(theme.accent)
-      .setAlpha(0.2)
-      .setDepth(-24);
+    if (this.environmentTextures.openSky) {
+      // Exterior skins own the full horizon; do not wash them back into the
+      // legacy cavern silhouette. Day/night is baked into the selected key.
+      this.add
+        .tileSprite(0, 0, worldW, worldH, this.environmentTextures.backdrop)
+        .setOrigin(0)
+        .setScrollFactor(0.12, 0.05)
+        .setAlpha(1)
+        .setDepth(-30);
+      this.add
+        .tileSprite(0, 0, worldW, worldH, "bg-bumps")
+        .setOrigin(0)
+        .setScrollFactor(0.45, 0.25)
+        .setTint(this.openSkyDaytime ? 0xffffff : theme.accent)
+        .setAlpha(this.openSkyDaytime ? 0.06 : 0.14)
+        .setDepth(-24);
+    } else {
+      this.add
+        .tileSprite(0, 0, worldW, worldH, "bg-cavern")
+        .setOrigin(0)
+        .setScrollFactor(0.12, 0.05)
+        .setTint(theme.haze)
+        .setAlpha(0.72)
+        .setDepth(-30);
+      // Themed math-built backdrop: columns, tentacle swirls, or aztec fractals.
+      this.add
+        .tileSprite(0, 0, worldW, worldH, this.environmentTextures.backdrop)
+        .setOrigin(0)
+        .setScrollFactor(0.22, 0.08)
+        .setTint(theme.stoneTint)
+        .setAlpha(0.42)
+        .setDepth(-26);
+      // Bump-noise grain so the walls of the void aren't a flat wash.
+      this.add
+        .tileSprite(0, 0, worldW, worldH, "bg-bumps")
+        .setOrigin(0)
+        .setScrollFactor(0.45, 0.25)
+        .setTint(theme.accent)
+        .setAlpha(0.2)
+        .setDepth(-24);
+    }
+    const undergroundRegion = this.activeDungeon.regions.find(
+      (region) => region.id === this.undergroundRoomId,
+    );
+    if (undergroundRegion) {
+      const x = undergroundRegion.x1 * TILE;
+      const y = undergroundRegion.y1 * TILE;
+      const width = (undergroundRegion.x2 - undergroundRegion.x1 + 1) * TILE;
+      const height = (undergroundRegion.y2 - undergroundRegion.y1 + 1) * TILE;
+      this.add
+        .tileSprite(x, y, width, height, "bg-cavern")
+        .setOrigin(0)
+        .setTint(theme.haze)
+        .setAlpha(0.94)
+        .setDepth(-18);
+    }
     this.add
       .tileSprite(0, worldH - 190, worldW, 190, "bg-fog")
       .setOrigin(0)
@@ -499,11 +774,13 @@ export class DungeonScene extends Phaser.Scene {
       // Anchor near the top of the region (56px into the first row for the legacy
       // layout), so tall vertical rooms still read their label from above.
       const labelY = region.y1 * TILE + 24;
+      const safeZone = region.id === this.safeZoneId;
       this.add
-        .text(region.labelX * TILE, labelY, region.title, {
+        .text(region.labelX * TILE, labelY, safeZone ? `${region.title}\nSAFE ZONE` : region.title, {
           fontFamily: "Georgia, serif",
           fontSize: "18px",
-          color: `#${theme.accent.toString(16).padStart(6, "0")}`,
+          color: safeZone ? "#8fe0a3" : `#${theme.accent.toString(16).padStart(6, "0")}`,
+          align: "center",
           letterSpacing: 3,
           resolution: RENDER_SCALE,
         })
@@ -524,12 +801,28 @@ export class DungeonScene extends Phaser.Scene {
         const px = x * TILE + TILE / 2;
         const py = y * TILE + TILE / 2;
         switch (ch) {
-          case "#":
-            this.walls
-              .create(px, py, textures.wall(x * 17 + y * 31))
-              .setTint(foregroundTint)
-              .setDepth(1);
+          case "#": {
+            const variant = x * 17 + y * 31;
+            let textureKey = textures.wall(variant);
+            let visible = true;
+            if (textures.supportWall) {
+              const underground = roomAt(this.activeDungeon.regions, x, y)?.id === this.undergroundRoomId;
+              if (underground) {
+                textureKey = textures.supportWall(variant);
+              } else {
+                const role = openSurfaceTileRole(this.activeDungeon.grid, x, y);
+                if (role === "support") textureKey = textures.supportWall(variant);
+                else if (role === "overhang") textureKey = textures.overhang ?? textureKey;
+                else if (role === "hidden-ceiling") {
+                  textureKey = textures.overhang ?? textureKey;
+                  visible = false;
+                }
+              }
+            }
+            const wall = this.walls.create(px, py, textureKey).setTint(foregroundTint).setDepth(1);
+            if (!visible) wall.setVisible(false);
             break;
+          }
           case "%":
             {
               const wall = this.weakWalls.create(px, py, textures.weakWall).setTint(foregroundTint).setDepth(2);
@@ -551,7 +844,14 @@ export class DungeonScene extends Phaser.Scene {
             break;
           }
           case "|": {
-            this.walls.create(px, py, textures.climb).setTint(foregroundTint).setDepth(2);
+            // Non-solid: the ladder is a climb route, not a wall. Render it, but
+            // keep it out of the `walls` collision group so the party can walk
+            // through and under it. Traversal is driven entirely by the climb
+            // zone in the lane beside it (see the scene's climb handling).
+            if (textures.climbBackdrop) {
+              this.add.image(px, py, textures.climbBackdrop).setTint(foregroundTint).setDepth(1);
+            }
+            this.add.image(px, py, textures.climb).setTint(foregroundTint).setDepth(2);
             const zone = this.add.rectangle(px - TILE, py, TILE, TILE, 0, 0);
             this.climbTiles.push(zone);
             break;
@@ -914,6 +1214,7 @@ export class DungeonScene extends Phaser.Scene {
 
     // Keep all rules time (rounds, torches, spell effects) in lockstep with gameplay.
     this.ctx.engine.advance(delta);
+    if (this.gameOver || this.won) return;
 
     // Directional connectors apply to the whole party (including followers) and
     // monsters. Check before room-transition persistence observes the new room.
@@ -921,6 +1222,8 @@ export class DungeonScene extends Phaser.Scene {
 
     // Auto-save on room transition
     const currentRoom = this.currentRoomId;
+    this.updateOpenTerrainDanger(currentRoom);
+    if (this.gameOver) return;
     if (currentRoom !== this.lastRoomId) {
       this.lastRoomId = currentRoom;
       this.discoveredRoomIds.add(currentRoom);
@@ -938,6 +1241,13 @@ export class DungeonScene extends Phaser.Scene {
     this.updateDying();
     this.updatePartyCombat(time);
     for (const m of this.party.members) m.tick(delta);
+    this.light.setDarknessAlpha(
+      this.environmentTextures.openSky
+        && this.openSkyDaytime
+        && currentRoom !== this.undergroundRoomId
+        ? 0.28
+        : 0.84,
+    );
     this.light.update();
     const listener = this.party.leader;
     for (const e of this.fireEmitters) e.setListener({ x: listener.x, y: listener.y });
@@ -1893,6 +2203,9 @@ export class DungeonScene extends Phaser.Scene {
     sfx.deathKnell(m.def.undead, this.spatial(m));
     floatText(this, m.x, m.y - 10, "slain", "#c0c0c0");
     this.ctx.kills++;
+    if (this.survivalPressure && this.currentRoomId !== this.safeZoneId) {
+      this.dangerKillPending = true;
+    }
     this.dropLoot(m);
     this.morale.onDeath(this.ctx, this, m, this.monsters);
     this.tweens.add({
@@ -2278,6 +2591,8 @@ export class DungeonScene extends Phaser.Scene {
       const row = Math.min(rows - 1, Math.floor(centerY / (this.activeDungeon.height / rows)));
       const marker = region.id === this.currentRoomId
         ? "@"
+        : region.id === this.safeZoneId
+          ? "S"
         : region.beat === "entrance"
           ? "E"
           : region.beat === "climax"
@@ -2379,6 +2694,11 @@ export class DungeonScene extends Phaser.Scene {
       openedConnectorIds: [...this.openedConnectors],
       npcInteractionStates: Object.fromEntries(this.npcInteractionStates),
       discoveredRoomIds: [...this.discoveredRoomIds],
+      survivalRemainingMs: this.survivalClock?.remainingMs,
+      dangerFlags: this.survivalPressure ? this.dangerFlags : undefined,
+      dangerChecks: this.survivalPressure ? this.dangerChecks : undefined,
+      dangerDistancePx: this.survivalPressure ? this.dangerDistancePx : undefined,
+      dangerKillPending: this.survivalPressure ? this.dangerKillPending : undefined,
       hasCrown: this.hasCrown,
       kills: this.ctx.kills,
       coinsBanked: this.ctx.totalCoins,

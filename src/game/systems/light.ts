@@ -56,11 +56,13 @@ export class LightSystem {
   private ctx: GameContext;
   private scene: Phaser.Scene;
   private darknessColor: number;
+  private darknessAlpha: number;
 
-  constructor(scene: Phaser.Scene, ctx: GameContext, darknessColor = 0x000008) {
+  constructor(scene: Phaser.Scene, ctx: GameContext, darknessColor = 0x000008, darknessAlpha = 0.84) {
     this.scene = scene;
     this.ctx = ctx;
     this.darknessColor = darknessColor;
+    this.darknessAlpha = darknessAlpha;
     const cam = scene.cameras.main;
     // The camera renders zoomed (high-DPI); both overlays are device-resolution
     // textures counter-scaled and offset so the zoom maps them exactly onto the
@@ -95,6 +97,11 @@ export class LightSystem {
 
   removeSource(id: string): void {
     if (!this.sources.delete(id)) throw new Error(`Unknown light source "${id}"`);
+  }
+
+  /** Changes ambient darkness without rebuilding the screen-space overlays. */
+  setDarknessAlpha(alpha: number): void {
+    this.darknessAlpha = Phaser.Math.Clamp(alpha, 0, 1);
   }
 
   /**
@@ -167,7 +174,7 @@ export class LightSystem {
     this.tintRt.clear();
     // Near-black preserves the mechanical danger while keeping silhouettes,
     // platforms, and foreground art readable on ordinary displays.
-    this.rt.fill(this.darknessColor, 0.84);
+    this.rt.fill(this.darknessColor, this.darknessAlpha);
     for (const [id, s] of [...this.sources.entries()]) {
       const pos = s.position();
       if (!pos) {

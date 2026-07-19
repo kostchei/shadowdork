@@ -70,3 +70,12 @@ export function levelUp(
 
   return { newLevel: character.level, hpRolled, hpGained, talent };
 }
+
+/**
+ * XP needed to reach the next level from the character's current progress — the
+ * descent reward tops this up so a normal level-up fires. Zero at the level cap.
+ */
+export function xpToReachNextLevel(character: Character): number {
+  if (character.level >= MAX_LEVEL) return 0;
+  return Math.max(0, xpToNextLevel(character.level) - character.xp);
+}

@@ -19,8 +19,9 @@ of biome for the next level**:
   eligible**: a roll of 1 can legitimately re-offer the biome you just cleared,
   and the pool is all six with no exclusion.
 - The player confirms one option under the prompt **"Choose your destination."**
-  **Everyone advances to the next level** and **carries their party** (surviving
-  companions) into the chosen biome.
+  On descent, **every surviving party member advances one level** — their XP is
+  topped up to the next-level threshold and a normal level-up fires (capped at
+  level 10) — and the party **carries into the chosen biome**.
 
 This layers a *player-directed* dimension onto what is currently a fully
 deterministic, linear `dungeonIndex + 1` march.
@@ -231,5 +232,12 @@ leveling rule, only the destination.
    scope and untouched.
 6. **Saves** — **every slot records the current biome** (`zone` + `skinId`)
    alongside party progression, so a load resumes in the right scroll.
+7. **Descent leveling** — leaving a dungeon **tops each surviving member's XP up
+   to their next-level threshold and runs a normal level-up**, so the descent
+   reward flows through the ordinary XP pipeline rather than bypassing it. XP
+   already earned this run counts toward the threshold; capped at level 10.
+   Implemented with `xpToReachNextLevel` in `src/engine/advancement.ts`, applied in
+   `Dungeon.grantDescentLevels()` (award the deficit, then `levelUp`) before
+   survivors are serialized, and guarded so a held R key cannot double-apply it.
 
 No open questions remain; the design is ready to implement.

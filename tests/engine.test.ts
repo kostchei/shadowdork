@@ -13,6 +13,7 @@ import {
   statModifier,
   wizardMishapTableId,
   xpToNextLevel,
+  xpToReachNextLevel,
 } from "../src/engine";
 import {
   createCharacter,
@@ -470,6 +471,25 @@ describe("advancement", () => {
     const engine = makeEngine();
     const f = createCharacter(engine, "f", "Fighter", "fighter");
     expect(() => engine.levelUp(f, "1d8", "fighter-talents")).toThrow(/cannot level up/);
+  });
+
+  it("reports the XP a descent must top up to reach the next level", () => {
+    const engine = makeEngine();
+    const f = createCharacter(engine, "f", "Fighter", "fighter");
+    // Fresh level-1 character needs the full level x 10 threshold.
+    expect(xpToReachNextLevel(f)).toBe(10);
+    engine.awardXp(f, 4); // partway there
+    expect(xpToReachNextLevel(f)).toBe(6);
+    // Topping up exactly that much makes a level-up available.
+    engine.awardXp(f, xpToReachNextLevel(f));
+    expect(engine.canLevelUp(f)).toBe(true);
+  });
+
+  it("needs no XP top-up at the level cap", () => {
+    const engine = makeEngine();
+    const f = createCharacter(engine, "f", "Fighter", "fighter");
+    f.level = 10; // MAX_LEVEL
+    expect(xpToReachNextLevel(f)).toBe(0);
   });
 });
 

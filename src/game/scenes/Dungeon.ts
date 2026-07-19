@@ -18,7 +18,7 @@ import {
   randomPlebName,
   spell,
 } from "../../data";
-import { DC, type Alignment, type StatName } from "../../engine";
+import { DC, MAX_LEVEL, xpToReachNextLevel, type Alignment, type StatName } from "../../engine";
 import { GameContext } from "../context";
 import { RENDER_SCALE } from "../display";
 import { CharacterSprite } from "../entities/CharacterSprite";
@@ -199,6 +199,8 @@ export class DungeonScene extends Phaser.Scene {
   biomeOffer: BiomeOffer | null = null;
   /** Which offered scroll is currently highlighted. */
   biomeSelectionIndex = 0;
+  /** Guards the descent transition so a held R key cannot advance (or level) twice. */
+  private descending = false;
   private lastHurtAt = new Map<string, number>();
   private encounterWaves = 0;
   private interactPrompt!: Phaser.GameObjects.Text;
@@ -253,6 +255,7 @@ export class DungeonScene extends Phaser.Scene {
     this.won = false;
     this.biomeOffer = null;
     this.biomeSelectionIndex = 0;
+    this.descending = false;
     this.gamePaused = false;
     // A capture-only query flag keeps the normal title flow unchanged while
     // allowing deterministic, unobscured art-direction screenshots.
@@ -2654,6 +2657,26 @@ export class DungeonScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * Descent reward: top each living survivor's XP up to their next-level
+   * threshold, then run a normal level-up. Any XP already earned this run counts
+   * toward it. Capped at MAX_LEVEL. Messages carry into the next dungeon's log;
+   * the level-up heals to full.
+   */
+  private grantDescentLevels(): void {
+    for (const m of this.party.members) {
+      const c = m.character;
+      if (c.dead || c.level >= MAX_LEVEL) continue;
+      const needed = xpToReachNextLevel(c);
+      if (needed > 0) this.ctx.engine.awardXp(c, needed);
+      const result = this.ctx.engine.levelUp(c, m.cls.hitDie, m.cls.talentTableId);
+      this.ctx.say(
+        `The descent tempers ${c.name} → level ${result.newLevel}. +${result.hpGained} HP. Talent (${result.talent.roll}): ${result.talent.entry.text}`,
+        "#ffd040",
+      );
+    }
+  }
+
   private checkEndConditions(): void {
     this.party.ensureLeaderAlive();
     if (this.party.allDownOrDead()) {
@@ -2827,6 +2850,11 @@ export class DungeonScene extends Phaser.Scene {
   }
 
   private restartRun(): void {
+    // A held R key re-enters this method before the scene restart takes effect;
+    // guard so the descent (and its one-level reward) applies exactly once.
+    if (this.descending) return;
+    this.descending = true;
+
     const currentIndex = this.registry.get("dungeonIndex");
     const dungeonIndex = typeof currentIndex === "number" ? currentIndex : 0;
     const nextIndex = dungeonIndex + 1;
@@ -2835,6 +2863,8 @@ export class DungeonScene extends Phaser.Scene {
       if (!this.biomeOffer) throw new Error("Cannot advance: no biome offer was rolled on victory");
       const chosenZone = this.biomeOffer.zones[this.biomeSelectionIndex];
       if (!chosenZone) throw new Error("Biome selection index is out of range");
+      // Descending to the next dungeon levels every surviving party member once.
+      this.grantDescentLevels();
       const survivors = this.party.members
         .map((member) => serializeCharacter(member.character))
         .filter((member) => !member.dead);

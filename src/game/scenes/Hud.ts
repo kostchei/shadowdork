@@ -895,11 +895,18 @@ export class HudScene extends Phaser.Scene {
         .text(w / 2, h / 2 - 40, summary, { ...DATA_STYLE, fontSize: "11px", color: "#9fa5b1" })
         .setOrigin(0.5),
       this.add
-        .text(w / 2, h / 2 - 8, "CHOOSE YOUR DESTINATION", {
+        .text(w / 2, h / 2 - 12, "CHOOSE YOUR DESTINATION", {
           ...UI_STYLE,
           fontSize: "16px",
           color: "#f0eee9",
           fontStyle: "bold",
+        })
+        .setOrigin(0.5),
+      this.add
+        .text(w / 2, h / 2 + 10, "The whole party levels up on descent.", {
+          ...DATA_STYLE,
+          fontSize: "10px",
+          color: "#9fa5b1",
         })
         .setOrigin(0.5),
     ];

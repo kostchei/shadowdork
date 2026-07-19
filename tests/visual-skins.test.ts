@@ -290,6 +290,9 @@ describe("open-surface terrain support", () => {
     expect(desertDay?.saveStats).toBeUndefined();
     expect(dangerRuleForSkin("djurum-approach", false)).toMatchObject({ icon: "💧", saveStats: ["DEX", "CON"] });
     expect(dangerRuleForSkin("rime-sea-caves", false)).toMatchObject({ icon: "❄", saveStats: ["WIS", "CON"] });
+    expect(dangerRuleForSkin("canopy-village", true)).toMatchObject({ icon: "🍃", saveStats: ["DEX", "CON"] });
+    expect(dangerRuleForSkin("rot-bramble", true)).toMatchObject({ icon: "🌫", saveStats: ["CON", "WIS"] });
+    expect(dangerRuleForSkin("willowman-hollow", true)).toBeUndefined();
     expect(dangerRuleForSkin("iron-fortress", true)).toBeUndefined();
   });
 
@@ -299,6 +302,9 @@ describe("open-surface terrain support", () => {
     expect(safeZonePresentation("djurum-approach", 2)).toEqual({ kind: "cave-pool", name: "THE HIDDEN SPRING" });
     expect(safeZonePresentation("djurum-approach", 3)).toEqual({ kind: "oasis", name: "THE PALM OASIS" });
     expect(safeZonePresentation("rime-sea-caves", 0)?.kind).toBe("rock-shelter");
+    expect(safeZonePresentation("canopy-village", 0)?.kind).toBe("rock-shelter");
+    expect(safeZonePresentation("rot-bramble", 0)?.kind).toBe("inn");
+    expect(safeZonePresentation("willowman-hollow", 0)).toBeUndefined();
     expect(safeZonePresentation("iron-fortress", 0)).toBeUndefined();
   });
 

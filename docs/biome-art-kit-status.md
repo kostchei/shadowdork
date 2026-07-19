@@ -45,8 +45,8 @@ Legend: ✅ dedicated kit · ⛔ falls back to generic legacy masonry ·
 | Scroll | Skin | Status | Generator |
 |---|---|---|---|
 | **Diablerie** | `mugdulblub-keep` | ✅ | `generateMugdulblubKeep` |
-| | `rot-bramble` | ⛔ | — |
-| | `willowman-hollow` | ⛔ | — |
+| | `rot-bramble` | ✅ ☀ 🕳 | `generateRotBramble` |
+| | `willowman-hollow` | ✅ | `generateWillowmanHollow` |
 | **Red Sands** | `iron-fortress` | ✅ | `generateIronFortress` |
 | | `djurum-approach` | ✅ ☀ 🕳 | `generateDjurumApproach` |
 | | `burning-mines` | ✅ | `generateBurningMines` |
@@ -55,16 +55,15 @@ Legend: ✅ dedicated kit · ⛔ falls back to generic legacy masonry ·
 | | `dverg-forges` | ⛔ | — |
 | **River of Night** | `overgrown-basalt-ziggurat` | ✅ | `generateOvergrownZiggurat` |
 | | `drowned-star-cenote` | ✅ | `generateDrownedStarCenote` |
-| | `canopy-village` | ⛔ (needs ☀🕳) | — |
+| | `canopy-village` | ✅ ☀ 🕳 | `generateCanopyVillage` |
 | **Dwellers in the Deep** | `nuln-fungal-grottos` | ✅ | `generateNulnFungalGrottos` |
 | | `librarians-chasm` | ✅ | `generateLibrariansChasm` |
 | | `subterranean-sea-fort` | ⛔ | — |
 | **City of Masks** | `rooftop-scamper` | ✅ ☀ 🕳 | `generateRooftopScamper` |
-| | `sunken-thieves-guild` | ⛔ | — |
+| | `sunken-thieves-guild` | ✅ | `generateSunkenThievesGuild` |
 | | `hidden-face-temple` | ⛔ | — |
 
-Totals: **11 kits done, 7 missing.** Open-terrain survival is wired for exactly
-three skins (all three finished open-sky kits).
+Totals: **15 kits done, 3 missing.** Open-terrain survival is wired for 6 skins (1/3 of all biomes).
 
 ## What each missing skin needs
 

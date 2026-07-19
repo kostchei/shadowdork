@@ -699,6 +699,181 @@ function generateBurningMines(scene: Phaser.Scene): void {
   });
 }
 
+function generateRotBramble(scene: Phaser.Scene): void {
+  const p = "skin-rot-bramble";
+  for (let variant = 0; variant < 3; variant++) {
+    texture(scene, `${p}-wall-${variant}`, TILE, TILE, (g) => {
+      g.fillStyle(0x080b08, 1); g.fillRect(0, 0, 32, 32);
+      g.fillStyle(0x1c2b1a, 1); g.fillRect(1, 1, 30, 30);
+      g.fillStyle(0x2d422a, 0.85); g.fillRect(2, 2, 28, 28);
+      // Dark thorn vines & marrow roots
+      g.lineStyle(2, 0x121d11, 0.95);
+      g.beginPath(); g.moveTo(2, 4); g.lineTo(16, 14); g.lineTo(10, 24); g.lineTo(28, 28); g.strokePath();
+      g.lineStyle(1, 0x5a8253, 0.9);
+      g.beginPath(); g.moveTo(2, 4); g.lineTo(16, 14); g.lineTo(10, 24); g.lineTo(28, 28); g.strokePath();
+      // Thorns
+      g.fillStyle(0x8eaa58, 0.9);
+      g.fillTriangle(16, 14, 12, 10, 14, 16); g.fillTriangle(24, 26, 20, 22, 22, 28);
+    });
+  }
+
+  for (let variant = 0; variant < 3; variant++) {
+    texture(scene, `${p}-support-${variant}`, TILE, TILE, (g) => {
+      g.fillStyle(0x142012, 1); g.fillRect(0, 0, 32, 32);
+      g.fillStyle(0x283d24, 1); g.fillRect(4, 0, 24, 32);
+      g.lineStyle(2, 0x0c140b, 0.9); g.lineBetween(8, 0, 8, 32); g.lineBetween(20, 0, 20, 32);
+    });
+  }
+
+  texture(scene, `${p}-overhang`, TILE, TILE, (g) => {
+    g.fillStyle(0x0d160c, 0.95); g.fillRect(0, 20, 32, 12);
+    g.fillStyle(0x2e472a, 1); g.fillRect(0, 20, 32, 6);
+  });
+
+  texture(scene, `${p}-platform`, TILE, 12, (g) => {
+    g.fillStyle(0x0d170c, 1); g.fillRect(0, 2, 32, 10);
+    g.fillStyle(0x2b4227, 1); g.fillRect(0, 0, 32, 4); // Mossy log
+    g.fillStyle(0x527a4b, 0.85); for (let x = 2; x < 30; x += 6) g.fillCircle(x + 2, 2, 2);
+  });
+  texture(scene, `${p}-weak`, TILE, TILE, (g) => {
+    g.fillStyle(0x080b08, 1); g.fillRect(0, 0, 32, 32);
+    g.fillStyle(0x1f301d, 1); g.fillRect(2, 2, 28, 28);
+    g.lineStyle(2, 0x76a36f, 0.95);
+    g.beginPath(); g.moveTo(4, 4); g.lineTo(14, 14); g.lineTo(8, 22); g.lineTo(26, 28); g.strokePath();
+  });
+  texture(scene, `${p}-climb`, TILE, TILE, (g) => {
+    g.fillStyle(0x080b08, 1); g.fillRect(0, 0, 32, 32);
+    g.fillStyle(0x1a2918, 1); g.fillRect(5, 0, 4, 32); g.fillRect(23, 0, 4, 32);
+    g.fillStyle(0x4b7045, 1); for (let y = 3; y < 32; y += 8) g.fillRect(6, y, 20, 3);
+  });
+  texture(scene, `${p}-portcullis`, TILE, TILE, (g) => {
+    g.fillStyle(0x070c07, 0.95); g.fillRect(1, 1, 30, 6);
+    for (let x = 4; x < 30; x += 6) { g.fillStyle(0x1c2b1b, 1); g.fillRect(x, 2, 4, 28); }
+  });
+  texture(scene, `${p}-door`, TILE, TILE * 2, (g) => {
+    g.fillStyle(0x080b08, 1); g.fillRect(1, 5, 30, 59);
+    g.fillStyle(0x1f301d, 1); g.fillRect(4, 8, 24, 56);
+    g.fillStyle(0x568250, 0.9); g.fillCircle(16, 33, 6);
+  });
+
+  texture(scene, `${p}-backdrop-day`, 320, 180, (g) => {
+    g.fillStyle(0x1a2618, 1); g.fillRect(0, 0, 320, 180); // Gloaming twilight sky
+    g.fillStyle(0x0e170d, 1);
+    for (let x = 0; x < 320; x += 24) {
+      const h = 40 + Math.abs(latticeNoise(x, 4, 61)) * 60;
+      g.fillRect(x, 180 - h, 20, h);
+    }
+    // Witch hovel silhouette
+    g.fillStyle(0x273b24, 1); g.fillRect(120, 110, 80, 50); g.fillTriangle(115, 110, 205, 110, 160, 75);
+    g.fillStyle(0x8eaa58, 0.8); g.fillRect(145, 125, 10, 12); // Warm window
+    // Fallen decaying trees & black fog
+    g.fillStyle(0x090f08, 0.9); g.fillRect(0, 155, 320, 25);
+  });
+  texture(scene, `${p}-backdrop-night`, 320, 180, (g) => {
+    g.fillStyle(0x050905, 1); g.fillRect(0, 0, 320, 180);
+    g.fillStyle(0x0c140b, 1);
+    for (let x = 0; x < 320; x += 24) {
+      const h = 40 + Math.abs(latticeNoise(x, 4, 61)) * 60;
+      g.fillRect(x, 180 - h, 20, h);
+    }
+    g.fillStyle(0x162415, 1); g.fillRect(120, 110, 80, 50); g.fillTriangle(115, 110, 205, 110, 160, 75);
+    g.fillStyle(0x8eaa58, 0.95); g.fillCircle(150, 130, 4); // Glowing wisp
+  });
+
+  texture(scene, `${p}-gong`, 30, 24, (g) => {
+    g.fillStyle(0x1c2b1b, 1); g.fillRect(10, 4, 10, 18);
+    g.fillStyle(0x8eaa58, 0.9); g.fillCircle(15, 10, 4);
+  });
+  texture(scene, `${p}-rack`, 30, 18, (g) => {
+    g.fillStyle(0x192618, 1); g.fillRect(2, 12, 26, 4);
+    g.fillStyle(0x8eaa58, 0.9); g.fillCircle(15, 6, 5); // Cauldron
+  });
+  texture(scene, `${p}-banner`, 18, 40, (g) => {
+    g.fillStyle(0x1a2918, 1); g.fillRect(2, 3, 14, 30); g.fillTriangle(2, 33, 16, 33, 9, 39);
+    g.fillStyle(0x8eaa58, 0.9); g.fillCircle(9, 16, 4);
+  });
+  texture(scene, `${p}-crenel`, 30, 35, (g) => {
+    g.fillStyle(0x192618, 1); g.fillRect(8, 10, 14, 25);
+    g.fillStyle(0x8eaa58, 0.85); g.fillCircle(15, 10, 6);
+  });
+}
+
+function generateWillowmanHollow(scene: Phaser.Scene): void {
+  const p = "skin-willowman-hollow";
+  for (let variant = 0; variant < 3; variant++) {
+    texture(scene, `${p}-wall-${variant}`, TILE, TILE, (g) => {
+      g.fillStyle(0x08090b, 1); g.fillRect(0, 0, 32, 32);
+      g.fillStyle(0x21232b, 1); g.fillRect(1, 1, 30, 30);
+      g.fillStyle(0x353845, 0.85); g.fillRect(2, 2, 28, 28);
+      // Pale birch bark & hanging moss
+      g.lineStyle(1.5, 0x8a94a6, 0.9);
+      g.lineBetween(4, 2, 4, 30); g.lineBetween(28, 2, 28, 30);
+    });
+  }
+
+  for (let variant = 0; variant < 3; variant++) {
+    texture(scene, `${p}-support-${variant}`, TILE, TILE, (g) => {
+      g.fillStyle(0x171921, 1); g.fillRect(0, 0, 32, 32);
+      g.fillStyle(0x2e3240, 1); g.fillRect(5, 0, 22, 32);
+    });
+  }
+
+  texture(scene, `${p}-overhang`, TILE, TILE, (g) => {
+    g.fillStyle(0x11131a, 0.95); g.fillRect(0, 20, 32, 12);
+    g.fillStyle(0x333747, 1); g.fillRect(0, 20, 32, 6);
+  });
+
+  texture(scene, `${p}-platform`, TILE, 12, (g) => {
+    g.fillStyle(0x0e1017, 1); g.fillRect(0, 2, 32, 10);
+    g.fillStyle(0x34394a, 1); g.fillRect(0, 0, 32, 4); // Pale wood plank
+  });
+  texture(scene, `${p}-weak`, TILE, TILE, (g) => {
+    g.fillStyle(0x08090b, 1); g.fillRect(0, 0, 32, 32);
+    g.fillStyle(0x282c3b, 1); g.fillRect(2, 2, 28, 28);
+    g.lineStyle(2, 0xa6b2c4, 0.95);
+    g.beginPath(); g.moveTo(4, 4); g.lineTo(14, 14); g.lineTo(8, 22); g.lineTo(26, 28); g.strokePath();
+  });
+  texture(scene, `${p}-climb`, TILE, TILE, (g) => {
+    g.fillStyle(0x08090b, 1); g.fillRect(0, 0, 32, 32);
+    g.fillStyle(0x232734, 1); g.fillRect(5, 0, 4, 32); g.fillRect(23, 0, 4, 32);
+    g.fillStyle(0x565e75, 1); for (let y = 3; y < 32; y += 8) g.fillRect(6, y, 20, 3);
+  });
+  texture(scene, `${p}-portcullis`, TILE, TILE, (g) => {
+    g.fillStyle(0x080a0f, 0.95); g.fillRect(1, 1, 30, 6);
+    for (let x = 4; x < 30; x += 6) { g.fillStyle(0x212533, 1); g.fillRect(x, 2, 4, 28); }
+  });
+  texture(scene, `${p}-door`, TILE, TILE * 2, (g) => {
+    g.fillStyle(0x08090b, 1); g.fillRect(1, 5, 30, 59);
+    g.fillStyle(0x242836, 1); g.fillRect(4, 8, 24, 56);
+    g.fillStyle(0xa6b2c4, 0.9); g.fillCircle(16, 33, 6);
+  });
+
+  texture(scene, `${p}-backdrop`, 320, 180, (g) => {
+    g.fillStyle(0x07080c, 1); g.fillRect(0, 0, 320, 180);
+    g.fillStyle(0x11131c, 1);
+    for (let x = 0; x < 320; x += 28) {
+      const h = 35 + Math.abs(latticeNoise(x, 6, 83)) * 55;
+      g.fillRect(x, 180 - h, 22, h);
+    }
+    g.fillStyle(0xa6b2c4, 0.9); g.fillCircle(160, 60, 3); // Spectral wisp
+  });
+
+  texture(scene, `${p}-gong`, 30, 24, (g) => {
+    g.fillStyle(0x242836, 1); g.fillRect(10, 4, 10, 18);
+    g.fillStyle(0xa6b2c4, 0.9); g.fillCircle(15, 10, 4);
+  });
+  texture(scene, `${p}-rack`, 30, 18, (g) => {
+    g.fillStyle(0x212533, 1); g.fillRect(2, 12, 26, 4);
+  });
+  texture(scene, `${p}-banner`, 18, 40, (g) => {
+    g.fillStyle(0x242836, 1); g.fillRect(2, 3, 14, 30); g.fillTriangle(2, 33, 16, 33, 9, 39);
+    g.fillStyle(0xa6b2c4, 0.9); g.fillCircle(9, 16, 4);
+  });
+  texture(scene, `${p}-crenel`, 30, 35, (g) => {
+    g.fillStyle(0x212533, 1); g.fillRect(8, 10, 14, 25);
+  });
+}
+
 function generateMugdulblubKeep(scene: Phaser.Scene): void {
   const p = "skin-mugdulblub-keep";
   for (let variant = 0; variant < 3; variant++) {
@@ -1471,7 +1646,113 @@ function generateDrownedStarCenote(scene: Phaser.Scene): void {
     g.fillStyle(0x0b2936, 1); g.fillRect(6, 12, 18, 23);
     g.fillStyle(0x175369, 1); g.fillRect(4, 8, 22, 4);
     g.fillStyle(0x00f2d6, 0.95); g.fillCircle(15, 18, 4);
+    g.fillStyle(0x00f2d6, 0.95); g.fillCircle(15, 18, 4);
     g.fillStyle(0x00f2d6, 0.85); g.fillRect(14, 22, 2, 10); g.fillCircle(15, 33, 2);
+  });
+}
+
+function generateCanopyVillage(scene: Phaser.Scene): void {
+  const p = "skin-canopy-village";
+
+  // Wall variants (0..2)
+  for (let variant = 0; variant < 3; variant++) {
+    texture(scene, `${p}-wall-${variant}`, TILE, TILE, (g) => {
+      // Dark jungle bark & woven bamboo base
+      g.fillStyle(0x07120b, 1); g.fillRect(0, 0, 32, 32);
+      g.fillStyle(0x273b22, 1); g.fillRect(1, 1, 30, 30);
+      g.fillStyle(0x3e5e36, 0.85); g.fillRect(2, 2, 28, 28);
+      // Woven bamboo slats
+      g.lineStyle(1, 0x1b2b17, 0.85);
+      for (let y = 4; y < 30; y += 6) g.lineBetween(2, y, 30, y);
+      for (let x = 6; x < 30; x += 8) g.lineBetween(x, 2, x, 30);
+      // Creeping vines & leaves
+      g.fillStyle(0x78c55a, 0.9);
+      g.fillCircle(8, 8, 2); g.fillCircle(24, 20, 2.5); g.fillCircle(14, 26, 1.5);
+    });
+  }
+
+  for (let variant = 0; variant < 3; variant++) {
+    texture(scene, `${p}-support-${variant}`, TILE, TILE, (g) => {
+      g.fillStyle(0x102113, 1); g.fillRect(0, 0, 32, 32);
+      g.fillStyle(0x2b4525, 1); g.fillRect(4, 0, 24, 32); // Trunk cable
+      g.lineStyle(1.5, 0x56804b, 0.9); g.lineBetween(8, 0, 8, 32); g.lineBetween(20, 0, 20, 32);
+    });
+  }
+
+  texture(scene, `${p}-overhang`, TILE, TILE, (g) => {
+    g.fillStyle(0x08170d, 0.95); g.fillRect(0, 20, 32, 12);
+    g.fillStyle(0x35572e, 1); g.fillRect(0, 20, 32, 6);
+    g.fillStyle(0x78c55a, 0.9); for (let x = 2; x < 30; x += 6) g.fillCircle(x + 2, 26, 3);
+  });
+
+  // Platform (32x12): Woven bamboo bridge deck with vine lashings
+  texture(scene, `${p}-platform`, TILE, 12, (g) => {
+    g.fillStyle(0x07120b, 1); g.fillRect(0, 2, 32, 10);
+    g.fillStyle(0x3c5934, 1); g.fillRect(0, 0, 32, 4);
+    g.fillStyle(0x78c55a, 0.85); for (let x = 2; x < 30; x += 6) g.fillRect(x, 0, 2, 4);
+  });
+
+  texture(scene, `${p}-weak`, TILE, TILE, (g) => {
+    g.fillStyle(0x07120b, 1); g.fillRect(0, 0, 32, 32);
+    g.fillStyle(0x2d4527, 1); g.fillRect(2, 2, 28, 28);
+    g.lineStyle(2, 0x78c55a, 0.95);
+    g.beginPath(); g.moveTo(4, 4); g.lineTo(14, 14); g.lineTo(8, 22); g.lineTo(26, 28); g.strokePath();
+  });
+
+  texture(scene, `${p}-climb`, TILE, TILE, (g) => {
+    g.fillStyle(0x07120b, 1); g.fillRect(0, 0, 32, 32);
+    g.fillStyle(0x283b24, 1); g.fillRect(5, 0, 4, 32); g.fillRect(23, 0, 4, 32);
+    g.fillStyle(0x619e49, 1); for (let y = 3; y < 32; y += 8) g.fillRect(6, y, 20, 3);
+  });
+
+  texture(scene, `${p}-portcullis`, TILE, TILE, (g) => {
+    g.fillStyle(0x07120b, 0.95); g.fillRect(1, 1, 30, 6);
+    for (let x = 4; x < 30; x += 6) { g.fillStyle(0x273d23, 1); g.fillRect(x, 2, 4, 28); }
+  });
+
+  texture(scene, `${p}-door`, TILE, TILE * 2, (g) => {
+    g.fillStyle(0x07120b, 1); g.fillRect(1, 5, 30, 59);
+    g.fillStyle(0x2e472a, 1); g.fillRect(4, 8, 24, 56);
+    g.fillStyle(0x78c55a, 0.9); g.fillCircle(16, 33, 6);
+  });
+
+  // Backdrop-Day & Night
+  texture(scene, `${p}-backdrop-day`, 320, 180, (g) => {
+    g.fillStyle(0x16361c, 1); g.fillRect(0, 0, 320, 180); // Bright rainforest sky
+    g.fillStyle(0x0e2412, 1);
+    for (let x = 0; x < 320; x += 35) {
+      const h = 50 + Math.abs(latticeNoise(x, 8, 101)) * 70;
+      g.fillRect(x, 180 - h, 24, h); // Giant tree trunks
+    }
+    // Canopy treehouses & rope bridges
+    g.fillStyle(0x33542c, 1); g.fillRect(60, 80, 50, 30); g.fillRect(210, 70, 60, 35);
+    g.lineStyle(2, 0x6bb850, 0.8); g.lineBetween(110, 95, 210, 85);
+  });
+
+  texture(scene, `${p}-backdrop-night`, 320, 180, (g) => {
+    g.fillStyle(0x061208, 1); g.fillRect(0, 0, 320, 180);
+    g.fillStyle(0x0b1f0e, 1);
+    for (let x = 0; x < 320; x += 35) {
+      const h = 50 + Math.abs(latticeNoise(x, 8, 101)) * 70;
+      g.fillRect(x, 180 - h, 24, h);
+    }
+    g.fillStyle(0x1d3d19, 1); g.fillRect(60, 80, 50, 30); g.fillRect(210, 70, 60, 35);
+    g.fillStyle(0x78c55a, 0.95); g.fillCircle(85, 95, 3); g.fillCircle(240, 88, 3); // Fireflies
+  });
+
+  texture(scene, `${p}-gong`, 30, 24, (g) => {
+    g.fillStyle(0x2e472a, 1); g.fillRect(10, 4, 10, 18);
+    g.fillStyle(0x78c55a, 0.9); g.fillCircle(15, 10, 4);
+  });
+  texture(scene, `${p}-rack`, 30, 18, (g) => {
+    g.fillStyle(0x283b24, 1); g.fillRect(2, 12, 26, 4);
+  });
+  texture(scene, `${p}-banner`, 18, 40, (g) => {
+    g.fillStyle(0x2e472a, 1); g.fillRect(2, 3, 14, 30); g.fillTriangle(2, 33, 16, 33, 9, 39);
+    g.fillStyle(0x78c55a, 0.9); g.fillCircle(9, 16, 4);
+  });
+  texture(scene, `${p}-crenel`, 30, 35, (g) => {
+    g.fillStyle(0x283b24, 1); g.fillRect(8, 10, 14, 25);
   });
 }
 
@@ -1928,6 +2209,175 @@ function generateRooftopScamper(scene: Phaser.Scene): void {
   });
 }
 
+function generateSunkenThievesGuild(scene: Phaser.Scene): void {
+  const p = "skin-sunken-thieves-guild";
+
+  // Wall variants (0..2)
+  for (let variant = 0; variant < 3; variant++) {
+    texture(scene, `${p}-wall-${variant}`, TILE, TILE, (g) => {
+      // Dark wet brick base
+      g.fillStyle(0x131217, 1);
+      g.fillRect(0, 0, 32, 32);
+
+      const seed = 700 + variant * 18;
+      const tL = domainWarp({ x: 1, y: 1 }, seed, 1.4, 0.1);
+      const tR = domainWarp({ x: 31, y: 1 }, seed + 1, 1.4, 0.1);
+      const bR = domainWarp({ x: 31, y: 31 }, seed + 2, 1.4, 0.1);
+      const bL = domainWarp({ x: 1, y: 31 }, seed + 3, 1.4, 0.1);
+      const points = [tL, tR, bR, bL].map((pt) => new Phaser.Geom.Point(pt.x, pt.y));
+
+      const baseColor = variant === 0 ? 0x242029 : variant === 1 ? 0x2b2733 : 0x302b38;
+      castPolygonShadow(g, points, 3.0, 0.65);
+      g.fillStyle(baseColor, 1);
+      g.fillPoints(points, true);
+      sdfBevelField(g, 2, 2, 28, 28, 2.5, seed, baseColor);
+      g.lineStyle(1, 0x4f475c, 0.85); g.strokePoints(points, true);
+
+      // Brick mortar lines
+      g.lineStyle(1, 0x18151f, 0.8);
+      g.lineBetween(2, 16, 30, 16); g.lineBetween(16, 2, 16, 16); g.lineBetween(8, 16, 8, 30);
+
+      // Grime / moss & gold glints
+      g.fillStyle(0x1a382b, 0.7); g.fillRect(2, 26, 28, 4); // Mossy waterline
+      g.fillStyle(0xffc107, 0.9);
+      if (variant === 0) {
+        // Carved Thief-Mark (crossed daggers)
+        g.lineStyle(1, 0xffca28, 0.9); g.lineBetween(20, 6, 26, 12); g.lineBetween(26, 6, 20, 12);
+      } else if (variant === 1) {
+        g.fillCircle(10, 8, 1); g.fillCircle(22, 22, 1); // Gold coin glints
+      } else {
+        g.fillStyle(0x00bcd4, 0.85); g.fillRect(6, 18, 4, 3); // Iron drain grate slot
+      }
+    });
+  }
+
+  // Platform (32x12): Rusted iron catwalk planks over sewer channels
+  texture(scene, `${p}-platform`, TILE, 12, (g) => {
+    g.fillStyle(0x0e0c12, 1); g.fillRect(0, 2, 32, 10);
+    g.fillStyle(0x3d2b22, 1); g.fillRect(0, 0, 32, 4); // Rusted iron plate
+    g.fillStyle(0x6e4c3a, 0.85); for (let x = 2; x < 32; x += 6) g.fillRect(x, 0, 2, 4);
+    g.fillStyle(0x1f1612, 1); for (let x = 4; x < 32; x += 8) g.fillTriangle(x, 4, x + 4, 4, x + 2, 10);
+  });
+
+  // Weak Wall (32x32): Fractured brick channel wall with water gushing
+  texture(scene, `${p}-weak`, TILE, TILE, (g) => {
+    g.fillStyle(0x131217, 1); g.fillRect(0, 0, 32, 32);
+    g.fillStyle(0x282330, 1); g.fillRect(2, 2, 28, 28);
+    g.lineStyle(2, 0x00bcd4, 0.95);
+    g.beginPath(); g.moveTo(4, 4); g.lineTo(14, 14); g.lineTo(8, 22); g.lineTo(26, 28); g.strokePath();
+    g.lineStyle(1, 0xe0f7fa, 0.95);
+    g.beginPath(); g.moveTo(4, 4); g.lineTo(14, 14); g.lineTo(8, 22); g.lineTo(26, 28); g.strokePath();
+    g.fillStyle(0x80deea, 0.9); g.fillCircle(14, 14, 2); g.fillCircle(26, 28, 2);
+  });
+
+  // Climb (32x32): Rusted sewer rung ladder mounted on damp brickwork
+  texture(scene, `${p}-climb`, TILE, TILE, (g) => {
+    g.fillStyle(0x131217, 1); g.fillRect(0, 0, 32, 32);
+    // Vertical iron rails
+    g.fillStyle(0x261d18, 1); g.fillRect(5, 0, 5, 32); g.fillRect(22, 0, 5, 32);
+    g.fillStyle(0x4a3a30, 1); g.fillRect(6, 0, 2, 32); g.fillRect(23, 0, 2, 32);
+    // Rusted rungs
+    for (let y = 3; y < 32; y += 8) {
+      g.fillStyle(0x593d2d, 1); g.fillRect(6, y, 20, 3);
+      g.fillStyle(0x946b52, 0.85); g.fillRect(7, y, 18, 1);
+    }
+  });
+
+  // Portcullis (32x32): Heavy iron sluice gate with verdigris highlights
+  texture(scene, `${p}-portcullis`, TILE, TILE, (g) => {
+    g.fillStyle(0x0e0c12, 0.95); g.fillRect(1, 1, 30, 6); g.fillRect(1, 25, 30, 5);
+    for (let x = 4; x < 30; x += 6) {
+      g.fillStyle(0x232029, 1); g.fillRect(x, 2, 4, 27);
+      g.fillStyle(0x453e52, 0.85); g.fillRect(x + 1, 3, 1, 23);
+      g.fillStyle(0x009688, 0.8); g.fillRect(x, 18, 4, 2);
+    }
+  });
+
+  // Door (32x64): Concealed thief portal disguised behind brick archway
+  texture(scene, `${p}-door`, TILE, TILE * 2, (g) => {
+    g.fillStyle(0x0d0b10, 1); g.fillRect(1, 5, 30, 60);
+    g.fillStyle(0x211c26, 1); g.fillRect(4, 8, 24, 56);
+    g.fillStyle(0x383042, 1); g.fillRect(4, 20, 24, 4); g.fillRect(4, 43, 24, 4);
+    // Secret lock pin medallion
+    g.fillStyle(0xffca28, 0.95); g.fillCircle(16, 33, 6);
+    g.fillStyle(0x131217, 1); g.fillCircle(16, 33, 3);
+    g.fillStyle(0x00bcd4, 0.9); g.fillCircle(16, 33, 1);
+  });
+
+  // Backdrop (320x180): Subterranean smuggler's cove with vaulted aqueducts
+  texture(scene, `${p}-backdrop`, 320, 180, (g) => {
+    // Deep sewer void background
+    g.fillStyle(0x09080c, 1); g.fillRect(0, 0, 320, 180);
+    g.fillStyle(0x14101c, 0.85); g.fillRect(0, 70, 320, 110);
+
+    // Vaulted brick aqueduct ceiling arches
+    g.fillStyle(0x1d1729, 1);
+    for (let x = 0; x < 320; x += 32) {
+      const h = 22 + Math.abs(latticeNoise(x, 13, 167)) * 35;
+      g.fillTriangle(x, 0, x + 32, 0, x + 16, h);
+    }
+
+    // Heavy aqueduct brick piers
+    g.fillStyle(0x231c30, 1);
+    g.fillRect(10, 95, 65, 85);
+    g.fillRect(245, 95, 65, 85);
+    g.fillRect(105, 125, 110, 55);
+
+    // Murky flooded water channel at bottom
+    g.fillStyle(0x0d3238, 0.9); g.fillRect(0, 150, 320, 30);
+    g.fillStyle(0x15565e, 0.95); g.fillRect(0, 153, 320, 27);
+    g.fillStyle(0x80deea, 0.75);
+    for (let x = 0; x < 320; x += 16) {
+      const y = 154 + Math.abs(latticeNoise(x, 19, 241)) * 6;
+      g.fillRect(x, y, 10, 1.5);
+    }
+
+    // Hanging oil lanterns on piers
+    for (const lx of [60, 260]) {
+      g.lineStyle(1, 0x4d425c, 0.8); g.lineBetween(lx, 40, lx, 75);
+      g.fillStyle(0x231c30, 1); g.fillRect(lx - 4, 75, 8, 8);
+      g.fillStyle(0xffa726, 0.95); g.fillCircle(lx, 79, 3);
+      g.fillStyle(0xffffff, 0.9); g.fillCircle(lx, 79, 1);
+    }
+
+    // Contraband crates on left pier
+    g.fillStyle(0x3d2b20, 1); g.fillRect(25, 82, 14, 13);
+    g.fillStyle(0xffca28, 0.85); g.fillRect(27, 80, 10, 2); // Stolen gold bar
+  });
+
+  // Decorations:
+  // gong (30x24): Smuggler's chest with gold coins and stolen gems
+  texture(scene, `${p}-gong`, 30, 24, (g) => {
+    g.fillStyle(0x3a271c, 1); g.fillRect(5, 10, 20, 12);
+    g.fillStyle(0x6e4e37, 1); g.fillRect(5, 8, 20, 3);
+    g.fillStyle(0xffca28, 0.95); g.fillRect(5, 10, 20, 2); g.fillCircle(15, 15, 2);
+    g.fillStyle(0x00e676, 0.9); g.fillCircle(11, 7, 2); g.fillStyle(0xe91e63, 0.9); g.fillCircle(19, 7, 2);
+  });
+
+  // rack (30x18): Contraband crate stack with rope and thieves' tools
+  texture(scene, `${p}-rack`, 30, 18, (g) => {
+    g.fillStyle(0x38261b, 1); g.fillRect(4, 8, 22, 10);
+    g.fillStyle(0x593d2c, 1); g.fillRect(4, 8, 22, 1); g.fillRect(4, 17, 22, 1);
+    g.lineStyle(1.5, 0xc2a672, 0.9); g.lineBetween(11, 8, 11, 18); g.lineBetween(19, 8, 19, 18);
+  });
+
+  // banner (18x40): Shadowy Guild pennant with crossed key-and-dagger emblem
+  texture(scene, `${p}-banner`, 18, 40, (g) => {
+    g.fillStyle(0x383042, 1); g.fillRect(0, 0, 18, 3);
+    g.fillStyle(0x191421, 1); g.fillRect(2, 3, 14, 30);
+    g.fillTriangle(2, 33, 16, 33, 9, 39);
+    g.lineStyle(1.5, 0xffca28, 0.95); g.lineBetween(5, 10, 13, 22); g.lineBetween(13, 10, 5, 22);
+    g.fillStyle(0xffffff, 0.9); g.fillCircle(9, 16, 1.5);
+  });
+
+  // crenel (30x35): Aqueduct stone gargoyle spout discharging water
+  texture(scene, `${p}-crenel`, 30, 35, (g) => {
+    g.fillStyle(0x231c30, 1); g.fillRect(6, 10, 18, 25);
+    g.fillStyle(0x3d3252, 1); g.fillRect(4, 6, 22, 5);
+    g.fillStyle(0x00bcd4, 0.95); g.fillRect(14, 11, 2, 18); g.fillCircle(15, 29, 2.5);
+  });
+}
+
 const genericKeys = (backdrop: string): EnvironmentTextureKeys => ({
   wall: (variant) => `tile-wall-${variant % 3}`,
   platform: "tile-platform",
@@ -1957,6 +2407,13 @@ export function ensureVisualSkinTextures(
   } else if (skin.id === "burning-mines") {
     prefix = "skin-burning-mines";
     generateBurningMines(scene);
+  } else if (skin.id === "rot-bramble") {
+    prefix = "skin-rot-bramble";
+    openSky = true;
+    generateRotBramble(scene);
+  } else if (skin.id === "willowman-hollow") {
+    prefix = "skin-willowman-hollow";
+    generateWillowmanHollow(scene);
   } else if (skin.id === "mugdulblub-keep") {
     prefix = "skin-mugdulblub-keep";
     generateMugdulblubKeep(scene);
@@ -1977,6 +2434,10 @@ export function ensureVisualSkinTextures(
   } else if (skin.id === "drowned-star-cenote") {
     prefix = "skin-drowned-star-cenote";
     generateDrownedStarCenote(scene);
+  } else if (skin.id === "canopy-village") {
+    prefix = "skin-canopy-village";
+    openSky = true;
+    generateCanopyVillage(scene);
   } else if (skin.id === "nuln-fungal-grottos") {
     prefix = "skin-nuln-fungal-grottos";
     generateNulnFungalGrottos(scene);
@@ -1988,6 +2449,9 @@ export function ensureVisualSkinTextures(
     wallVariantCount = 2;
     openSky = true;
     generateRooftopScamper(scene);
+  } else if (skin.id === "sunken-thieves-guild") {
+    prefix = "skin-sunken-thieves-guild";
+    generateSunkenThievesGuild(scene);
   } else {
     return genericKeys(legacyBackdrop);
   }

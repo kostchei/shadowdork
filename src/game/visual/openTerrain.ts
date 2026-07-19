@@ -46,6 +46,14 @@ export function safeZonePresentation(
         : { kind: "oasis", name: "THE PALM OASIS" };
     case "rime-sea-caves":
       return { kind: "rock-shelter", name: "THE FIRE OVERHANG" };
+    case "canopy-village":
+      return (seed & 1) === 0
+        ? { kind: "rock-shelter", name: "THE HIGH CANOPY SHUT" }
+        : { kind: "cave-pool", name: "THE TREEHEAD CISTERNS" };
+    case "rot-bramble":
+      return (seed & 1) === 0
+        ? { kind: "inn", name: "THE BRAMBLE HAVEN" }
+        : { kind: "rock-shelter", name: "THE HOLLOW HEDGE" };
     default:
       return undefined;
   }
@@ -116,6 +124,24 @@ export function dangerRuleForSkin(
         failureTitle: "YOU FREEZE TO DEATH",
         failureMessage: "The fourth mark of exposure is the last. The ice claims you.",
       };
+    case "canopy-village":
+      return {
+        token: "poison",
+        icon: "🍃",
+        saveStats: ["DEX", "CON"],
+        encounter: "Swarming botflies or poisonous jungle flora sting from the dense foliage.",
+        failureTitle: "JUNGLE MIASMA TAKES YOU",
+        failureMessage: "The humid toxic jungle fever collapses the expedition.",
+      };
+    case "rot-bramble":
+      return {
+        token: "poison",
+        icon: "🌫",
+        saveStats: ["CON", "WIS"],
+        encounter: "Choking spores and thorn traps erupt from the Gloaming underbrush.",
+        failureTitle: "THE BLACK FOG CLAIMS YOU",
+        failureMessage: "The choking mist of the Gloaming smothers your breath.",
+      };
     default:
       return undefined;
   }
@@ -136,6 +162,16 @@ const SURVIVAL_PRESSURES: Partial<Record<VisualSkinId, OpenTerrainSurvivalPressu
     label: "EXPOSURE",
     failureTitle: "YOU FREEZE TO DEATH",
     failureMessage: "The cold finally reaches your bones. The ice claims the expedition.",
+  },
+  "canopy-village": {
+    label: "MIASMA",
+    failureTitle: "JUNGLE MIASMA TAKES YOU",
+    failureMessage: "The tropical jungle miasma claims the expedition.",
+  },
+  "rot-bramble": {
+    label: "BLACK FOG",
+    failureTitle: "THE BLACK FOG CLAIMS YOU",
+    failureMessage: "The suffocating mist of the Gloaming smothers the expedition.",
   },
 };
 

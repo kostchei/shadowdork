@@ -1,4 +1,5 @@
 import type { ActionInput } from "./ActionInput";
+import { noteKeyboardActivity } from "./inputFamily";
 
 /**
  * A physical key the {@link KeyboardSource} scans each tick. `name` is the key
@@ -45,6 +46,7 @@ export class KeyboardSource<Action extends string> {
         if (!down) this.suppressed.delete(key.name);
         down = false;
       }
+      if (down) noteKeyboardActivity();
       const source = `kb-${key.name}`;
       for (const action of actions) this.input.set(action, source, down);
     }

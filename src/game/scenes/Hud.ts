@@ -16,10 +16,12 @@ import { roomAtTolerant } from "../level/geometry";
 import { TILE } from "../textures";
 import type { DungeonScene } from "./Dungeon";
 import type { GameAction } from "../input/actions";
+import { currentInputFamily } from "../input/inputFamily";
 import { SaveRepository } from "../SaveRepository";
 import { speak } from "../audio/voice";
 import { skinsForZone, zonePackInfo } from "../visual/skins";
 import type { ShopRow, ShopView } from "../systems/shop";
+import { showAlert, showConfirm } from "../ui/modal";
 
 const UI_STYLE = {
   fontFamily: '"Trebuchet MS", Arial, sans-serif',
@@ -235,10 +237,23 @@ export class HudScene extends Phaser.Scene {
     if (this.dungeon.awaitingStart) this.showStartOverlay(this.dungeon.party.leader.character);
   }
 
+  /** Floor for a button's invisible hit rectangle, in logical px — the rendered
+   *  glyph (a bare "▲" can be under 20px) is rarely a comfortable touch target
+   *  on its own. Kept modest so the tightest-packed row (gear's ▲/▼ pair, 40px
+   *  apart) doesn't get overlapping hit zones between neighbours. */
+  private static readonly MIN_HIT_W = 40;
+  private static readonly MIN_HIT_H = 36;
+
   /**
    * A tappable control that reports a *named action* to the dungeon. Every
    * keyboard-only overlay flow gets one of these, so touch never has to reach a
    * keyboard: the tap enters the same semantic input service a key press does.
+   *
+   * Hit-tests a rectangle at least MIN_HIT_W x MIN_HIT_H, centred on the glyph
+   * rather than bound to it. Pressed and disabled states are never colour-only:
+   * pressed also sinks (scale down), disabled also fades (alpha) and drops the
+   * hand cursor, so both read clearly under strong sunlight or for colour-blind
+   * players.
    */
   private actionButton(
     x: number,
@@ -246,16 +261,49 @@ export class HudScene extends Phaser.Scene {
     label: string,
     action: GameAction,
     fontSize = "13px",
+    options: { disabled?: boolean } = {},
   ): Phaser.GameObjects.Text {
     const idle = "#a0a4b0";
+    const disabledColor = "#4a4d55";
     const btn = this.add
-      .text(x, y, label, { ...UI_STYLE, fontSize, color: idle, padding: { x: 8, y: 5 } })
-      .setOrigin(0.5)
-      .setInteractive({ useHandCursor: true })
+      .text(x, y, label, {
+        ...UI_STYLE,
+        fontSize,
+        color: options.disabled ? disabledColor : idle,
+        padding: { x: 8, y: 5 },
+      })
+      .setOrigin(0.5);
+
+    if (options.disabled) {
+      btn.setAlpha(0.55);
+      return btn;
+    }
+
+    const hitW = Math.max(btn.width, HudScene.MIN_HIT_W);
+    const hitH = Math.max(btn.height, HudScene.MIN_HIT_H);
+    btn.setInteractive({
+      useHandCursor: true,
+      hitArea: new Phaser.Geom.Rectangle((btn.width - hitW) / 2, (btn.height - hitH) / 2, hitW, hitH),
+      hitAreaCallback: Phaser.Geom.Rectangle.Contains,
+    });
+
+    const release = () => btn.setColor(idle).setScale(1);
+    btn
       .on("pointerover", () => btn.setColor("#ffd45f"))
-      .on("pointerout", () => btn.setColor(idle))
-      .on("pointerdown", () => this.dungeon.tapAction(action));
+      .on("pointerout", release)
+      .on("pointerup", release)
+      .on("pointerdown", () => {
+        btn.setColor("#ffffff").setScale(0.92);
+        this.dungeon.tapAction(action);
+      });
     return btn;
+  }
+
+  /** Keyboard hint suffix ("  (ESC)") for a button label — omitted entirely
+   *  once the player is actually driving the game by touch, where it's dead
+   *  weight next to a control that's already tappable. */
+  private keyHint(key: string): string {
+    return currentInputFamily() === "keyboard" ? `  (${key})` : "";
   }
 
   showStartOverlay(c: Character): void {
@@ -453,7 +501,7 @@ export class HudScene extends Phaser.Scene {
       resolution: RENDER_SCALE,
     }).setOrigin(0.5);
 
-    const resume = this.actionButton(w / 2, h / 2 - 118, "[ RESUME ]  (ESC)", "pause");
+    const resume = this.actionButton(w / 2, h / 2 - 118, `[ RESUME ]${this.keyHint("ESC")}`, "pause");
 
     // Save/Load Columns
     const saveHeader = this.add.text(w / 2 - 110, h / 2 - 86, "SAVE GAME", {
@@ -528,11 +576,11 @@ export class HudScene extends Phaser.Scene {
       .on("pointerover", () => btn.setColor("#ff8888"))
       .on("pointerout", () => btn.setColor("#d07070"))
       .on("pointerdown", () => {
-        if (confirm(`Delete Slot ${slotId === 0 ? "Auto-Save" : slotId}? This cannot be undone.`)) {
+        showConfirm(this, `Delete Slot ${slotId === 0 ? "Auto-Save" : slotId}? This cannot be undone.`, () => {
           SaveRepository.delete(slotId);
           this.hidePauseOverlay();
           this.showPauseOverlay();
-        }
+        });
       });
       return btn;
     };
@@ -574,7 +622,7 @@ export class HudScene extends Phaser.Scene {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
       } catch (e: any) {
-        alert(`Failed to export saves: ${e.message}`);
+        showAlert(this, `Failed to export saves: ${e.message}`);
       }
     });
 
@@ -600,11 +648,12 @@ export class HudScene extends Phaser.Scene {
           const contents = evt.target?.result as string;
           const res = SaveRepository.importAll(contents);
           if (res.success) {
-            alert(`Successfully imported ${res.count} save slot(s)!`);
-            this.hidePauseOverlay();
-            this.showPauseOverlay();
+            showAlert(this, `Successfully imported ${res.count} save slot(s)!`, () => {
+              this.hidePauseOverlay();
+              this.showPauseOverlay();
+            });
           } else {
-            alert(`Import failed: ${res.error}`);
+            showAlert(this, `Import failed: ${res.error}`);
           }
         };
         reader.readAsText(file);
@@ -737,7 +786,7 @@ export class HudScene extends Phaser.Scene {
       lineSpacing: 3
     });
 
-    const close = this.actionButton(w / 2, h / 2 + 150, "[ CLOSE ]  (C)", "stats", "12px");
+    const close = this.actionButton(w / 2, h / 2 + 150, `[ CLOSE ]${this.keyHint("C")}`, "stats", "12px");
 
     this.statsOverlay = this.add.container(0, 0, [
       bg, box as any, title, sub, statText1, statText2, secondaryText, featuresTitle, featuresText, close
@@ -845,7 +894,13 @@ export class HudScene extends Phaser.Scene {
       this.actionButton(w / 2 + 170, h / 2 + 128, "[ CLOSE ]", "gear", "12px"),
     ];
 
-    const footer = this.add.text(w / 2, h / 2 + 155, "Up/Down select  |  E use/equip  |  D drop  |  R rest  |  I close", {
+    // The button row above already covers every one of these on touch — the
+    // keyboard hint line is dead weight once the keys don't apply.
+    const footerText =
+      currentInputFamily() === "keyboard"
+        ? "Up/Down select  |  E use/equip  |  D drop  |  R rest  |  I close"
+        : "";
+    const footer = this.add.text(w / 2, h / 2 + 155, footerText, {
       ...UI_STYLE,
       fontSize: "11px",
       color: "#808490"
@@ -940,7 +995,9 @@ export class HudScene extends Phaser.Scene {
     const footer = this.add.text(
       w / 2,
       h / 2 + 155,
-      "Up/Down select  |  Left/Right buy/sell  |  E confirm  |  Tab next member  |  I close",
+      currentInputFamily() === "keyboard"
+        ? "Up/Down select  |  Left/Right buy/sell  |  E confirm  |  Tab next member  |  I close"
+        : "",
       { ...UI_STYLE, fontSize: "11px", color: "#808490" },
     ).setOrigin(0.5);
 
@@ -994,7 +1051,7 @@ export class HudScene extends Phaser.Scene {
       this.add
         .text(w / 2, h / 2 + 78, summary, { ...DATA_STYLE, fontSize: "11px", color: "#9fa5b1" })
         .setOrigin(0.5),
-      this.actionButton(w / 2, h / 2 + 112, "[ ENTER THE NEXT DUNGEON ]  (R)", "restart", "16px"),
+      this.actionButton(w / 2, h / 2 + 112, `[ ENTER THE NEXT DUNGEON ]${this.keyHint("R")}`, "restart", "16px"),
     ]);
     this.overlay.setDepth(2000);
   }
@@ -1104,9 +1161,11 @@ export class HudScene extends Phaser.Scene {
             .setOrigin(0.5),
         );
       }
-      items.push(this.actionButton(w / 2, h / 2 + 144, "[ DESCEND ]  (R)", "restart", "15px"));
+      items.push(this.actionButton(w / 2, h / 2 + 144, `[ DESCEND ]${this.keyHint("R")}`, "restart", "15px"));
     } else {
-      items.push(this.actionButton(w / 2, h / 2 + 80, "[ DESCEND TO THE NEXT VAULT ]  (R)", "restart", "16px"));
+      items.push(
+        this.actionButton(w / 2, h / 2 + 80, `[ DESCEND TO THE NEXT VAULT ]${this.keyHint("R")}`, "restart", "16px"),
+      );
     }
 
     this.overlay = this.add.container(0, 0, items);

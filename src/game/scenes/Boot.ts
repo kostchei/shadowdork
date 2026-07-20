@@ -6,6 +6,9 @@ import { DUNGEONS } from "../level/dungeons";
 import { generateTextures } from "../textures";
 import { RENDER_SCALE, GAME_W, GAME_H } from "../display";
 import { SaveRepository } from "../SaveRepository";
+import { showAlert, showConfirm } from "../ui/modal";
+import { currentInputFamily } from "../input/inputFamily";
+import { textButton } from "../ui/button";
 
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -49,39 +52,48 @@ export class BootScene extends Phaser.Scene {
       resolution: RENDER_SCALE,
     }).setOrigin(0.5);
 
-    this.add.text(w / 2, h / 2 - 55, "Desktop Keyboard Recommended", {
+    this.add.text(
+      w / 2,
+      h / 2 - 55,
+      currentInputFamily() === "touch" ? "Playable with Touch Controls" : "Desktop Keyboard Recommended",
+      {
       fontFamily: 'Consolas, monospace',
       fontSize: "10px",
       color: "#ffd45f",
       resolution: RENDER_SCALE,
     }).setOrigin(0.5);
 
-    // New Game Button
-    const newGameBtn = this.add.text(w / 2, h / 2 - 20, "[ Start New Game ]", {
-      fontFamily: 'Consolas, monospace',
-      fontSize: "16px",
-      color: "#ffd45f",
-      padding: { x: 10, y: 5 },
-      resolution: RENDER_SCALE,
-    })
-    .setOrigin(0.5)
-    .setInteractive({ useHandCursor: true })
-    .on("pointerover", () => newGameBtn.setColor("#ffffff"))
-    .on("pointerout", () => newGameBtn.setColor("#ffd45f"))
-    .on("pointerdown", () => {
-      if (SaveRepository.exists(0) || SaveRepository.exists(1) || SaveRepository.exists(2) || SaveRepository.exists(3)) {
-        if (!confirm("Starting a new game will eventually overwrite your autosave and progress. Proceed?")) {
+    // New Game Button — the first tap a mobile player ever makes here, so it
+    // gets the shared textButton's larger hit rect and pressed feedback.
+    textButton(
+      this,
+      w / 2,
+      h / 2 - 20,
+      "[ Start New Game ]",
+      () => {
+        const startRun = () => {
+          // Campaign progression starts at dungeon 0 so its first reward is always
+          // appropriate for a new party.  The independent seed makes the actual
+          // dungeon type and its room selections fresh every time.
+          this.registry.set("dungeonIndex", 0);
+          this.registry.set("runSeed", Math.floor(Math.random() * 0x1_0000_0000));
+          this.registry.set("ctx", new GameContext());
+          this.scene.start("Dungeon");
+        };
+        if (SaveRepository.exists(0) || SaveRepository.exists(1) || SaveRepository.exists(2) || SaveRepository.exists(3)) {
+          showConfirm(this, "Starting a new game will eventually overwrite your autosave and progress. Proceed?", startRun);
           return;
         }
-      }
-      // Campaign progression starts at dungeon 0 so its first reward is always
-      // appropriate for a new party.  The independent seed makes the actual
-      // dungeon type and its room selections fresh every time.
-      this.registry.set("dungeonIndex", 0);
-      this.registry.set("runSeed", Math.floor(Math.random() * 0x1_0000_0000));
-      this.registry.set("ctx", new GameContext());
-      this.scene.start("Dungeon");
-    });
+        startRun();
+      },
+      {
+        fontSize: "16px",
+        idleColor: "#ffd45f",
+        pressedColor: "#fff4cf",
+        resolution: RENDER_SCALE,
+        padding: { x: 10, y: 5 },
+      },
+    );
 
     // Load slots
     this.add.text(w / 2, h / 2 + 30, "RESUME EXPEDITION", {
@@ -174,7 +186,7 @@ export class BootScene extends Phaser.Scene {
           document.body.removeChild(a);
           URL.revokeObjectURL(url);
         } catch (e: any) {
-          alert(`Failed to export saves: ${e.message}`);
+          showAlert(this, `Failed to export saves: ${e.message}`);
         }
       });
 
@@ -193,10 +205,9 @@ export class BootScene extends Phaser.Scene {
             const contents = evt.target?.result as string;
             const res = SaveRepository.importAll(contents);
             if (res.success) {
-              alert(`Successfully imported ${res.count} save slot(s)!`);
-              this.scene.restart();
+              showAlert(this, `Successfully imported ${res.count} save slot(s)!`, () => this.scene.restart());
             } else {
-              alert(`Import failed: ${res.error}`);
+              showAlert(this, `Import failed: ${res.error}`);
             }
           };
           reader.readAsText(file);

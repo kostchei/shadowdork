@@ -814,13 +814,17 @@ export class HudScene extends Phaser.Scene {
     // Interactive so the modal swallows world taps instead of letting them
     // fall through to the dungeon behind it.
     const bg = this.add.rectangle(w / 2, h / 2, w, h, 0x020205, 0.7).setInteractive();
+    // Tall enough that a full loadout's scrolling window (below) has real
+    // room instead of immediately colliding with the control row.
+    const boxW = 560;
+    const boxH = 520;
     const box = this.add.graphics();
     box.fillStyle(0x05060a, 0.94);
-    box.fillRoundedRect(w / 2 - 220, h / 2 - 180, 440, 360, 8);
+    box.fillRoundedRect(w / 2 - boxW / 2, h / 2 - boxH / 2, boxW, boxH, 8);
     box.lineStyle(2, accent, 0.9);
-    box.strokeRoundedRect(w / 2 - 220, h / 2 - 180, 440, 360, 8);
+    box.strokeRoundedRect(w / 2 - boxW / 2, h / 2 - boxH / 2, boxW, boxH, 8);
 
-    const title = this.add.text(w / 2, h / 2 - 150, `${c.name.toUpperCase()} - GEAR`, {
+    const title = this.add.text(w / 2, h / 2 - boxH / 2 + 30, `${c.name.toUpperCase()} - GEAR`, {
       fontFamily: "Georgia, serif",
       fontSize: "24px",
       color: "#ffd45f",
@@ -835,7 +839,7 @@ export class HudScene extends Phaser.Scene {
     const coinSlots = isLeader ? partyCoinSlots(totalCoins, partySize) : 0;
     const usedSlots = c.inventory.slotsUsed() + coinSlots;
 
-    const sub = this.add.text(w / 2, h / 2 - 120, `Capacity: ${usedSlots} / ${c.inventory.capacity} Slots Used`, {
+    const sub = this.add.text(w / 2, h / 2 - boxH / 2 + 55, `Capacity: ${usedSlots} / ${c.inventory.capacity} Slots Used`, {
       ...UI_STYLE,
       fontSize: "12px",
       color: "#a0a4b0"
@@ -844,18 +848,18 @@ export class HudScene extends Phaser.Scene {
     const armorName = c.wornArmor ? c.wornArmor.name : "None (AC 10)";
     const weaponName = c.wieldedWeapon ? c.wieldedWeapon.name : "None";
     const shieldName = c.carriedShield ? `${c.carriedShield.name}${c.shieldStowed ? " (Stowed)" : ""}` : "None";
-    const eqText = 
+    const eqText =
       `WEAPON : ${weaponName}\n\n` +
       `ARMOR  : ${armorName}\n\n` +
       `SHIELD : ${shieldName}`;
 
-    const equipmentText = this.add.text(w / 2 - 140, h / 2 - 80, eqText, {
+    const equipmentText = this.add.text(w / 2 - boxW / 2 + 40, h / 2 - boxH / 2 + 100, eqText, {
       ...DATA_STYLE,
       fontSize: "13px",
       lineSpacing: 4
     });
 
-    const eqTitle = this.add.text(w / 2 - 140, h / 2 - 100, "EQUIPMENT", {
+    const eqTitle = this.add.text(w / 2 - boxW / 2 + 40, h / 2 - boxH / 2 + 80, "EQUIPMENT", {
       ...UI_STYLE,
       fontSize: "11px",
       color: titleColor,
@@ -866,36 +870,57 @@ export class HudScene extends Phaser.Scene {
     const coinsLine = isLeader && totalCoins > 0
       ? `  ${totalCoins}x Coins (Purse) (${coinSlots === 0 ? "free" : `${coinSlots} slot${coinSlots > 1 ? "s" : ""}`})\n`
       : "";
-    const gearList = coinsLine + stacks.map((s: any) => {
+    // A full loadout can run past a fixed number of lines and overlap the
+    // control row below it, hiding the selection cursor. Keep a scrolling
+    // window of rows centred on the current selection instead of dumping
+    // every stack into one unclipped text block.
+    const VISIBLE_GEAR_ROWS = 12;
+    const selectedIndex = stacks.findIndex((s: any) => s.def.id === selectedItemId);
+    const windowStart = stacks.length <= VISIBLE_GEAR_ROWS
+      ? 0
+      : Math.min(
+          Math.max(0, selectedIndex - Math.floor(VISIBLE_GEAR_ROWS / 2)),
+          stacks.length - VISIBLE_GEAR_ROWS,
+        );
+    const visibleStacks = stacks.slice(windowStart, windowStart + VISIBLE_GEAR_ROWS);
+    const rowsAbove = windowStart;
+    const rowsBelow = stacks.length - (windowStart + visibleStacks.length);
+    const rows = visibleStacks.map((s: any) => {
       const slots = s.def.slotCost === 0 ? "free" : `${s.def.slotCost} slot${s.def.slotCost > 1 ? "s" : ""}`;
       const equipped = c.wieldedWeapon?.id === s.def.id || c.wornArmor?.id === s.def.id ||
         (c.carriedShield?.id === s.def.id && !c.shieldStowed);
       const cursor = selectedItemId === s.def.id ? ">" : " ";
-      return `${cursor} ${s.qty}x ${s.def.name}${equipped ? " [EQUIPPED]" : ""} (${slots})`;
-    }).join("\n");
+      return `${cursor} ${s.qty}x ${s.def.name}${equipped ? " [EQ]" : ""} (${slots})`;
+    });
+    const gearList = coinsLine
+      + (rowsAbove > 0 ? `  ▲ ${rowsAbove} more above\n` : "")
+      + rows.join("\n")
+      + (rowsBelow > 0 ? `\n  ▼ ${rowsBelow} more below` : "");
 
-    const invTitle = this.add.text(w / 2 + 20, h / 2 - 100, "INVENTORY", {
+    const invColX = w / 2 + 20;
+    const invTitle = this.add.text(invColX, h / 2 - boxH / 2 + 80, "INVENTORY", {
       ...UI_STYLE,
       fontSize: "11px",
       color: titleColor,
       fontStyle: "bold"
     });
 
-    const invText = this.add.text(w / 2 + 20, h / 2 - 80, gearList || "Empty", {
+    const invText = this.add.text(invColX, h / 2 - boxH / 2 + 100, gearList || "Empty", {
       ...DATA_STYLE,
       fontSize: "10px",
-      wordWrap: { width: 180 },
+      wordWrap: { width: w / 2 + boxW / 2 - 20 - invColX },
       lineSpacing: 6
     });
 
     // Touch parity for the whole gear flow: select, use/equip, drop, rest, close.
+    const controlsY = h / 2 + boxH / 2 - 52;
     const controls = [
-      this.actionButton(w / 2 - 190, h / 2 + 128, "▲", "menuUp", "15px"),
-      this.actionButton(w / 2 - 150, h / 2 + 128, "▼", "menuDown", "15px"),
-      this.actionButton(w / 2 - 88, h / 2 + 128, "[ USE / EQUIP ]", "interact", "12px"),
-      this.actionButton(w / 2 + 20, h / 2 + 128, "[ DROP ]", "drop", "12px"),
-      this.actionButton(w / 2 + 96, h / 2 + 128, "[ REST ]", "rest", "12px"),
-      this.actionButton(w / 2 + 170, h / 2 + 128, "[ CLOSE ]", "gear", "12px"),
+      this.actionButton(w / 2 - 190, controlsY, "▲", "menuUp", "15px"),
+      this.actionButton(w / 2 - 150, controlsY, "▼", "menuDown", "15px"),
+      this.actionButton(w / 2 - 88, controlsY, "[ USE / EQUIP ]", "interact", "12px"),
+      this.actionButton(w / 2 + 20, controlsY, "[ DROP ]", "drop", "12px"),
+      this.actionButton(w / 2 + 96, controlsY, "[ REST ]", "rest", "12px"),
+      this.actionButton(w / 2 + 170, controlsY, "[ CLOSE ]", "gear", "12px"),
     ];
 
     // The button row above already covers every one of these on touch — the
@@ -904,7 +929,7 @@ export class HudScene extends Phaser.Scene {
       currentInputFamily() === "keyboard"
         ? "Up/Down select  |  E use/equip  |  D drop  |  R rest  |  I close"
         : "";
-    const footer = this.add.text(w / 2, h / 2 + 155, footerText, {
+    const footer = this.add.text(w / 2, h / 2 + boxH / 2 - 25, footerText, {
       ...UI_STYLE,
       fontSize: "11px",
       color: "#808490"

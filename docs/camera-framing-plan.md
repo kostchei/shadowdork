@@ -2,7 +2,11 @@
 
 ## Status
 
-Planning only. No gameplay code has been changed for this work.
+Implemented. `src/game/systems/cameraFraming.ts` and
+`src/game/visual/terrainVisibility.ts` land the camera composition and
+visible-terrain classification described below; `DungeonScene` wires both in
+at leader-swap/create time and every tick. Unit tests cover the pure
+calculations (`tests/cameraFraming.test.ts`, `tests/terrainVisibility.test.ts`).
 
 ## Problem
 

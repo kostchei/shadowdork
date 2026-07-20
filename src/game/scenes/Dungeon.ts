@@ -111,6 +111,8 @@ import {
   selectOpenTerrainRoomRoles,
 } from "../visual/openTerrain";
 import { roomAt, roomAtTolerant } from "../level/geometry";
+import { CameraFramingController, FEET_OFFSET_PX, isElevatedSupport } from "../systems/cameraFraming";
+import { exposedTerrainFaces } from "../visual/terrainVisibility";
 import {
   canTraverseConnector,
   openConnector,
@@ -203,6 +205,7 @@ export class DungeonScene extends Phaser.Scene {
   /** Floating per-character danger markers, keyed by character.id. */
   private dangerMarkers = new Map<string, Phaser.GameObjects.Text>();
 
+  private cameraFraming = new CameraFramingController();
   private walls!: Phaser.Physics.Arcade.StaticGroup;
   private weakWalls!: Phaser.Physics.Arcade.StaticGroup;
   private portcullises!: Phaser.Physics.Arcade.StaticGroup;
@@ -523,7 +526,7 @@ export class DungeonScene extends Phaser.Scene {
     for (const monster of this.monsters) this.trapSystem.registerActor(monster);
     for (const pickup of this.pickups) this.trapSystem.registerActor(pickup.sprite);
 
-    this.cameras.main.startFollow(this.party.leader, true, 0.12, 0.12);
+    this.startCameraFollow(true);
 
     this.interactPrompt = this.add
       .text(0, 0, "", {
@@ -1187,6 +1190,11 @@ export class DungeonScene extends Phaser.Scene {
     const theme = this.presentationPalette;
     const textures = this.environmentTextures;
     const foregroundTint = this.visualSkin ? textures.foregroundTint : theme.stoneTint;
+    // Enclosed rock has no exposed face worth drawing as a decorated tile; it
+    // still needs collision (created below) but is covered by one merged,
+    // seam-free fill so parallax scenery never shows through solid mass.
+    const enclosedMass = this.add.graphics().setDepth(0);
+    enclosedMass.fillStyle(theme.background, 1);
     for (let y = 0; y < this.activeDungeon.height; y++) {
       const row = this.activeDungeon.grid[y]!;
       for (let x = 0; x < this.activeDungeon.width; x++) {
@@ -1197,10 +1205,11 @@ export class DungeonScene extends Phaser.Scene {
           case "#": {
             const variant = x * 17 + y * 31;
             let textureKey = textures.wall(variant);
-            let visible = true;
+            let enclosed = false;
             if (textures.supportWall) {
               const underground = roomAt(this.activeDungeon.regions, x, y)?.id === this.undergroundRoomId;
               if (underground) {
+                enclosed = exposedTerrainFaces(this.activeDungeon.grid, x, y).enclosed;
                 textureKey = textures.supportWall(variant);
               } else {
                 const role = openSurfaceTileRole(this.activeDungeon.grid, x, y);
@@ -1210,9 +1219,14 @@ export class DungeonScene extends Phaser.Scene {
                   textureKey = textures.overhang ?? textureKey;
                 }
               }
+            } else {
+              enclosed = exposedTerrainFaces(this.activeDungeon.grid, x, y).enclosed;
             }
             const wall = this.walls.create(px, py, textureKey).setTint(foregroundTint).setDepth(1);
-            if (!visible) wall.setVisible(false);
+            if (enclosed) {
+              wall.setVisible(false);
+              enclosedMass.fillRect(x * TILE, y * TILE, TILE, TILE);
+            }
             break;
           }
           case "%":
@@ -1715,6 +1729,7 @@ export class DungeonScene extends Phaser.Scene {
       this.saveToSlot(0);
     }
     this.updateLeaderInput(time, delta);
+    this.updateCameraFraming(time, delta);
     this.party.updateFollowers(time, (m, dir, targetY) => this.followerCanStep(m, dir, targetY));
     this.updateFollowerClimbs();
     this.updateFollowerSupport(time);
@@ -2085,6 +2100,33 @@ export class DungeonScene extends Phaser.Scene {
     });
   }
 
+  /** Start (or restart) smooth-follow on the current leader, resetting the framing controller. */
+  private startCameraFollow(snap: boolean): void {
+    this.cameras.main.startFollow(this.party.leader, true, 0.12, 0.12);
+    if (!snap) return;
+    const leader = this.party.leader;
+    const tileX = Math.floor(leader.x / TILE);
+    const tileY = Math.floor((leader.y + FEET_OFFSET_PX) / TILE);
+    const elevated = leader.climbing || isElevatedSupport(this.activeDungeon.grid, tileX, tileY);
+    const target = this.cameraFraming.reset(leader.facing, elevated ? "elevated" : "floor");
+    this.cameras.main.setFollowOffset(target.offsetX, target.offsetY);
+  }
+
+  /** Derive the 80/20 horizontal look-ahead and the floor/elevated vertical framing each tick. */
+  private updateCameraFraming(time: number, delta: number): void {
+    const leader = this.party.leader;
+    const tileX = Math.floor(leader.x / TILE);
+    const tileY = Math.floor((leader.y + FEET_OFFSET_PX) / TILE);
+    const supportIsElevated = isElevatedSupport(this.activeDungeon.grid, tileX, tileY);
+    const target = this.cameraFraming.update(time, delta, {
+      facing: leader.facing,
+      grounded: leader.grounded,
+      climbing: leader.climbing,
+      supportIsElevated,
+    });
+    this.cameras.main.setFollowOffset(target.offsetX, target.offsetY);
+  }
+
   private updateLeaderInput(time: number, delta: number): void {
     const leader = this.party.leader;
 
@@ -2094,7 +2136,7 @@ export class DungeonScene extends Phaser.Scene {
       if (this.actions.pressed(action) && idx < this.party.size) this.party.selectLeader(idx);
     });
     if (this.party.leader !== leader) {
-      this.cameras.main.startFollow(this.party.leader, true, 0.12, 0.12);
+      this.startCameraFollow(true);
       return;
     }
     if (!leader.alive) {

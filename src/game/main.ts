@@ -1,10 +1,15 @@
 import Phaser from "phaser";
 import { installUnlock } from "./audio/context";
 import { RENDER_SCALE, GAME_H, GAME_W } from "./display";
+import { loadMobilePrefs } from "./MobilePrefs";
 import { BootScene } from "./scenes/Boot";
 import { DungeonScene } from "./scenes/Dungeon";
 import { HudScene } from "./scenes/Hud";
 import { EquipmentShowroomScene } from "./scenes/EquipmentShowroom";
+
+// Before anything reads quality.ts's auto-detected default or the audio
+// graph exists — restores whatever the player last chose.
+loadMobilePrefs();
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,
@@ -44,6 +49,22 @@ declare global {
 }
 // Audio contexts start suspended until a user gesture — arm the resume now.
 installUnlock();
+
+// Optional fullscreen control — only shown where the API exists.
+const fullscreenBtn = document.getElementById("fullscreen-btn");
+if (fullscreenBtn && document.documentElement.requestFullscreen) {
+  fullscreenBtn.hidden = false;
+  fullscreenBtn.addEventListener("click", () => {
+    if (document.fullscreenElement) {
+      void document.exitFullscreen();
+    } else {
+      void document.documentElement.requestFullscreen().catch(() => {
+        // Fullscreen can be denied (no user gesture in some browsers' eyes,
+        // or the platform simply refuses it) — the button just stays usable.
+      });
+    }
+  });
+}
 
 // Dev/debug handles: let tooling drive the game and audio graph. Kept out of
 // production so the global surface isn't exposed to shipped builds.

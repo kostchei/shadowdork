@@ -12,7 +12,10 @@ const game = new Phaser.Game({
   width: GAME_W * RENDER_SCALE,
   height: GAME_H * RENDER_SCALE,
   pixelArt: true,
-  render: { preserveDrawingBuffer: true },
+  // preserveDrawingBuffer is only needed so tooling can read pixels back
+  // (e.g. the /__shot screenshot path). It forces the GPU to keep the backbuffer
+  // around every frame, so keep it out of production builds.
+  render: { preserveDrawingBuffer: import.meta.env.DEV },
   backgroundColor: "#0a0a0f",
   physics: {
     default: "arcade",
@@ -39,17 +42,19 @@ declare global {
     };
   }
 }
-window.__game = game;
-
 // Audio contexts start suspended until a user gesture — arm the resume now.
 installUnlock();
 
-// Dev/debug handle: lets tooling fire sounds and inspect the audio graph.
-void (async () => {
-  window.__audio = {
-    context: await import("./audio/context"),
-    sfx: await import("./audio/sfx"),
-    ambience: await import("./audio/ambience"),
-    voice: await import("./audio/voice"),
-  };
-})();
+// Dev/debug handles: let tooling drive the game and audio graph. Kept out of
+// production so the global surface isn't exposed to shipped builds.
+if (import.meta.env.DEV) {
+  window.__game = game;
+  void (async () => {
+    window.__audio = {
+      context: await import("./audio/context"),
+      sfx: await import("./audio/sfx"),
+      ambience: await import("./audio/ambience"),
+      voice: await import("./audio/voice"),
+    };
+  })();
+}

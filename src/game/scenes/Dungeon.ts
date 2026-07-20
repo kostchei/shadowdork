@@ -21,6 +21,9 @@ import {
 } from "../../data";
 import { DC, MAX_LEVEL, partyCoinSlots, xpToReachNextLevel, getBaseRole, type Alignment, type ClassName, type StatName } from "../../engine";
 import { GameContext } from "../context";
+import { ActionInput } from "../input/ActionInput";
+import { KeyboardSource, polledKeysFrom } from "../input/KeyboardSource";
+import { KEY_BINDINGS, KEYBOARD_ADD_KEYS, START_DISMISS_ACTIONS, type GameAction } from "../input/actions";
 import { RENDER_SCALE } from "../display";
 import { CharacterSprite } from "../entities/CharacterSprite";
 import { MonsterSprite, MONSTER_ATTACK_COOLDOWN_MS } from "../entities/MonsterSprite";
@@ -238,6 +241,9 @@ export class DungeonScene extends Phaser.Scene {
 
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
   private leftControlDown = false;
+  /** Semantic input: named actions with multi-source ownership (keyboard, later touch). */
+  private readonly actions = new ActionInput<GameAction>();
+  private keyboard!: KeyboardSource<GameAction>;
 
   private gamePaused = false;
   private statsOverlayOpen = false;
@@ -319,6 +325,10 @@ export class DungeonScene extends Phaser.Scene {
     this.followerAi = new Map();
     this.luckWindow = null;
     this.leftControlDown = false;
+    // Drop any action ownership held over from a previous run life; the keyboard
+    // poll repopulates real state on the next tick.
+    this.actions.releaseAll();
+    this.actions.endFrame();
     this.encounterWaves = 0;
     this.rewardMarker = null;
     this.connectorGates = new Map();
@@ -1278,9 +1288,7 @@ export class DungeonScene extends Phaser.Scene {
   private setupInput(): void {
     const kb = this.input.keyboard;
     if (!kb) throw new Error("Keyboard input unavailable");
-    this.keys = kb.addKeys(
-      "A,D,W,LEFT,RIGHT,UP,DOWN,SPACE,J,X,K,C,Q,E,T,H,L,M,R,TAB,ONE,TWO,THREE,FOUR,ESC,I",
-    ) as Record<string, Phaser.Input.Keyboard.Key>;
+    this.keys = kb.addKeys(KEYBOARD_ADD_KEYS) as Record<string, Phaser.Input.Keyboard.Key>;
     kb.on("keydown-TAB", (ev: KeyboardEvent) => ev.preventDefault());
     kb.on("keydown", (ev: KeyboardEvent) => {
       if (ev.code === "ControlLeft") this.leftControlDown = true;
@@ -1288,21 +1296,40 @@ export class DungeonScene extends Phaser.Scene {
     kb.on("keyup", (ev: KeyboardEvent) => {
       if (ev.code === "ControlLeft") this.leftControlDown = false;
     });
+    // The keyboard feeds named actions. CTRL is not an addKeys key — it comes
+    // from the raw ControlLeft listener above, wrapped as a polled key.
+    const ctrl = { name: "CTRL", isDown: () => this.leftControlDown };
+    this.keyboard = new KeyboardSource(
+      this.actions,
+      polledKeysFrom(this.keys, [ctrl]),
+      KEY_BINDINGS,
+    );
   }
 
   override update(time: number, delta: number): void {
+    // Refresh named-action state from the keyboard, then guarantee the per-tick
+    // edge reset runs no matter which early return the body takes.
+    this.keyboard.poll();
+    try {
+      this.tick(time, delta);
+    } finally {
+      this.actions.endFrame();
+    }
+  }
+
+  private tick(time: number, delta: number): void {
     if (this.startPaused) {
       if (this.startControlDown()) this.dismissStartPause();
       return;
     }
 
-    if (this.justDown("ESC")) {
+    if (this.actions.pressed("pause")) {
       this.togglePause();
       return;
     }
 
     // Mute works everywhere — paused, overlays, game over.
-    if (this.justDown("M")) {
+    if (this.actions.pressed("mute")) {
       setMuted(!isMuted());
       this.ctx.say(isMuted() ? "Sound muted. (M to unmute)" : "Sound on.", "#a0a4b0");
     }
@@ -1317,13 +1344,13 @@ export class DungeonScene extends Phaser.Scene {
       return;
     }
 
-    if (this.justDown("C")) {
+    if (this.actions.pressed("stats")) {
       this.toggleStatsOverlay();
     }
-    if (this.justDown("I")) {
+    if (this.actions.pressed("gear")) {
       this.toggleGearOverlay();
     }
-    if (this.justDown("R") && !this.gearOverlayOpen && !this.statsOverlayOpen) {
+    if (this.actions.pressed("rest") && !this.gearOverlayOpen && !this.statsOverlayOpen) {
       this.attemptRest();
     }
 
@@ -1337,7 +1364,7 @@ export class DungeonScene extends Phaser.Scene {
 
     if (this.gameOver || this.won) {
       if (this.won && this.biomeOffer) this.updateBiomeChoiceInput();
-      if (this.keys.R!.isDown) this.restartRun();
+      if (this.actions.held("restart")) this.restartRun();
       return;
     }
 
@@ -1411,8 +1438,7 @@ export class DungeonScene extends Phaser.Scene {
   }
 
   private startControlDown(): boolean {
-    return ["A", "D", "W", "LEFT", "RIGHT", "UP", "DOWN", "SPACE", "J", "X", "K"]
-      .some((key) => this.keys[key]!.isDown) || this.leftControlDown;
+    return this.actions.anyHeld(START_DISMISS_ACTIONS);
   }
 
   private dismissStartPause(): void {
@@ -1498,22 +1524,22 @@ export class DungeonScene extends Phaser.Scene {
   private updateGearOverlayInput(): void {
     const items = this.allInventoryItems();
     if (items.length === 0) return;
-    if (this.justDown("UP")) {
+    if (this.actions.pressed("menuUp")) {
       this.gearSelectionIndex = Phaser.Math.Wrap(this.gearSelectionIndex - 1, 0, items.length);
       this.refreshGearOverlay();
       return;
     }
-    if (this.justDown("DOWN")) {
+    if (this.actions.pressed("menuDown")) {
       this.gearSelectionIndex = Phaser.Math.Wrap(this.gearSelectionIndex + 1, 0, items.length);
       this.refreshGearOverlay();
       return;
     }
-    if (this.justDown("R")) {
+    if (this.actions.pressed("rest")) {
       this.attemptRest();
       return;
     }
     // EQUIP / USE ('E')
-    if (this.justDown("E")) {
+    if (this.actions.pressed("interact")) {
       const member = this.party.leader;
       const def = items[this.gearSelectionIndex]?.def;
       if (def) {
@@ -1546,7 +1572,7 @@ export class DungeonScene extends Phaser.Scene {
       return;
     }
     // DROP ('D')
-    if (this.justDown("D")) {
+    if (this.actions.pressed("drop")) {
       const member = this.party.leader;
       const stack = items[this.gearSelectionIndex];
       if (stack) {
@@ -1642,34 +1668,34 @@ export class DungeonScene extends Phaser.Scene {
   }
 
   private updateShopOverlayInput(): void {
-    if (this.justDown("I")) {
+    if (this.actions.pressed("gear")) {
       this.closeShop();
       return;
     }
-    if (this.justDown("LEFT") || this.justDown("RIGHT")) {
+    if (this.actions.pressed("menuLeft") || this.actions.pressed("menuRight")) {
       this.shopMode = this.shopMode === "buy" ? "sell" : "buy";
       this.shopCursor = 0;
       this.refreshShopOverlay();
       return;
     }
-    if (this.justDown("TAB")) {
+    if (this.actions.pressed("cycle")) {
       this.shopMemberIndex = Phaser.Math.Wrap(this.shopMemberIndex + 1, 0, this.shopMembers().length);
       this.shopCursor = 0;
       this.refreshShopOverlay();
       return;
     }
     const length = this.shopMode === "buy" ? stockItems().length : this.sellableStacks(this.activeShopMember()).length;
-    if (length > 0 && this.justDown("UP")) {
+    if (length > 0 && this.actions.pressed("menuUp")) {
       this.shopCursor = Phaser.Math.Wrap(this.shopCursor - 1, 0, length);
       this.refreshShopOverlay();
       return;
     }
-    if (length > 0 && this.justDown("DOWN")) {
+    if (length > 0 && this.actions.pressed("menuDown")) {
       this.shopCursor = Phaser.Math.Wrap(this.shopCursor + 1, 0, length);
       this.refreshShopOverlay();
       return;
     }
-    if (this.justDown("E")) {
+    if (this.actions.pressed("interact")) {
       if (this.shopMode === "buy") this.attemptBuy();
       else this.attemptSell();
     }
@@ -1746,7 +1772,7 @@ export class DungeonScene extends Phaser.Scene {
       this.luckWindow = null;
       return;
     }
-    if (this.justDown("L")) {
+    if (this.actions.pressed("luck")) {
       const c = w.member.character;
       if (!c.luckToken) throw new Error(`${c.name} has no luck token but a luck window was open`);
       c.luckToken = false;
@@ -1762,39 +1788,29 @@ export class DungeonScene extends Phaser.Scene {
     this.luckWindow = { member, label, redo, expiresAt: this.time.now + 2500 };
   }
 
-  private justDown(key: string): boolean {
-    const k = this.keys[key];
-    if (!k) throw new Error(`Key "${key}" not registered`);
-    return Phaser.Input.Keyboard.JustDown(k);
-  }
+  /** Party-slot select actions, indexed 0..3. */
+  private static readonly PARTY_ACTIONS: readonly GameAction[] = ["party1", "party2", "party3", "party4"];
 
   /** Move the descent-choice cursor with arrows or select a scroll by number. */
   private updateBiomeChoiceInput(): void {
     const offer = this.biomeOffer;
     if (!offer) return;
     const count = offer.zones.length;
-    if (this.justDown("LEFT")) this.biomeSelectionIndex = (this.biomeSelectionIndex + count - 1) % count;
-    if (this.justDown("RIGHT")) this.biomeSelectionIndex = (this.biomeSelectionIndex + 1) % count;
-    const numberKeys: readonly [string, number][] = [["ONE", 0], ["TWO", 1], ["THREE", 2], ["FOUR", 3]];
-    for (const [key, index] of numberKeys) {
-      if (index < count && this.justDown(key)) this.biomeSelectionIndex = index;
-    }
+    if (this.actions.pressed("menuLeft")) this.biomeSelectionIndex = (this.biomeSelectionIndex + count - 1) % count;
+    if (this.actions.pressed("menuRight")) this.biomeSelectionIndex = (this.biomeSelectionIndex + 1) % count;
+    DungeonScene.PARTY_ACTIONS.forEach((action, index) => {
+      if (index < count && this.actions.pressed(action)) this.biomeSelectionIndex = index;
+    });
   }
 
   private updateLeaderInput(time: number, delta: number): void {
     const leader = this.party.leader;
 
     // Leader swap
-    if (this.justDown("TAB")) this.party.cycleLeader();
-    const hotkeys: [string, number][] = [
-      ["ONE", 0],
-      ["TWO", 1],
-      ["THREE", 2],
-      ["FOUR", 3],
-    ];
-    for (const [key, idx] of hotkeys) {
-      if (this.justDown(key) && idx < this.party.size) this.party.selectLeader(idx);
-    }
+    if (this.actions.pressed("cycle")) this.party.cycleLeader();
+    DungeonScene.PARTY_ACTIONS.forEach((action, idx) => {
+      if (this.actions.pressed(action) && idx < this.party.size) this.party.selectLeader(idx);
+    });
     if (this.party.leader !== leader) {
       this.cameras.main.startFollow(this.party.leader, true, 0.12, 0.12);
       return;
@@ -1805,16 +1821,16 @@ export class DungeonScene extends Phaser.Scene {
     }
 
     // Movement
-    const left = this.keys.A!.isDown || this.keys.LEFT!.isDown;
-    const right = this.keys.D!.isDown || this.keys.RIGHT!.isDown;
-    const up = this.keys.W!.isDown || this.keys.UP!.isDown || this.keys.SPACE!.isDown;
+    const left = this.actions.held("moveLeft");
+    const right = this.actions.held("moveRight");
+    const up = this.actions.held("moveUp");
 
     // Ledge Grab Input Handling
     if (leader.ledgeGrabState) {
       const body = leader.body as Phaser.Physics.Arcade.Body;
       const grab = leader.ledgeGrabState;
-      const down = this.keys.DOWN!.isDown;
-      const oppositeDir = grab.side === "left" ? (right || this.keys.D!.isDown) : (left || this.keys.A!.isDown);
+      const down = this.actions.held("moveDown");
+      const oppositeDir = grab.side === "left" ? right : left;
 
       if (up) {
         // Auto-mantle: move player onto the platform
@@ -1840,7 +1856,7 @@ export class DungeonScene extends Phaser.Scene {
 
     // Fighter Bracing logic
     if (leader.character.className === "fighter") {
-      const down = this.keys.DOWN!.isDown;
+      const down = this.actions.held("moveDown");
       if (down && leader.grounded) {
         leader.bracing = true;
         leader.setVelocityX(0);
@@ -1860,11 +1876,11 @@ export class DungeonScene extends Phaser.Scene {
     );
     leader.touchingClimbable = nearClimbTile !== undefined;
     const body = leader.body as Phaser.Physics.Arcade.Body;
-    const downInput = (this.keys.S && this.keys.S.isDown) || (this.keys.DOWN && this.keys.DOWN.isDown);
+    const downInput = this.actions.held("moveDown");
 
     if (leader.touchingClimbable) {
       const isGrounded = body.blocked.down;
-      const wantsJumpOff = leader.climbing && (this.justDown("SPACE") || (up && (left || right)));
+      const wantsJumpOff = leader.climbing && (this.actions.pressed("jumpOff") || (up && (left || right)));
       if (wantsJumpOff) {
         leader.climbing = false;
         body.setAllowGravity(true);
@@ -1902,7 +1918,7 @@ export class DungeonScene extends Phaser.Scene {
     if (up && !leader.climbing) leader.tryJump(time);
 
     // Follower mode toggle
-    if (this.justDown("H")) {
+    if (this.actions.pressed("followerMode")) {
       for (const m of this.party.members) {
         if (m === leader) continue;
         m.mode = m.mode === "follow" ? "hold" : "follow";
@@ -1912,7 +1928,7 @@ export class DungeonScene extends Phaser.Scene {
     }
 
     // Attack
-    if (this.keys.J!.isDown || this.keys.X!.isDown || this.leftControlDown) {
+    if (this.actions.held("attack")) {
       const outcome = meleeSwing(this.meleeDeps(), leader);
       if (outcome.swung) this.emitNoiseAt(leader.x, leader.y);
       if (outcome.swung && leader.character.className === "fighter") this.breakWeakWalls(leader);
@@ -1925,12 +1941,12 @@ export class DungeonScene extends Phaser.Scene {
     }
 
     // Cast / cycle spell
-    if (this.justDown("Q") && leader.character.knownSpells.length > 0) {
+    if (this.actions.pressed("cycleSpell") && leader.character.knownSpells.length > 0) {
       leader.spellIndex = (leader.spellIndex + 1) % leader.character.knownSpells.length;
       const slot = leader.character.knownSpells[leader.spellIndex]!;
       this.ctx.say(`Prepared: ${spell(slot.spellId).name}${slot.status === "lost" ? " (LOST)" : ""}`);
     }
-    if (this.justDown("K") && leader.character.knownSpells.length > 0) {
+    if (this.actions.pressed("cast") && leader.character.knownSpells.length > 0) {
       const result = castSelectedSpell(this.spellDeps(), leader);
       // Luck can save a plain failure; a nat-1 mishap already detonated — no take-backs.
       if (result?.outcome === "fail") {
@@ -1943,10 +1959,10 @@ export class DungeonScene extends Phaser.Scene {
     }
 
     // Torch
-    if (this.justDown("T")) this.lightTorch(leader);
+    if (this.actions.pressed("torch")) this.lightTorch(leader);
 
     // Interact
-    if (this.justDown("E")) this.interact(leader);
+    if (this.actions.pressed("interact")) this.interact(leader);
   }
 
   private meleeDeps(): MeleeDeps {

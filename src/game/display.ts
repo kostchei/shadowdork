@@ -18,15 +18,29 @@ if (override !== null && !(Number(override) > 0)) {
 
 /**
  * Physical pixels per logical game pixel when the game fills the screen.
- * Derived from the monitor, not window.devicePixelRatio alone: a 4K display
- * at 100% OS scaling has a DPR of 1 but still shows the fitted canvas at 4x.
+ * Derived from the *viewport* the canvas fits into (`innerWidth/Height`), not
+ * `window.screen`: the fitted canvas only ever covers the browser viewport, so
+ * sizing the framebuffer to the physical monitor over-allocates massively on
+ * mobile — an 844x390 viewport was allocating a 3840x2160 (scale 4) framebuffer.
  */
 const dpr = window.devicePixelRatio || 1;
 const displayScale = Math.min(
-  (window.screen.width * dpr) / GAME_W,
-  (window.screen.height * dpr) / GAME_H,
+  (window.innerWidth * dpr) / GAME_W,
+  (window.innerHeight * dpr) / GAME_H,
 );
 
-/** Framebuffer scale, capped at 4 (a full 4K frame) to bound the fill cost. */
+/**
+ * Coarse pointers (touch phones/tablets) are fill-rate and thermally bound and
+ * gain little from a 4x framebuffer, so cap their automatic scale at 2. Desktop
+ * stays capped at 4 (a full 4K frame) to bound the fill cost.
+ */
+const coarsePointer =
+  typeof window.matchMedia === "function" &&
+  window.matchMedia("(pointer: coarse)").matches;
+const scaleCap = coarsePointer ? 2 : 4;
+
+/** Framebuffer scale. `?dpr=N` overrides for testing hi-DPI on a 1x display. */
 export const RENDER_SCALE =
-  override !== null ? Number(override) : Math.min(4, Math.max(1, displayScale));
+  override !== null
+    ? Number(override)
+    : Math.min(scaleCap, Math.max(1, displayScale));

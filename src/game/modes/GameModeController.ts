@@ -32,6 +32,8 @@ export type GameMode =
   | "gear"
   /** Safe-zone shop overlay. */
   | "shop"
+  /** More than one contextual "E" interaction is valid at once; pick one. */
+  | "actionChoice"
   /** Vault cleared: summary, and possibly the scroll-destination choice. */
   | "victory"
   /** Party wiped. */
@@ -65,6 +67,7 @@ const WORLD_PAUSING: ReadonlySet<GameMode> = new Set<GameMode>([
   "stats",
   "gear",
   "shop",
+  "actionChoice",
   "orientation-blocked",
   "backgrounded",
 ]);
@@ -75,6 +78,7 @@ const OVERLAY_MODES: ReadonlySet<GameMode> = new Set<GameMode>([
   "stats",
   "gear",
   "shop",
+  "actionChoice",
 ]);
 
 /** Run-ending modes. Only a scene restart leaves them. */

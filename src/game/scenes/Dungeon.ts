@@ -20,7 +20,21 @@ import {
   randomPlebName,
   spell,
 } from "../../data";
-import { DC, MAX_LEVEL, partyCoinSlots, xpToReachNextLevel, getBaseRole, type Alignment, type ClassName, type StatName } from "../../engine";
+import {
+  DC,
+  MAX_LEVEL,
+  availableEncounterChoices,
+  partyCoinSlots,
+  xpToReachNextLevel,
+  getBaseRole,
+  type Alignment,
+  type ClassName,
+  type EncounterChoice,
+  type EncounterDistance,
+  type MonsterActivity,
+  type MonsterReaction,
+  type StatName,
+} from "../../engine";
 import { GameContext } from "../context";
 import { ActionInput } from "../input/ActionInput";
 import { KeyboardSource, polledKeysFrom } from "../input/KeyboardSource";
@@ -126,6 +140,15 @@ import {
 const RETALIATE_WINDOW_MS = 4000;
 /** Gold granted when a companion vault reward cannot recruit (full or duplicate class). */
 const COMPANION_SUBSTITUTE_GOLD = 500;
+/** Player-facing label for each wandering-encounter reaction choice. */
+const ENCOUNTER_CHOICE_LABEL: Record<EncounterChoice, string> = {
+  ambush: "Ambush (strike first, advantage)",
+  parley: "Parley (CHA check)",
+  offer: "Offer food or treasure",
+  threaten: "Threaten (CHA check)",
+  hide: "Hide (slip away unnoticed)",
+  retreat: "Retreat (back off)",
+};
 /** Compact-map marker precedence: player > landmark beat > plain room > empty. */
 function mapMarkerPriority(marker: string): number {
   if (marker === "@") return 3;
@@ -243,6 +266,13 @@ export class DungeonScene extends Phaser.Scene {
   private lastHurtAt = new Map<string, number>();
   private encounterWaves = 0;
   private interactPrompt!: Phaser.GameObjects.Text;
+  /** The candidates offered while `actionChoice` mode is open; empty otherwise. */
+  private actionChoiceOptions: Interaction[] = [];
+  private actionChoiceCursor = 0;
+  private actionChoiceTitle: string | undefined;
+  private actionChoiceSubtitle: string | undefined;
+  /** False for an encounter reaction roll — the player must pick one, no free dismiss. */
+  private actionChoiceCancelable = true;
   loadedState: SaveSlot | null = null;
   private lastRoomId = "room-1";
   private leaderMarker!: Phaser.GameObjects.Image;
@@ -520,7 +550,8 @@ export class DungeonScene extends Phaser.Scene {
       camera: () => this.cameras.main,
       partyInTotalDarkness: () =>
         this.party.aliveMembers().every((m) => this.light.levelAt(m.x, m.y) === "dark"),
-      spawnWave: (monsterId, count, x) => this.spawnEncounterWave(monsterId, count, x),
+      spawnWave: (monsterId, count, x, activity, reaction, distance) =>
+        this.spawnEncounterWave(monsterId, count, x, activity, reaction, distance),
     });
 
     this.ctx.say(
@@ -587,6 +618,9 @@ export class DungeonScene extends Phaser.Scene {
       case "shop":
         this.refreshShopOverlay();
         return;
+      case "actionChoice":
+        this.refreshActionChoiceOverlay();
+        return;
       default:
         // briefing / playing / victory / gameover own no overlay of their own:
         // the briefing card is raised by the HUD on create, and the ending
@@ -616,6 +650,9 @@ export class DungeonScene extends Phaser.Scene {
         return;
       case "shop":
         hud.hideShopOverlay();
+        return;
+      case "actionChoice":
+        hud.hideActionChoiceOverlay();
         return;
       default:
         return;
@@ -698,11 +735,24 @@ export class DungeonScene extends Phaser.Scene {
     return name;
   }
 
-  /** Spawn an encounter wave off-screen, already hunting the party. */
-  private spawnEncounterWave(monsterId: string, count: number, x: number): void {
+  /**
+   * Spawn an encounter wave off-screen, in "patrol" — not yet hunting — and
+   * (assuming the party isn't surprised, which is a separate later system)
+   * hand the player a contextual reaction popup instead of it arriving
+   * already aggro'd.
+   */
+  private spawnEncounterWave(
+    monsterId: string,
+    count: number,
+    x: number,
+    activity: MonsterActivity,
+    reaction: MonsterReaction,
+    distance: EncounterDistance,
+  ): void {
     if (this.gameOver || this.won) return;
     const clampedX = Phaser.Math.Clamp(x, TILE * 1.5, (this.activeDungeon.width - 2) * TILE);
     const groupId = `encounter-${this.encounterWaves++}`;
+    const wave: MonsterSprite[] = [];
     for (let i = 0; i < count; i++) {
       const m = new MonsterSprite(
         this,
@@ -712,11 +762,115 @@ export class DungeonScene extends Phaser.Scene {
         groupId,
         this.ctx.engine.dice,
       );
-      m.aiState = "aggro";
+      m.activity = activity;
+      m.reaction = reaction;
+      if (activity === "sleeping") m.sleep(60 * 60 * 1000); // asleep until woken by an ambush/threat/damage
       this.morale.register(m);
       this.monsters.push(m);
       this.monsterGroup.add(m);
       this.trapSystem.registerActor(m);
+      wave.push(m);
+    }
+    this.openEncounterChoice(wave, activity, reaction, distance);
+  }
+
+  /** The contextual reaction popup a wandering encounter offers instead of arriving already hunting. */
+  private openEncounterChoice(
+    wave: MonsterSprite[],
+    activity: MonsterActivity,
+    reaction: MonsterReaction,
+    distance: EncounterDistance,
+  ): void {
+    const leader = this.party.leader;
+    const canOffer = leader.character.inventory.has("ration") || this.ctx.spendableGold >= 10;
+    const choices = availableEncounterChoices(activity, canOffer);
+    const monsterName = wave[0]!.def.name;
+    const plural = wave.length > 1 ? `${wave.length} ${monsterName}s` : monsterName;
+    const options: Interaction[] = choices.map((choice) => ({
+      label: ENCOUNTER_CHOICE_LABEL[choice],
+      run: () => this.resolveEncounterChoice(wave, choice, reaction),
+    }));
+    this.openActionChoice(options, {
+      title: `${plural.toUpperCase()} — ${distance.toUpperCase()}`,
+      subtitle: `They seem to be ${activity}.`,
+      cancelable: false,
+    });
+  }
+
+  /** Apply the consequence of the player's chosen response to a wandering-encounter wave. */
+  private resolveEncounterChoice(
+    wave: MonsterSprite[],
+    choice: EncounterChoice,
+    reaction: MonsterReaction,
+  ): void {
+    const live = wave.filter((m) => m.active);
+    const leader = this.party.leader;
+    const engage = () => {
+      for (const m of live) {
+        m.wake();
+        // The wave spawns off-camera, well beyond AGGRO_RANGE*2 — a plain
+        // aiState flip would immediately leash back to "patrol" on the next
+        // AI tick. alert() sets an alertedUntil window that the leash check
+        // respects, so an engaged wave actually closes the distance.
+        m.alert(20_000);
+      }
+    };
+    switch (choice) {
+      case "hide":
+        this.ctx.say("The party keeps to the shadows and slips past unnoticed.", "#9da7ec");
+        return;
+      case "retreat":
+        this.ctx.say("The party backs away without engaging.", "#9da7ec");
+        return;
+      case "ambush": {
+        engage();
+        for (const member of this.party.members) {
+          member.character.removeEffect("encounter-ambush");
+          member.character.addEffect({
+            id: "encounter-ambush",
+            name: "Ambush (advantage on attacks)",
+            hooks: [{ kind: "advantageOn", applies: "attack" }],
+            duration: { unit: "rounds", remaining: 1 },
+          });
+        }
+        this.ctx.say(`${leader.character.name}'s party strikes first!`, "#e0a34b");
+        return;
+      }
+      case "threaten": {
+        const dc = reaction === "friendly" ? DC.HARD : reaction === "curious" ? DC.NORMAL : DC.EASY;
+        const check = this.ctx.engine.check({ actor: leader.character, stat: "CHA", dc, kind: "stat" });
+        if (check.success) {
+          for (const m of live) m.flee();
+          this.ctx.say(`${leader.character.name}'s threats send them fleeing! (rolled ${check.total})`, "#60e080");
+        } else {
+          engage();
+          this.ctx.say(`The threat falls flat — they attack! (rolled ${check.total} vs DC ${check.dc})`, "#d07070");
+        }
+        return;
+      }
+      case "parley": {
+        const dc = reaction === "friendly" ? DC.EASY : reaction === "curious" ? DC.NORMAL : DC.HARD;
+        const check = this.ctx.engine.check({ actor: leader.character, stat: "CHA", dc, kind: "stat" });
+        if (check.success) {
+          this.ctx.say(`Words are exchanged, and the party goes on its way. (rolled ${check.total})`, "#60e080");
+        } else {
+          engage();
+          this.ctx.say(`The talk sours — they attack! (rolled ${check.total} vs DC ${check.dc})`, "#d07070");
+        }
+        return;
+      }
+      case "offer": {
+        const hasRation = leader.character.inventory.has("ration");
+        if (hasRation) {
+          leader.character.inventory.remove("ration", 1);
+          this.ctx.say(`${leader.character.name} tosses over some food — they take it and go.`, "#60e080");
+        } else {
+          this.ctx.spendGold(10);
+          this.ctx.say(`${leader.character.name} tosses over a handful of coin — they take it and go.`, "#60e080");
+        }
+        for (const m of live) m.flee();
+        return;
+      }
     }
   }
 
@@ -1516,6 +1670,12 @@ export class DungeonScene extends Phaser.Scene {
       return;
     }
 
+    // Likewise the action chooser, when more than one "E" interaction is valid.
+    if (this.modes.is("actionChoice")) {
+      this.updateActionChoiceInput();
+      return;
+    }
+
     if (this.modes.acceptsOverlayToggle) {
       if (this.actions.pressed("stats")) this.modes.toggle("stats");
       if (this.actions.pressed("gear")) this.modes.toggle("gear");
@@ -1852,10 +2012,11 @@ export class DungeonScene extends Phaser.Scene {
 
   private updateInteractPrompt(): void {
     const leader = this.party.leader;
-    const interaction = leader.alive ? this.findInteraction(leader) : null;
-    if (interaction) {
+    const interactions = leader.alive ? this.findInteractions(leader) : [];
+    if (interactions.length > 0) {
+      const label = interactions.length === 1 ? interactions[0]!.label : `choose (${interactions.length} actions)`;
       this.interactPrompt
-        .setText(`E — ${interaction.label}`)
+        .setText(`E — ${label}`)
         .setPosition(leader.x, leader.y - 42)
         .setVisible(true);
     } else {
@@ -2184,22 +2345,50 @@ export class DungeonScene extends Phaser.Scene {
   }
 
   private interact(leader: CharacterSprite): void {
-    const interaction = this.findInteraction(leader);
-    if (interaction) interaction.run();
-    else this.ctx.say("Nothing to do here.");
+    const interactions = this.findInteractions(leader);
+    if (interactions.length === 0) {
+      this.ctx.say("Nothing to do here.");
+      return;
+    }
+    if (interactions.length === 1) {
+      interactions[0]!.run();
+      return;
+    }
+    this.openActionChoice(interactions);
   }
 
-  /** Priority-ordered E action for the leader's position — also feeds the prompt. */
-  private findInteraction(leader: CharacterSprite): Interaction | null {
+  /** Shared entry point for both the "E" interaction chooser and the encounter reaction popup. */
+  private openActionChoice(
+    options: Interaction[],
+    opts: { title?: string; subtitle?: string; cancelable?: boolean } = {},
+  ): void {
+    this.actionChoiceOptions = options;
+    this.actionChoiceCursor = 0;
+    this.actionChoiceTitle = opts.title;
+    this.actionChoiceSubtitle = opts.subtitle;
+    this.actionChoiceCancelable = opts.cancelable ?? true;
+    this.modes.set("actionChoice");
+  }
+
+  /**
+   * Every contextual "E" action valid for the leader's position right now —
+   * in priority order, which `interact` and the prompt both lean on when
+   * there's exactly one. When there's more than one (e.g. a safe-zone room
+   * that holds a shop, a shrine, and a campfire all at once), the caller
+   * opens a chooser instead of the first candidate silently winning.
+   */
+  private findInteractions(leader: CharacterSprite): Interaction[] {
+    const candidates: Interaction[] = [];
+
     // 1. Stabilize a dying ally
     const dying = this.party.members.find(
       (m) => m !== leader && m.character.dying && zoneBetween(leader, m) === "close",
     );
     if (dying) {
-      return {
+      candidates.push({
         label: `stabilize ${dying.character.name}`,
         run: () => this.tryStabilize(leader, dying),
-      };
+      });
     }
 
     // 2. Talkable social encounters are distinct from immediate rescues.
@@ -2208,10 +2397,10 @@ export class DungeonScene extends Phaser.Scene {
     );
     if (talkable) {
       const state = this.npcInteractionStates.get(talkable.spec.id) ?? "unmet";
-      return {
+      candidates.push({
         label: `${state === "unmet" ? "speak with" : state === "heard" ? "continue with" : "recall words from"} ${talkable.spec.name}`,
         run: () => this.advanceNpcInteraction(talkable, leader),
-      };
+      });
     }
 
     // 3. Claim the single campaign reward in the fifth room.
@@ -2221,22 +2410,22 @@ export class DungeonScene extends Phaser.Scene {
       !this.rewardClaimed &&
       Phaser.Math.Distance.Between(leader.x, leader.y, reward.x, reward.y) < TILE * 1.8
     ) {
-      return {
+      candidates.push({
         label: `claim ${this.currentReward.title}`,
         run: () => this.claimDungeonReward(),
-      };
+      });
     }
 
     // Safe-zone shop: available anywhere inside the shelter room.
     if (this.safeZoneId && this.currentRoomId === this.safeZoneId) {
-      return {
+      candidates.push({
         label: `shop${this.safeZoneName ? ` (${this.safeZoneName})` : ""}`,
         run: () => this.openShop(),
-      };
+      });
     }
 
     const trapInteraction = this.trapSystem.findInteraction(leader);
-    if (trapInteraction) return trapInteraction;
+    if (trapInteraction) candidates.push(trapInteraction);
 
     const gate = this.portcullises.getChildren().find((candidate) => {
       const image = candidate as Phaser.Physics.Arcade.Image;
@@ -2246,33 +2435,54 @@ export class DungeonScene extends Phaser.Scene {
       const connector = this.connectorGates.get(gate);
       const requirement = connector?.requirement;
       if (requirement && !this.activatedRequirements.has(requirement.id)) {
-        return {
+        candidates.push({
           label: requirement.kind === "key" ? "requires its key" : "requires its switch",
           run: () => this.ctx.say(
             requirement.kind === "key" ? "The portcullis needs its key." : "The portcullis needs its switch.",
             "#e0c060",
           ),
-        };
+        });
+        // Mundane gear as a puzzle-skip: iron spikes force the mechanism
+        // without the key/switch, at the cost of the item.
+        if (leader.character.inventory.has("iron-spikes")) {
+          const conn = connector!;
+          candidates.push({
+            label: "force it open with iron spikes (-1)",
+            run: () => {
+              leader.character.inventory.remove("iron-spikes", 1);
+              this.openedConnectors.add(conn.id);
+              gate.destroy();
+              sfx.doorThump();
+              this.ctx.say(
+                `${leader.character.name} wedges iron spikes into the mechanism and forces it open.`,
+                "#d0c080",
+              );
+              this.emitNoiseAt(leader.x, leader.y);
+              this.saveToSlot(0);
+            },
+          });
+        }
+      } else {
+        candidates.push({
+          label: connector?.state === "secret" ? "reveal the secret door" : "raise the portcullis",
+          run: () => {
+            if (connector) {
+              const result = openConnector(connector, this.activatedRequirements, this.openedConnectors);
+              if (result === "requires-key" || result === "requires-switch") return;
+            }
+            gate.destroy();
+            sfx.doorThump();
+            this.ctx.say(
+              connector?.state === "secret"
+                ? `${leader.character.name} finds a concealed release.`
+                : `${leader.character.name} heaves the portcullis open.`,
+              "#d0c080",
+            );
+            this.emitNoiseAt(leader.x, leader.y);
+            this.saveToSlot(0);
+          },
+        });
       }
-      return {
-        label: connector?.state === "secret" ? "reveal the secret door" : "raise the portcullis",
-        run: () => {
-          if (connector) {
-            const result = openConnector(connector, this.activatedRequirements, this.openedConnectors);
-            if (result === "requires-key" || result === "requires-switch") return;
-          }
-          gate.destroy();
-          sfx.doorThump();
-          this.ctx.say(
-            connector?.state === "secret"
-              ? `${leader.character.name} finds a concealed release.`
-              : `${leader.character.name} heaves the portcullis open.`,
-            "#d0c080",
-          );
-          this.emitNoiseAt(leader.x, leader.y);
-          this.saveToSlot(0);
-        },
-      };
     }
 
     // 3. Disarm spikes (thief)
@@ -2281,7 +2491,7 @@ export class DungeonScene extends Phaser.Scene {
         (s) => s.active && Phaser.Math.Distance.Between(leader.x, leader.y, s.x, s.y) < TILE * 2,
       );
       if (nearSpikes.length > 0) {
-        return {
+        candidates.push({
           label: "disarm the spikes",
           run: () => {
             const result = this.ctx.engine.check({
@@ -2298,7 +2508,7 @@ export class DungeonScene extends Phaser.Scene {
               this.ctx.say(`Disarm failed (rolled ${result.total} vs DC ${DC.NORMAL}).`, "#d07070");
             }
           },
-        };
+        });
       }
     }
 
@@ -2307,7 +2517,7 @@ export class DungeonScene extends Phaser.Scene {
       (s) => Phaser.Math.Distance.Between(leader.x, leader.y, s.x, s.y) < TILE * 2,
     );
     if (shrine && leader.character.knownSpells.some((s) => s.requiresAtonement)) {
-      return {
+      candidates.push({
         label: "atone at the shrine",
         run: () => {
           this.ctx.engine.atone(leader.character);
@@ -2316,7 +2526,7 @@ export class DungeonScene extends Phaser.Scene {
             "#f0e090",
           );
         },
-      };
+      });
     }
 
     // 5. Rest at campfire
@@ -2324,15 +2534,15 @@ export class DungeonScene extends Phaser.Scene {
       (f) => Phaser.Math.Distance.Between(leader.x, leader.y, f.x, f.y) < TILE * 2.5,
     );
     if (fire) {
-      return {
+      candidates.push({
         label: fire.free ? "rest (safe haven)" : "rest (1 ration each)",
         run: () => this.restParty(fire.free),
-      };
+      });
     }
 
     // 6. Exit door
     if (Phaser.Math.Distance.Between(leader.x, leader.y, this.door.x, this.door.y) < TILE * 1.6) {
-      return {
+      candidates.push({
         label: this.rewardClaimed ? `leave with ${this.currentReward.title}` : "claim the vault reward first",
         run: () => {
           if (!this.rewardClaimed) {
@@ -2356,10 +2566,45 @@ export class DungeonScene extends Phaser.Scene {
           this.modes.set("victory");
           this.ctx.events.emit("won");
         },
-      };
+      });
     }
 
-    return null;
+    return candidates;
+  }
+
+  private refreshActionChoiceOverlay(): void {
+    const hud = this.scene.get("Hud") as HudScene;
+    hud.hideActionChoiceOverlay();
+    hud.showActionChoiceOverlay(this.actionChoiceOptions.map((o) => o.label), this.actionChoiceCursor, {
+      title: this.actionChoiceTitle,
+      subtitle: this.actionChoiceSubtitle,
+      cancelable: this.actionChoiceCancelable,
+    });
+  }
+
+  private updateActionChoiceInput(): void {
+    if (this.actionChoiceCancelable && this.actions.pressed("gear")) {
+      this.actionChoiceOptions = [];
+      this.modes.set("playing");
+      return;
+    }
+    const length = this.actionChoiceOptions.length;
+    if (length > 0 && this.actions.pressed("menuUp")) {
+      this.actionChoiceCursor = Phaser.Math.Wrap(this.actionChoiceCursor - 1, 0, length);
+      this.refreshActionChoiceOverlay();
+      return;
+    }
+    if (length > 0 && this.actions.pressed("menuDown")) {
+      this.actionChoiceCursor = Phaser.Math.Wrap(this.actionChoiceCursor + 1, 0, length);
+      this.refreshActionChoiceOverlay();
+      return;
+    }
+    if (this.actions.pressed("interact")) {
+      const chosen = this.actionChoiceOptions[this.actionChoiceCursor];
+      this.actionChoiceOptions = [];
+      this.modes.set("playing");
+      if (chosen) chosen.run();
+    }
   }
 
   private advanceNpcInteraction(npc: TalkableNpc, leader: CharacterSprite): void {

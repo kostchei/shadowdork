@@ -1,7 +1,7 @@
 /** A monster: Arcade sprite carrying its stat block, rolled HP, and simple AI state. */
 
 import Phaser from "phaser";
-import type { Dice, MonsterDef } from "../../engine";
+import type { Dice, MonsterActivity, MonsterDef, MonsterReaction } from "../../engine";
 import type { CharacterSprite } from "./CharacterSprite";
 import type { LightSystem } from "../systems/light";
 import { projectShadow } from "../systems/shadows";
@@ -42,6 +42,9 @@ export class MonsterSprite extends Phaser.Physics.Arcade.Sprite {
   hp: number;
   aiState: MonsterAiState = "patrol";
   targetPlayer: CharacterSprite | null = null;
+  /** Set only on wandering-encounter waves; authored room monsters leave these null. */
+  activity: MonsterActivity | null = null;
+  reaction: MonsterReaction | null = null;
   private asleepUntil = 0;
   private alertedUntil = 0;
   attackCooldown = 0;

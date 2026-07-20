@@ -30,7 +30,9 @@ export type EffectHook =
   | { kind: "damageBonus"; bonus: number }
   /** Weapon Mastery scaling: +floor(level / 2) damage. */
   | { kind: "damageBonusHalfLevel" }
-  | { kind: "maxHpBonus"; bonus: number };
+  | { kind: "maxHpBonus"; bonus: number }
+  /** Ancestry/talent immunity to a named status condition (see ./conditions). */
+  | { kind: "conditionImmunity"; condition: string };
 
 export type DurationUnit = "rounds" | "crawlingRounds" | "realMs" | "untilRest" | "focus";
 

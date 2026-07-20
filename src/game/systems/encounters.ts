@@ -2,21 +2,41 @@
  * Random encounters on the crawling clock — the Shadowdark pillar that makes
  * time itself dangerous. Each crawling round the danger cadence may trigger a
  * 1-in-6 check; in TOTAL darkness (no party member in light) the check runs
- * every crawling round regardless. Encounters spawn a themed wave just off
- * camera, already hunting.
+ * every crawling round regardless. A wave gets a starting distance, an
+ * activity, and a reaction (assuming the party isn't surprised — that's a
+ * separate, later system) instead of spawning already hunting; the game
+ * layer turns those into a contextual reaction popup once the sprites exist.
  */
 
 import Phaser from "phaser";
 import type { GameContext } from "../context";
 import type { DungeonDefinition } from "../level/dungeons";
+import {
+  rollActivity,
+  rollDistance,
+  rollReaction,
+  type EncounterDistance,
+  type MonsterActivity,
+  type MonsterReaction,
+} from "../../engine";
+
+/** How far off-camera each rolled distance band spawns the wave. */
+const DISTANCE_OFFSET_PX: Record<EncounterDistance, number> = { close: 24, near: 120, far: 260 };
 
 export interface EncounterDeps {
   ctx: GameContext;
   dungeon: DungeonDefinition;
   camera: () => Phaser.Cameras.Scene2D.Camera;
   partyInTotalDarkness: () => boolean;
-  /** Spawn `count` encounter monsters near screen edge x. */
-  spawnWave: (monsterId: string, count: number, x: number) => void;
+  /** Spawn `count` encounter monsters near screen edge x, with their rolled activity/reaction/distance. */
+  spawnWave: (
+    monsterId: string,
+    count: number,
+    x: number,
+    activity: MonsterActivity,
+    reaction: MonsterReaction,
+    distance: EncounterDistance,
+  ) => void;
 }
 
 export class EncounterSystem {
@@ -41,14 +61,16 @@ export class EncounterSystem {
 
     const cam = this.deps.camera();
     const fromLeft = ctx.engine.dice.die(2) === 1;
-    const spawnX = fromLeft ? cam.worldView.left - 24 : cam.worldView.right + 24;
+    const distance = rollDistance(ctx.engine.dice);
+    const offsetPx = DISTANCE_OFFSET_PX[distance];
+    const spawnX = fromLeft ? cam.worldView.left - offsetPx : cam.worldView.right + offsetPx;
     const count = ctx.engine.dice.roll("1d3");
+    const activity = rollActivity(ctx.engine.dice);
+    const reaction = rollReaction(ctx.engine.dice);
     ctx.say(
-      dark
-        ? "The darkness delivers something hungry..."
-        : "Something has heard you. It is coming.",
+      dark ? "Something moves in the pitch black..." : "You sense something nearby...",
       "#c07be0",
     );
-    this.deps.spawnWave(dungeon.encounterMonsterId, count, spawnX);
+    this.deps.spawnWave(dungeon.encounterMonsterId, count, spawnX, activity, reaction, distance);
   }
 }

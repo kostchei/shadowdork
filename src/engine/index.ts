@@ -9,6 +9,7 @@ import { DC, resolveCheck, type CheckInput, type CheckResult } from "./check";
 import { Dice } from "./dice";
 import { EventLog } from "./events";
 import type { ItemDef } from "./inventory";
+import { restoreOnRest } from "./itemActions";
 import {
   castSpell,
   completePenance,
@@ -22,10 +23,13 @@ import { DEFAULT_CONFIG, GameClock, type EngineConfig } from "./time";
 export * from "./advancement";
 export * from "./character";
 export * from "./check";
+export * from "./conditions";
 export * from "./dice";
 export * from "./effects";
+export * from "./encounterReaction";
 export * from "./events";
 export * from "./inventory";
+export * from "./itemActions";
 export * from "./monster";
 export * from "./spells";
 export * from "./tables";
@@ -122,6 +126,8 @@ export class Engine {
         if (c.dying.roundsRemaining <= 0) {
           c.dead = true;
           c.dying = null;
+          // A corpse carries no status — every timed effect (conditions, buffs) ends here.
+          c.effects = c.effects.filter((e) => !e.duration);
           this.log.append(this.clock.elapsedMs, "character.died", { who: c.id });
         }
       }
@@ -275,6 +281,7 @@ export class Engine {
     character.heal(character.maxHp);
     recoverSpells(character);
     character.effects = character.effects.filter((e) => e.duration?.unit !== "untilRest");
+    restoreOnRest(character);
     this.log.append(this.clock.elapsedMs, "rest", { who: character.id });
   }
 
@@ -287,6 +294,7 @@ export class Engine {
     character.heal(character.maxHp);
     recoverSpells(character);
     character.effects = character.effects.filter((e) => e.duration?.unit !== "untilRest");
+    restoreOnRest(character);
     this.log.append(this.clock.elapsedMs, "rest.free", { who: character.id });
   }
 }

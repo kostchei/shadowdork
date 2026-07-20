@@ -5,7 +5,9 @@ import { spell } from "../../data";
 import { RENDER_SCALE, GAME_H, GAME_W } from "../display";
 import {
   MAX_LEVEL,
+  activeConditions,
   alignmentLabel,
+  conditionAbbr,
   partyCoinSlots,
   xpToNextLevel,
   type Character,
@@ -70,6 +72,7 @@ export class HudScene extends Phaser.Scene {
   private statsOverlay: Phaser.GameObjects.Container | null = null;
   private gearOverlay: Phaser.GameObjects.Container | null = null;
   private shopOverlay: Phaser.GameObjects.Container | null = null;
+  private actionChoiceOverlay: Phaser.GameObjects.Container | null = null;
   private lastPartySize = -1;
 
   constructor() {
@@ -87,6 +90,7 @@ export class HudScene extends Phaser.Scene {
     this.statsOverlay = null;
     this.gearOverlay = null;
     this.shopOverlay = null;
+    this.actionChoiceOverlay = null;
     this.lastPartySize = -1;
     this.partyNames = [];
     this.partyStats = [];
@@ -1013,6 +1017,87 @@ export class HudScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * More than one contextual "E" interaction is valid at once — a short list
+   * to pick from instead of the priority cascade silently picking one. Same
+   * cursor+confirm pattern as the shop/gear overlays: ▲/▼ move the highlight,
+   * [ CHOOSE ] confirms, [ CANCEL ] backs out without acting.
+   */
+  showActionChoiceOverlay(
+    labels: readonly string[],
+    cursor: number,
+    opts: { title?: string; subtitle?: string; cancelable?: boolean } = {},
+  ): void {
+    if (this.actionChoiceOverlay) return;
+    const { title: titleText = "CHOOSE AN ACTION", subtitle, cancelable = true } = opts;
+    const w = GAME_W;
+    const h = GAME_H;
+    const accent = this.dungeon.presentationPalette.accent;
+
+    const bg = this.add.rectangle(w / 2, h / 2, w, h, 0x020205, 0.7).setInteractive();
+    const rowH = 22;
+    const subtitleH = subtitle ? 18 : 0;
+    const boxH = Math.max(140, 96 + subtitleH + labels.length * rowH);
+    const box = this.add.graphics();
+    box.fillStyle(0x05060a, 0.94);
+    box.fillRoundedRect(w / 2 - 200, h / 2 - boxH / 2, 400, boxH, 8);
+    box.lineStyle(2, accent, 0.9);
+    box.strokeRoundedRect(w / 2 - 200, h / 2 - boxH / 2, 400, boxH, 8);
+
+    const title = this.add.text(w / 2, h / 2 - boxH / 2 + 26, titleText, {
+      fontFamily: "Georgia, serif",
+      fontSize: "18px",
+      color: "#ffd45f",
+      stroke: "#000000",
+      strokeThickness: 3,
+      resolution: RENDER_SCALE,
+    }).setOrigin(0.5);
+
+    const subtitleText = subtitle
+      ? this.add.text(w / 2, h / 2 - boxH / 2 + 44, subtitle, {
+          ...DATA_STYLE,
+          fontSize: "11px",
+          color: "#9fa5b1",
+        }).setOrigin(0.5)
+      : null;
+
+    const listTop = h / 2 - boxH / 2 + 56 + subtitleH;
+    const rows = labels.map((label, i) =>
+      this.add.text(w / 2 - 176, listTop + i * rowH, `${i === cursor ? ">" : " "} ${label}`, {
+        ...DATA_STYLE,
+        fontSize: "12px",
+        color: i === cursor ? "#ffd45f" : "#c9cbd1",
+      }),
+    );
+
+    const controls = [
+      this.actionButton(w / 2 - 78, h / 2 + boxH / 2 - 30, "▲", "menuUp", "15px"),
+      this.actionButton(w / 2 - 40, h / 2 + boxH / 2 - 30, "▼", "menuDown", "15px"),
+      this.actionButton(w / 2 + (cancelable ? 40 : 90), h / 2 + boxH / 2 - 30, "[ CHOOSE ]", "interact", "12px"),
+      ...(cancelable ? [this.actionButton(w / 2 + 140, h / 2 + boxH / 2 - 30, "[ CANCEL ]", "gear", "12px")] : []),
+    ];
+
+    const footer = this.add.text(
+      w / 2,
+      h / 2 + boxH / 2 - 6,
+      currentInputFamily() === "keyboard"
+        ? `Up/Down select  |  E choose${cancelable ? "  |  I cancel" : ""}`
+        : "",
+      { ...UI_STYLE, fontSize: "11px", color: "#808490" },
+    ).setOrigin(0.5);
+
+    this.actionChoiceOverlay = this.add.container(0, 0, [
+      bg, box as any, title, ...(subtitleText ? [subtitleText] : []), ...rows, ...controls, footer,
+    ]).setDepth(2000);
+  }
+
+  hideActionChoiceOverlay(): void {
+    if (this.actionChoiceOverlay) {
+      this.actionChoiceOverlay.destroy();
+      this.actionChoiceOverlay = null;
+    }
+  }
+
   private showOverlay(title: string, color: string): void {
     if (this.overlay) return;
     const w = GAME_W;
@@ -1222,7 +1307,11 @@ export class HudScene extends Phaser.Scene {
         .setVisible(true)
         .setText(`AC${c.ac}  XP${xp}  G${c.inventory.slotsUsed()}/${c.inventory.capacity}${torch}`)
         .setColor(c.dead ? "#70727a" : "#d9dbe1");
-      hpText.setVisible(true).setText(c.dead ? "DEAD" : c.dying ? `DOWN ${c.dying.roundsRemaining}` : `${c.hp}/${c.maxHp}`);
+      const conditions = c.dead ? [] : activeConditions(c);
+      const conditionTag = conditions.length > 0 ? ` ${conditions.map(conditionAbbr).join(",")}` : "";
+      hpText
+        .setVisible(true)
+        .setText(c.dead ? "DEAD" : c.dying ? `DOWN ${c.dying.roundsRemaining}` : `${c.hp}/${c.maxHp}${conditionTag}`);
 
       this.hpBars.fillStyle(0x1f2128, 1).fillRoundedRect(203, y + 3, 74, 12, 3);
       this.hpBars.fillStyle(hpColor, 1).fillRoundedRect(205, y + 5, 70 * ratio, 8, 2);

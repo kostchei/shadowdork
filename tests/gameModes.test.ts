@@ -31,6 +31,7 @@ describe("mode classification", () => {
       "stats",
       "gear",
       "shop",
+      "actionChoice",
       "orientation-blocked",
       "backgrounded",
     ] as GameMode[]) {
@@ -46,6 +47,7 @@ describe("mode classification", () => {
 
   it("treats only the dismissable panels as overlays", () => {
     expect(isOverlayMode("gear")).toBe(true);
+    expect(isOverlayMode("actionChoice")).toBe(true);
     expect(isOverlayMode("playing")).toBe(false);
     expect(isOverlayMode("briefing")).toBe(false);
     expect(isOverlayMode("victory")).toBe(false);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Engine, voiceRegisterForIdentity } from "../src/engine";
+import { applyCondition, Engine, hasCondition, voiceRegisterForIdentity } from "../src/engine";
 import { createCharacter, item, registerTables } from "../src/data";
 import { serializeCharacter, deserializeCharacter } from "../src/game/state";
 
@@ -101,5 +101,48 @@ describe("Save slots / serialization", () => {
     const restored = deserializeCharacter(serialized, engine);
     expect(restored.dead).toBe(true);
     expect(restored.hp).toBe(0);
+  });
+
+  it("round-trips item charges/inertness and active conditions", () => {
+    const engine = makeEngine();
+    const wiz = createCharacter(engine, "w", "Vess", "wizard");
+    wiz.itemState.setCharges("wand-fireball", 2);
+    wiz.itemState.markInert("wand-fireball");
+    applyCondition(wiz, "blinded", { unit: "rounds", remaining: 4 });
+
+    const saved = serializeCharacter(wiz);
+    const restored = deserializeCharacter(saved, makeEngine());
+
+    expect(restored.itemState.get("wand-fireball")).toEqual({
+      chargesRemaining: 2,
+      inert: true,
+      broken: false,
+    });
+    expect(hasCondition(restored, "blinded")).toBe(true);
+  });
+
+  it("keeps iron spikes across a save/load, but still strips rope and grappling hook", () => {
+    const engine = makeEngine();
+    const t = createCharacter(engine, "t", "Rook", "thief");
+    t.inventory.add(item("iron-spikes"), 3, true);
+    t.inventory.add(item("rope"), 1, true);
+    t.inventory.add(item("grappling-hook"), 1, true);
+
+    const saved = serializeCharacter(t);
+    const restored = deserializeCharacter(saved, makeEngine());
+
+    expect(restored.inventory.count("iron-spikes")).toBe(3);
+    expect(restored.inventory.has("rope")).toBe(false);
+    expect(restored.inventory.has("grappling-hook")).toBe(false);
+  });
+
+  it("loads legacy saves with no itemState field as empty, not a crash", () => {
+    const engine = makeEngine();
+    const character = createCharacter(engine, "legacy2", "Old Save", "fighter");
+    const saved = serializeCharacter(character);
+    delete saved.itemState;
+
+    const restored = deserializeCharacter(saved, makeEngine());
+    expect(restored.itemState.entries()).toEqual([]);
   });
 });

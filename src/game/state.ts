@@ -4,6 +4,7 @@ import type {
   DyingState,
   Effect,
   Engine,
+  ItemInstanceState,
   KnownSpell,
   Stats,
   VoiceRegister,
@@ -34,6 +35,8 @@ export interface SavedCharacter {
   knownSpells: KnownSpell[];
   effects: Effect[];
   inventory: SavedInventoryItem[];
+  /** Per-item-id charges/inertness/breakage. Absent on saves from before usable items. */
+  itemState?: [string, ItemInstanceState][];
   wornArmorId: string | null;
   wieldedWeaponId: string | null;
   carriedShieldId: string | null;
@@ -113,6 +116,7 @@ export function serializeCharacter(c: Character): SavedCharacter {
     maxHp: c.maxHp, // Character.maxHp includes effects, but constructor sets baseMaxHp
     knownSpells: c.knownSpells.map((s) => ({ ...s })),
     effects: c.effects.map((e) => ({ ...e })),
+    itemState: c.itemState.entries().map(([id, s]) => [id, { ...s }]),
     inventory,
     wornArmorId: c.wornArmor?.id ?? null,
     wieldedWeaponId: c.wieldedWeapon?.id ?? null,
@@ -146,12 +150,14 @@ export function deserializeCharacter(state: SavedCharacter, engine: Engine): Cha
   c.dying = state.dying ? { ...state.dying } : null;
   c.knownSpells = state.knownSpells.map((s) => ({ ...s }));
   c.effects = state.effects.map((e) => ({ ...e }));
+  c.itemState.load((state.itemState ?? []).map(([id, s]) => [id, { ...s }]));
   c.shieldStowed = state.shieldStowed;
 
-  // Restore inventory (stripping legacy unused items and coins which live in shared party purse)
+  // Restore inventory (stripping legacy unused items and coins which live in shared party purse).
+  // Iron spikes are excluded from the strip — they're wired to force open a
+  // locked/switched gate, so they're worth persisting across a save/load.
   for (const itemState of state.inventory) {
     if (
-      itemState.itemId === "iron-spikes" ||
       itemState.itemId === "grappling-hook" ||
       itemState.itemId === "rope" ||
       itemState.itemId === "coins"

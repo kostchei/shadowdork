@@ -2,7 +2,7 @@
 
 import { critThreshold, hasHook, sumHook, sumStatBonus, type Effect } from "./effects";
 import type { Dice } from "./dice";
-import { Inventory, type ItemDef } from "./inventory";
+import { Inventory, ItemStateTracker, type ItemDef } from "./inventory";
 
 export type StatName = "STR" | "DEX" | "CON" | "INT" | "WIS" | "CHA";
 export const STAT_NAMES: readonly StatName[] = ["STR", "DEX", "CON", "INT", "WIS", "CHA"];
@@ -160,6 +160,8 @@ export class Character {
   effects: Effect[] = [];
   knownSpells: KnownSpell[] = [];
   inventory: Inventory;
+  /** Charges/inertness/breakage for usable items this character carries, wears, or wields. */
+  readonly itemState = new ItemStateTracker();
 
   /** Worn armor (class-gated via equipArmor). Null = unarmored: AC 10 + DEX. */
   wornArmor: ItemDef | null = null;

@@ -1,7 +1,98 @@
-/** Gear-slot inventory. Capacity = max(STR score, 10). Overflow throws — no soft encumbrance. */
+/**
+ * Gear-slot inventory. Capacity = max(STR score, 10). Overflow throws — no
+ * soft encumbrance. Also the typed usable-item model (equip/consume/cast/
+ * activate/place/inspect) and the per-item-id instance state (charges,
+ * inertness, breakage) that model needs — see ./itemActions for the resolver
+ * that reads them.
+ */
 
 export type WeaponVisual = "longsword" | "dagger" | "mace" | "staff" | "spear" | "javelin";
 export type ArmorVisual = "leather" | "chain" | "plate" | "mithral";
+
+/** What can be done with an item. A single item may support several. */
+export type ItemActionKind = "equip" | "consume" | "cast" | "activate" | "place" | "inspect";
+
+/** What a `cast`/`activate`/`place` action needs pointed at it. */
+export type ItemTargetKind = "self" | "ally" | "enemy" | "point" | "object" | "surface" | "none";
+
+/** Target kinds that need the player to actually pick something before the action can run. */
+const TARGETS_REQUIRING_SELECTION: ReadonlySet<ItemTargetKind> = new Set([
+  "ally",
+  "enemy",
+  "point",
+  "object",
+  "surface",
+]);
+
+export function itemTargetNeedsSelection(target: ItemTargetKind): boolean {
+  return TARGETS_REQUIRING_SELECTION.has(target);
+}
+
+export interface ItemUseDef {
+  /** Actions this item supports; the caller picks one that fits the moment. */
+  actions: readonly ItemActionKind[];
+  target: ItemTargetKind;
+  /** Uses before the item is spent. Absent = a plain single-use consumable
+   * (removed from inventory on use) or an uncharged permanent item (a ring,
+   * a cursed weapon). */
+  charges?: number;
+  /** Charges refill to full on rest instead of being spent for the run. */
+  rechargeOnRest?: boolean;
+  /** A normal failed cast/activate makes the item inert until the wielder rests (wands). */
+  inertOnFail?: boolean;
+  /** A critical failure destroys the item permanently (wands). */
+  breaksOnCriticalFail?: boolean;
+}
+
+/** Per-item-id instance state: charges remaining, temporary inertness, permanent breakage. */
+export interface ItemInstanceState {
+  chargesRemaining?: number;
+  inert: boolean;
+  broken: boolean;
+}
+
+const DEFAULT_INSTANCE_STATE: ItemInstanceState = { inert: false, broken: false };
+
+/** Tracks {@link ItemInstanceState} per item id for one character. Keyed by id, not
+ * by stack instance — matching Inventory's own id-stacked model. */
+export class ItemStateTracker {
+  private state = new Map<string, ItemInstanceState>();
+
+  get(itemId: string): ItemInstanceState {
+    return this.state.get(itemId) ?? DEFAULT_INSTANCE_STATE;
+  }
+
+  private put(itemId: string, next: ItemInstanceState): void {
+    this.state.set(itemId, next);
+  }
+
+  setCharges(itemId: string, charges: number): void {
+    this.put(itemId, { ...this.get(itemId), chargesRemaining: charges });
+  }
+
+  markInert(itemId: string): void {
+    this.put(itemId, { ...this.get(itemId), inert: true });
+  }
+
+  markBroken(itemId: string): void {
+    this.put(itemId, { ...this.get(itemId), inert: false, broken: true });
+  }
+
+  /** Rest recovery: clears inertness (never breakage — that's permanent). */
+  clearInert(itemId: string): void {
+    const s = this.get(itemId);
+    if (!s.broken) this.put(itemId, { ...s, inert: false });
+  }
+
+  entries(): readonly (readonly [string, ItemInstanceState])[] {
+    return [...this.state.entries()];
+  }
+
+  /** Replace all tracked state, e.g. on load. */
+  load(entries: readonly (readonly [string, ItemInstanceState])[]): void {
+    this.state = new Map(entries.map(([id, s]) => [id, { ...s }]));
+  }
+}
 
 export interface ItemDef {
   id: string;
@@ -39,6 +130,9 @@ export interface ItemDef {
   armorVisual?: ArmorVisual;
   /** Shields grant +2 AC and occupy a hand while readied. */
   shield?: boolean;
+  /** Absent = a plain carried item with no player-facing "use" (a weapon you
+   * only equip through the existing equip flow, ordinary gear, treasure). */
+  use?: ItemUseDef;
 }
 
 export interface ItemStack {

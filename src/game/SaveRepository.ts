@@ -11,6 +11,50 @@ export interface ExportedSaves {
   slot3: SaveSlot | null;
 }
 
+/**
+ * A migration step transforms a raw (still-`any`) save payload written at
+ * version `N` into the shape expected at version `N + 1`. Keyed by the
+ * version it migrates *from*. Once a step ships, never edit it — it has to
+ * keep working on save files that were actually written against it; add a
+ * new step instead when the schema changes again.
+ *
+ * Nothing has needed one yet (the schema hasn't changed since version 1),
+ * but the pipeline exists now so the next change doesn't have to invent it
+ * under pressure — see `migrateSave` below for what happens without it.
+ */
+type SaveMigration = (data: any) => any;
+
+const SAVE_MIGRATIONS: Readonly<Record<number, SaveMigration>> = {
+  // 1: (data) => ({ ...data, newField: defaultValue }),
+};
+
+/**
+ * Walk a raw save forward from `fromVersion` to `SAVE_SCHEMA_VERSION`,
+ * applying each registered step in order. Throws if a save claims a version
+ * newer than this build knows (the app was rolled back after the save was
+ * written) or older than this build can bridge (a migration step was never
+ * written or was removed) — both are real, user-visible failures, not
+ * something to paper over with a fallback default that would corrupt state.
+ */
+function migrateSave(data: any, fromVersion: number): any {
+  if (fromVersion > SAVE_SCHEMA_VERSION) {
+    throw new Error(
+      `Save was written by a newer version of the game (schema ${fromVersion}, this build supports ${SAVE_SCHEMA_VERSION}).`,
+    );
+  }
+  let migrated = data;
+  let version = fromVersion;
+  while (version < SAVE_SCHEMA_VERSION) {
+    const step = SAVE_MIGRATIONS[version];
+    if (!step) {
+      throw new Error(`No migration registered from save schema version ${version} to ${version + 1}.`);
+    }
+    migrated = step(migrated);
+    version++;
+  }
+  return { ...migrated, schemaVersion: SAVE_SCHEMA_VERSION };
+}
+
 export class SaveRepository {
   private static getKey(slotId: number): string {
     return slotId === 0 ? "shadowdork_autosave" : `shadowdork_slot_${slotId}`;
@@ -73,19 +117,17 @@ export class SaveRepository {
 
     try {
       const parsed = JSON.parse(rawData);
-      
-      // Basic legacy check: if no schemaVersion exists, treat it as version 1
-      if (parsed && typeof parsed === "object") {
-        if (!parsed.schemaVersion) {
-          parsed.schemaVersion = 1;
-        }
+      if (!parsed || typeof parsed !== "object") {
+        throw new Error("Save data structure is corrupt or incomplete.");
       }
+      // Saves written before the schemaVersion field existed are version 1.
+      const migrated = migrateSave(parsed, parsed.schemaVersion ?? 1);
 
-      if (!this.validateSaveSlot(parsed)) {
+      if (!this.validateSaveSlot(migrated)) {
         throw new Error("Save data structure is corrupt or incomplete.");
       }
 
-      return parsed;
+      return migrated;
     } catch (e: any) {
       throw new Error(`Corrupt save file in Slot ${slotId}: ${e.message}`);
     }
@@ -136,20 +178,25 @@ export class SaveRepository {
         return { success: false, count: 0, error: "Invalid backup file structure." };
       }
 
-      if (parsed.schemaVersion !== SAVE_SCHEMA_VERSION) {
-        return { success: false, count: 0, error: `Unsupported backup schema version: ${parsed.schemaVersion}` };
-      }
-
       const slotsToImport: { slotId: number; data: SaveSlot }[] = [];
 
+      // Each slot carries its own schemaVersion (set at export time) and is
+      // migrated independently, the same as a normal load — a backup written
+      // by an older build should import cleanly, not be hard-rejected just
+      // because the schema has since moved on.
       const checkAndQueue = (slotId: number, slotData: any) => {
-        if (slotData) {
-          if (this.validateSaveSlot(slotData)) {
-            slotsToImport.push({ slotId, data: slotData });
-          } else {
-            throw new Error(`Slot ${slotId === 0 ? "Auto-Save" : slotId} is corrupt.`);
-          }
+        if (!slotData) return;
+        const label = slotId === 0 ? "Auto-Save" : slotId;
+        let migrated: any;
+        try {
+          migrated = migrateSave(slotData, slotData.schemaVersion ?? 1);
+        } catch (e: any) {
+          throw new Error(`Slot ${label} is corrupt: ${e.message}`);
         }
+        if (!this.validateSaveSlot(migrated)) {
+          throw new Error(`Slot ${label} is corrupt.`);
+        }
+        slotsToImport.push({ slotId, data: migrated });
       };
 
       checkAndQueue(0, parsed.autosave);

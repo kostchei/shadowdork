@@ -166,17 +166,42 @@ describe("SaveRepository", () => {
     expect(loaded!.coinsBanked).toBe(999);
   });
 
-  it("rejects backup payloads with mismatching schema version", () => {
-    const oldBackup = {
-      schemaVersion: 99, // mismatch
+  it("rejects a backup slot claiming a newer schema than this build supports", () => {
+    // Each slot carries its own schemaVersion (stamped at save time), not the
+    // backup wrapper's — a slot from a future build must fail, not silently
+    // pass through as whatever version the wrapper happens to say.
+    const futureBackup = {
+      schemaVersion: SAVE_SCHEMA_VERSION,
       timestamp: Date.now(),
-      slot1: validSaveSlot,
+      slot1: { ...validSaveSlot, schemaVersion: SAVE_SCHEMA_VERSION + 98 },
     };
 
-    const res = SaveRepository.importAll(JSON.stringify(oldBackup));
+    const res = SaveRepository.importAll(JSON.stringify(futureBackup));
     expect(res.success).toBe(false);
-    expect(res.error).toContain("Unsupported backup schema version");
+    expect(res.error).toContain("newer version");
     expect(SaveRepository.exists(1)).toBe(false);
+  });
+
+  it("imports a backup slot with no schemaVersion field as a legacy version-1 save", () => {
+    const legacyBackup = {
+      schemaVersion: SAVE_SCHEMA_VERSION,
+      timestamp: Date.now(),
+      slot1: validSaveSlot, // no schemaVersion field, same as a pre-migration save
+    };
+
+    const res = SaveRepository.importAll(JSON.stringify(legacyBackup));
+    expect(res.success).toBe(true);
+    expect((SaveRepository.load(1) as any).schemaVersion).toBe(SAVE_SCHEMA_VERSION);
+  });
+
+  it("rejects loading a save claiming a newer schema than this build supports", () => {
+    SaveRepository.save(1, validSaveSlot);
+    const key = "shadowdork_slot_1";
+    const raw = JSON.parse(localStorage.getItem(key)!);
+    raw.schemaVersion = SAVE_SCHEMA_VERSION + 98;
+    localStorage.setItem(key, JSON.stringify(raw));
+
+    expect(() => SaveRepository.load(1)).toThrow(/newer version/);
   });
 
   it("rejects backup payloads with corrupt slot data", () => {

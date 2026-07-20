@@ -24,6 +24,7 @@ import { GameContext } from "../context";
 import { ActionInput } from "../input/ActionInput";
 import { KeyboardSource, polledKeysFrom } from "../input/KeyboardSource";
 import { KEY_BINDINGS, KEYBOARD_ADD_KEYS, START_DISMISS_ACTIONS, type GameAction } from "../input/actions";
+import { ModeController, type GameMode, type ModeHost } from "../modes/GameModeController";
 import { RENDER_SCALE } from "../display";
 import { CharacterSprite } from "../entities/CharacterSprite";
 import { MonsterSprite, MONSTER_ATTACK_COOLDOWN_MS } from "../entities/MonsterSprite";
@@ -209,8 +210,14 @@ export class DungeonScene extends Phaser.Scene {
   /** Per-follower support-AI state, keyed by character id. */
   private followerAi = new Map<string, { nextMoraleAt: number; rescueTargetId: string | null }>();
   private dyingLabels = new Map<string, Phaser.GameObjects.Text>();
-  private gameOver = false;
-  won = false;
+  /** The party is wiped: the run is over and only a restart leaves this. */
+  private get gameOver(): boolean {
+    return this.modes.is("gameover");
+  }
+  /** The vault is cleared: the victory/descent screen owns input. */
+  get won(): boolean {
+    return this.modes.is("victory");
+  }
   /** The current Cursed Scroll destination zone pack. */
   activeZone: ZonePackId = "diablerie";
   /** Total number of vaults (1d6) in the current scroll destination. */
@@ -241,21 +248,26 @@ export class DungeonScene extends Phaser.Scene {
 
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
   private leftControlDown = false;
-  /** Semantic input: named actions with multi-source ownership (keyboard, later touch). */
+  /** Semantic input: named actions with multi-source ownership (keyboard, touch). */
   private readonly actions = new ActionInput<GameAction>();
   private keyboard!: KeyboardSource<GameAction>;
+  /**
+   * Actions the HUD's on-screen controls asked for since the last tick. Pointer
+   * events fire outside the update loop, so a tap is queued here and replayed as
+   * a real press/release pair around the next tick — the same ownership path the
+   * keyboard uses, never a synthesised key event.
+   */
+  private pendingTaps: GameAction[] = [];
 
-  private gamePaused = false;
-  private statsOverlayOpen = false;
-  private gearOverlayOpen = false;
+  /** The single source of truth for which mode owns input and whether time runs. */
+  private modes!: ModeController;
+
   private gearSelectionIndex = 0;
   // Safe-zone shop overlay state (transient — not persisted).
-  private shopOverlayOpen = false;
   private shopMode: "buy" | "sell" = "buy";
   private shopCursor = 0;
   private shopMemberIndex = 0;
   private safeZoneName?: string;
-  private startPaused = true;
   private usedCharacterNames = new Set<string>();
   private startingFighterName = "";
 
@@ -286,7 +298,13 @@ export class DungeonScene extends Phaser.Scene {
     this.ctx = this.registry.get("ctx") as GameContext;
     if (!this.ctx) throw new Error("GameContext missing from registry");
 
-    this.gameOver = false;
+    // A capture-only query flag keeps the normal title flow unchanged while
+    // allowing deterministic, unobscured art-direction screenshots.
+    const autostart = new URLSearchParams(window.location.search).get("autostart") === "1";
+    // A fresh controller per `create` — the scene restart *is* the reset, so the
+    // controller never has to unwind a terminal mode.
+    this.modes = new ModeController(this.modeHost(), autostart ? "playing" : "briefing");
+    this.pendingTaps = [];
     this.terminalGameOverTitle = "THE DARK CLAIMS YOU";
     this.dangerFails = new Map(Object.entries(this.loadedState?.dangerFails ?? {}));
     this.dangerDistancePx = this.loadedState?.dangerDistancePx ?? 0;
@@ -294,18 +312,10 @@ export class DungeonScene extends Phaser.Scene {
     this.dangerLastLeaderPos = undefined;
     for (const marker of this.dangerMarkers.values()) marker.destroy();
     this.dangerMarkers = new Map();
-    this.won = false;
     this.biomeOffer = null;
     this.biomeSelectionIndex = 0;
     this.descending = false;
-    this.gamePaused = false;
-    // A capture-only query flag keeps the normal title flow unchanged while
-    // allowing deterministic, unobscured art-direction screenshots.
-    this.startPaused = new URLSearchParams(window.location.search).get("autostart") !== "1";
-    this.statsOverlayOpen = false;
-    this.gearOverlayOpen = false;
     this.gearSelectionIndex = 0;
-    this.shopOverlayOpen = false;
     this.shopMode = "buy";
     this.shopCursor = 0;
     this.shopMemberIndex = 0;
@@ -516,15 +526,118 @@ export class DungeonScene extends Phaser.Scene {
     );
     this.cameras.main.fadeIn(450, 0, 0, 0);
 
-    if (this.startPaused) {
-      this.physics.world.isPaused = true;
-      this.anims.pauseAll();
-    }
+    // The controller's starting mode has not run a transition, so apply its
+    // world-pause policy once here.
+    this.setWorldPaused(this.modes.worldPaused);
+    this.installBackgroundingGuard();
     this.scene.launch("Hud");
   }
 
   get awaitingStart(): boolean {
-    return this.startPaused;
+    return this.modes.is("briefing");
+  }
+
+  /**
+   * Wire the mode controller to the scene. Every transition runs these, so a
+   * mode never has to remember to freeze time or close another overlay itself.
+   */
+  private modeHost(): ModeHost {
+    return {
+      setWorldPaused: (paused) => this.setWorldPaused(paused),
+      releaseHeldInput: () => this.releaseHeldInput(),
+      enterMode: (mode) => this.showModeOverlay(mode),
+      exitMode: (mode) => this.hideModeOverlay(mode),
+    };
+  }
+
+  /**
+   * Drop everything currently held and suppress the physical keys behind it, so
+   * a key held across a transition neither leaks into the new mode nor re-fires
+   * there as a fresh press on the next poll.
+   */
+  private releaseHeldInput(): void {
+    this.actions.releaseAll();
+    this.keyboard.suppressHeldKeys();
+    this.pendingTaps = [];
+  }
+
+  private setWorldPaused(paused: boolean): void {
+    this.physics.world.isPaused = paused;
+    if (paused) this.anims.pauseAll();
+    else this.anims.resumeAll();
+  }
+
+  private showModeOverlay(mode: GameMode): void {
+    const hud = this.scene.get("Hud") as HudScene;
+    switch (mode) {
+      case "paused":
+        hud.showPauseOverlay();
+        return;
+      case "stats":
+        hud.showStatsOverlay(this.party.leader.character);
+        return;
+      case "gear":
+        this.gearSelectionIndex = 0;
+        this.refreshGearOverlay();
+        return;
+      case "shop":
+        this.refreshShopOverlay();
+        return;
+      default:
+        // briefing / playing / victory / gameover own no overlay of their own:
+        // the briefing card is raised by the HUD on create, and the ending
+        // screens are raised by the "won" / "gameover" context events.
+        return;
+    }
+  }
+
+  private hideModeOverlay(mode: GameMode): void {
+    const hud = this.scene.get("Hud") as HudScene;
+    switch (mode) {
+      case "briefing":
+        hud.hideStartOverlay();
+        return;
+      case "paused":
+        hud.hidePauseOverlay();
+        return;
+      case "stats":
+        hud.hideStatsOverlay();
+        return;
+      case "gear":
+        hud.hideGearOverlay();
+        return;
+      case "shop":
+        hud.hideShopOverlay();
+        return;
+      default:
+        return;
+    }
+  }
+
+  /**
+   * Switching apps (or tabs) must not leave the party walking into a pit with a
+   * key still logically held. Backgrounding drops all held input and, if the
+   * world was live, parks the run on the pause screen.
+   */
+  private installBackgroundingGuard(): void {
+    const onHidden = () => {
+      if (document.visibilityState !== "hidden") return;
+      this.releaseHeldInput();
+      if (this.modes.is("playing")) this.modes.set("paused");
+    };
+    document.addEventListener("visibilitychange", onHidden);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      document.removeEventListener("visibilitychange", onHidden);
+    });
+  }
+
+  /**
+   * Queue a named action from an on-screen control. Replayed as a press before
+   * the next tick and released after it, so held-style reads (`held("restart")`)
+   * and edge reads (`pressed("menuUp")`) both see it exactly once.
+   */
+  tapAction(action: GameAction): void {
+    this.pendingTaps.push(action);
   }
 
   get presentationPalette(): VisualPalette {
@@ -1307,24 +1420,29 @@ export class DungeonScene extends Phaser.Scene {
   }
 
   override update(time: number, delta: number): void {
-    // Refresh named-action state from the keyboard, then guarantee the per-tick
-    // edge reset runs no matter which early return the body takes.
+    // Refresh named-action state from the keyboard and replay any on-screen taps
+    // queued since the last tick, then guarantee the per-tick edge reset and the
+    // tap release run no matter which early return the body takes.
     this.keyboard.poll();
+    const taps = this.pendingTaps;
+    this.pendingTaps = [];
+    for (const action of taps) this.actions.press(action, "touch");
     try {
       this.tick(time, delta);
     } finally {
+      for (const action of taps) this.actions.release(action, "touch");
       this.actions.endFrame();
     }
   }
 
   private tick(time: number, delta: number): void {
-    if (this.startPaused) {
-      if (this.startControlDown()) this.dismissStartPause();
+    if (this.modes.is("briefing")) {
+      if (this.startControlDown()) this.modes.set("playing");
       return;
     }
 
-    if (this.actions.pressed("pause")) {
-      this.togglePause();
+    if (this.actions.pressed("pause") && this.modes.acceptsOverlayToggle) {
+      this.modes.toggle("paused");
       return;
     }
 
@@ -1334,31 +1452,27 @@ export class DungeonScene extends Phaser.Scene {
       this.ctx.say(isMuted() ? "Sound muted. (M to unmute)" : "Sound on.", "#a0a4b0");
     }
 
-    if (this.gamePaused) {
+    if (this.modes.is("paused")) {
       return;
     }
 
     // The shop overlay owns input while open (before the C/I/R toggles).
-    if (this.shopOverlayOpen) {
+    if (this.modes.is("shop")) {
       this.updateShopOverlayInput();
       return;
     }
 
-    if (this.actions.pressed("stats")) {
-      this.toggleStatsOverlay();
-    }
-    if (this.actions.pressed("gear")) {
-      this.toggleGearOverlay();
-    }
-    if (this.actions.pressed("rest") && !this.gearOverlayOpen && !this.statsOverlayOpen) {
-      this.attemptRest();
+    if (this.modes.acceptsOverlayToggle) {
+      if (this.actions.pressed("stats")) this.modes.toggle("stats");
+      if (this.actions.pressed("gear")) this.modes.toggle("gear");
+      if (this.actions.pressed("rest") && this.modes.is("playing")) this.attemptRest();
     }
 
-    if (this.gearOverlayOpen) {
+    if (this.modes.is("gear")) {
       this.updateGearOverlayInput();
       return;
     }
-    if (this.statsOverlayOpen) {
+    if (this.modes.is("stats")) {
       return;
     }
 
@@ -1419,71 +1533,13 @@ export class DungeonScene extends Phaser.Scene {
     this.checkEndConditions();
   }
 
+  /** Toggle the ESC menu. Called by the HUD's save/load buttons. */
   togglePause(): void {
-    this.gamePaused = !this.gamePaused;
-    this.physics.world.isPaused = this.gamePaused;
-    if (this.gamePaused) {
-      this.anims.pauseAll();
-    } else {
-      this.anims.resumeAll();
-    }
-    const hud = this.scene.get("Hud") as HudScene;
-    if (this.gamePaused) {
-      if (this.statsOverlayOpen) this.toggleStatsOverlay();
-      if (this.gearOverlayOpen) this.toggleGearOverlay();
-      hud.showPauseOverlay();
-    } else {
-      hud.hidePauseOverlay();
-    }
+    this.modes.toggle("paused");
   }
 
   private startControlDown(): boolean {
     return this.actions.anyHeld(START_DISMISS_ACTIONS);
-  }
-
-  private dismissStartPause(): void {
-    this.startPaused = false;
-    this.physics.world.isPaused = false;
-    this.anims.resumeAll();
-    const hud = this.scene.get("Hud") as HudScene;
-    hud.hideStartOverlay();
-  }
-
-  private toggleStatsOverlay(): void {
-    this.statsOverlayOpen = !this.statsOverlayOpen;
-    this.physics.world.isPaused = this.statsOverlayOpen;
-    if (this.statsOverlayOpen) {
-      this.anims.pauseAll();
-    } else {
-      this.anims.resumeAll();
-    }
-    const hud = this.scene.get("Hud") as HudScene;
-    if (this.statsOverlayOpen) {
-      if (this.gamePaused) this.togglePause();
-      if (this.gearOverlayOpen) this.toggleGearOverlay();
-      hud.showStatsOverlay(this.party.leader.character);
-    } else {
-      hud.hideStatsOverlay();
-    }
-  }
-
-  private toggleGearOverlay(): void {
-    this.gearOverlayOpen = !this.gearOverlayOpen;
-    this.physics.world.isPaused = this.gearOverlayOpen;
-    if (this.gearOverlayOpen) {
-      this.anims.pauseAll();
-    } else {
-      this.anims.resumeAll();
-    }
-    const hud = this.scene.get("Hud") as HudScene;
-    if (this.gearOverlayOpen) {
-      this.gearSelectionIndex = 0;
-      if (this.gamePaused) this.togglePause();
-      if (this.statsOverlayOpen) this.toggleStatsOverlay();
-      this.refreshGearOverlay();
-    } else {
-      hud.hideGearOverlay();
-    }
   }
 
   private allInventoryItems() {
@@ -1515,7 +1571,7 @@ export class DungeonScene extends Phaser.Scene {
       sfx.pickupChime(true, this.spatial({ x: leader.x, y: leader.y }));
       floatText(this, leader.x, leader.y - 24, "RESTED! Full HP & Spells", "#5be26d");
       this.ctx.say(`${leader.character.name} consumes a ration and rests. Full HP & spells restored!`, "#5be26d");
-      if (this.gearOverlayOpen) this.refreshGearOverlay();
+      if (this.modes.is("gear")) this.refreshGearOverlay();
     } catch (err) {
       this.ctx.say(err instanceof Error ? err.message : String(err), "#d07070");
     }
@@ -1614,19 +1670,16 @@ export class DungeonScene extends Phaser.Scene {
   }
 
   private openShop(): void {
-    if (this.shopOverlayOpen) return;
-    this.shopOverlayOpen = true;
+    if (this.modes.is("shop")) return;
     this.shopMode = "buy";
     this.shopCursor = 0;
     this.shopMemberIndex = 0;
-    if (this.gearOverlayOpen) this.toggleGearOverlay();
-    if (this.statsOverlayOpen) this.toggleStatsOverlay();
-    this.refreshShopOverlay();
+    // The transition closes whichever overlay was open and raises the shop.
+    this.modes.set("shop");
   }
 
   private closeShop(): void {
-    this.shopOverlayOpen = false;
-    (this.scene.get("Hud") as HudScene).hideShopOverlay();
+    this.modes.set("playing");
   }
 
   private sellableStacks(member: CharacterSprite) {
@@ -1792,6 +1845,20 @@ export class DungeonScene extends Phaser.Scene {
   private static readonly PARTY_ACTIONS: readonly GameAction[] = ["party1", "party2", "party3", "party4"];
 
   /** Move the descent-choice cursor with arrows or select a scroll by number. */
+  /**
+   * Move the scroll-destination selection directly, for a tap on a card. A list
+   * pick has no keyboard analogue to route through {@link ActionInput} (the
+   * 1-6 keys only cover four party actions), so the HUD names the index.
+   */
+  selectBiome(index: number): void {
+    const offer = this.biomeOffer;
+    if (!offer) throw new Error("No scroll destination offer to select from");
+    if (index < 0 || index >= offer.zones.length) {
+      throw new Error(`Scroll selection ${index} is out of range (${offer.zones.length} offered)`);
+    }
+    this.biomeSelectionIndex = index;
+  }
+
   private updateBiomeChoiceInput(): void {
     const offer = this.biomeOffer;
     if (!offer) return;
@@ -2219,7 +2286,6 @@ export class DungeonScene extends Phaser.Scene {
             return;
           }
           sfx.doorThump();
-          this.won = true;
           const dungeonIndex = this.registry.get("dungeonIndex") ?? 0;
           const runSeed = this.registry.get("runSeed") ?? 0;
           const nextCompleted = this.vaultsCompletedInScroll + 1;
@@ -2231,6 +2297,9 @@ export class DungeonScene extends Phaser.Scene {
             // Still in progress in this Cursed Scroll
             this.biomeOffer = null;
           }
+          // Enter the terminal mode only once the offer exists — the HUD builds
+          // the victory screen from it when the event lands.
+          this.modes.set("victory");
           this.ctx.events.emit("won");
         },
       };
@@ -3100,7 +3169,7 @@ export class DungeonScene extends Phaser.Scene {
     if (this.party.allDownOrDead()) {
       const anyDying = this.party.members.some((m) => m.character.dying);
       if (!anyDying || this.party.isWiped()) {
-        this.gameOver = true;
+        this.modes.set("gameover");
         this.ctx.events.emit("gameover");
       }
     }

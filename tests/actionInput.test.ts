@@ -231,3 +231,64 @@ describe("KeyboardSource poll → action parity", () => {
     }
   });
 });
+
+describe("cancelling input that is still physically held", () => {
+  let input: ActionInput<GameAction>;
+  let keys: KeyMap;
+  let source: KeyboardSource<GameAction>;
+
+  beforeEach(() => {
+    input = new ActionInput<GameAction>();
+    keys = Object.fromEntries(KEY_NAMES.map((n) => [n, new FakeKey(n)])) as KeyMap;
+    source = new KeyboardSource(input, Object.values(keys), KEY_BINDINGS);
+  });
+
+  /** What a mode transition does: drop ownership, then muzzle the held keys. */
+  const cancel = () => {
+    input.releaseAll();
+    source.suppressHeldKeys();
+  };
+
+  it("does not re-press a key that was held through the cancellation", () => {
+    keys.D.down = true;
+    source.poll();
+    expect(input.held("moveRight")).toBe(true);
+    input.endFrame();
+
+    cancel();
+    source.poll();
+    // D is still physically down, but must not read as a new press — this is the
+    // walk-right-then-open-gear case, where D's other action is "drop".
+    expect(input.held("drop")).toBe(false);
+    expect(input.pressed("drop")).toBe(false);
+    expect(input.held("moveRight")).toBe(false);
+    input.endFrame();
+
+    source.poll();
+    expect(input.pressed("moveRight")).toBe(false);
+  });
+
+  it("lets the key act again once it is physically released and pressed anew", () => {
+    keys.D.down = true;
+    source.poll();
+    input.endFrame();
+    cancel();
+
+    keys.D.down = false;
+    source.poll();
+    input.endFrame();
+
+    keys.D.down = true;
+    source.poll();
+    expect(input.pressed("drop")).toBe(true);
+    expect(input.held("moveRight")).toBe(true);
+  });
+
+  it("only suppresses keys that were actually down", () => {
+    keys.A.down = true;
+    cancel();
+    keys.LEFT.down = true;
+    source.poll();
+    expect(input.pressed("moveLeft")).toBe(true); // LEFT was never suppressed
+  });
+});

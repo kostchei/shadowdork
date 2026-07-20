@@ -23,6 +23,9 @@ export interface PolledKey {
  * one code path.
  */
 export class KeyboardSource<Action extends string> {
+  /** Keys held through a cancellation, ignored until they are physically released. */
+  private readonly suppressed = new Set<string>();
+
   constructor(
     private readonly input: ActionInput<Action>,
     private readonly keys: readonly PolledKey[],
@@ -34,9 +37,32 @@ export class KeyboardSource<Action extends string> {
     for (const key of this.keys) {
       const actions = this.bindings[key.name];
       if (!actions) continue;
-      const down = key.isDown();
+      let down = key.isDown();
+      const suppressed = this.suppressed.has(key.name);
+      if (suppressed) {
+        // Still held from before the cancellation: keep reporting "up" until it
+        // is physically released, then let it act again.
+        if (!down) this.suppressed.delete(key.name);
+        down = false;
+      }
       const source = `kb-${key.name}`;
       for (const action of actions) this.input.set(action, source, down);
+    }
+  }
+
+  /**
+   * Cancel every key that is currently down, so that a mode transition (or the
+   * tab backgrounding) does not simply see them re-pressed on the next poll.
+   *
+   * Without this, releasing held actions on a transition is worse than useless:
+   * a polled key would immediately re-assert ownership, which the semantic layer
+   * reads as a brand-new *press* edge in the mode just entered. Walking right
+   * with D held and opening the gear panel would fire D's `drop` action and
+   * throw the leader's weapon on the floor.
+   */
+  suppressHeldKeys(): void {
+    for (const key of this.keys) {
+      if (key.isDown()) this.suppressed.add(key.name);
     }
   }
 }

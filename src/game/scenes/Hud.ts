@@ -15,6 +15,7 @@ import type { GameContext } from "../context";
 import { roomAtTolerant } from "../level/geometry";
 import { TILE } from "../textures";
 import type { DungeonScene } from "./Dungeon";
+import type { GameAction } from "../input/actions";
 import { SaveRepository } from "../SaveRepository";
 import { speak } from "../audio/voice";
 import { skinsForZone, zonePackInfo } from "../visual/skins";
@@ -199,6 +200,16 @@ export class HudScene extends Phaser.Scene {
 
     this.drawChrome(this.dungeon.party.members.length);
 
+    // Persistent touch access to the overlays that were ESC/C/I-only. Bottom
+    // right, out of the party panel and the log, and above the world.
+    for (const [i, [label, action]] of ([
+      ["GEAR", "gear"],
+      ["STATS", "stats"],
+      ["MENU", "pause"],
+    ] as const).entries()) {
+      this.actionButton(w - 26 - i * 62, h - 14, label, action, "11px").setDepth(1000);
+    }
+
     this.ctx.events.on("gameover", () => this.showOverlay(this.dungeon.gameOverTitle, "#ff6159"));
     this.ctx.events.on("won", () => this.showWinOverlay());
     this.ctx.events.on("levelup", (payload: { name: string; result: LevelUpResult }) =>
@@ -224,6 +235,29 @@ export class HudScene extends Phaser.Scene {
     if (this.dungeon.awaitingStart) this.showStartOverlay(this.dungeon.party.leader.character);
   }
 
+  /**
+   * A tappable control that reports a *named action* to the dungeon. Every
+   * keyboard-only overlay flow gets one of these, so touch never has to reach a
+   * keyboard: the tap enters the same semantic input service a key press does.
+   */
+  private actionButton(
+    x: number,
+    y: number,
+    label: string,
+    action: GameAction,
+    fontSize = "13px",
+  ): Phaser.GameObjects.Text {
+    const idle = "#a0a4b0";
+    const btn = this.add
+      .text(x, y, label, { ...UI_STYLE, fontSize, color: idle, padding: { x: 8, y: 5 } })
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true })
+      .on("pointerover", () => btn.setColor("#ffd45f"))
+      .on("pointerout", () => btn.setColor(idle))
+      .on("pointerdown", () => this.dungeon.tapAction(action));
+    return btn;
+  }
+
   showStartOverlay(c: Character): void {
     if (this.startOverlay) return;
     const w = GAME_W;
@@ -231,7 +265,12 @@ export class HudScene extends Phaser.Scene {
     const accent = this.dungeon.presentationPalette.accent;
     const accentColor = `#${accent.toString(16).padStart(6, "0")}`;
 
-    const bg = this.add.rectangle(w / 2, h / 2, w, h, 0x020205, 0.82);
+    // The whole briefing card is the "begin" control on touch: tapping anywhere
+    // reports moveUp, one of the actions that dismisses the briefing.
+    const bg = this.add
+      .rectangle(w / 2, h / 2, w, h, 0x020205, 0.82)
+      .setInteractive({ useHandCursor: true })
+      .on("pointerdown", () => this.dungeon.tapAction("moveUp"));
     const box = this.add.graphics();
     box.fillStyle(0x05060a, 0.98).fillRoundedRect(74, 34, w - 148, h - 68, 9);
     box.lineStyle(2, accent, 0.95).strokeRoundedRect(74, 34, w - 148, h - 68, 9);
@@ -309,7 +348,7 @@ export class HudScene extends Phaser.Scene {
         { ...DATA_STYLE, fontSize: "11px", lineSpacing: 5 },
       ),
       this.add
-        .text(w / 2, 467, "PRESS A MOVEMENT OR ATTACK KEY TO BEGIN", {
+        .text(w / 2, 467, "TAP THE SCREEN — OR PRESS A MOVEMENT OR ATTACK KEY — TO BEGIN", {
           ...UI_STYLE,
           fontSize: "14px",
           color: "#ffd45f",
@@ -396,7 +435,9 @@ export class HudScene extends Phaser.Scene {
     const accent = this.dungeon.presentationPalette.accent;
     const titleColor = `#${accent.toString(16).padStart(6, "0")}`;
 
-    const bg = this.add.rectangle(w / 2, h / 2, w, h, 0x020205, 0.7);
+    // Interactive so the modal swallows world taps instead of letting them
+    // fall through to the dungeon behind it.
+    const bg = this.add.rectangle(w / 2, h / 2, w, h, 0x020205, 0.7).setInteractive();
     const box = this.add.graphics();
     box.fillStyle(0x05060a, 0.94);
     box.fillRoundedRect(w / 2 - 240, h / 2 - 180, 480, 360, 8);
@@ -412,11 +453,7 @@ export class HudScene extends Phaser.Scene {
       resolution: RENDER_SCALE,
     }).setOrigin(0.5);
 
-    const sub = this.add.text(w / 2, h / 2 - 120, "Press ESC to resume", {
-      ...UI_STYLE,
-      fontSize: "12px",
-      color: "#a0a4b0"
-    }).setOrigin(0.5);
+    const resume = this.actionButton(w / 2, h / 2 - 118, "[ RESUME ]  (ESC)", "pause");
 
     // Save/Load Columns
     const saveHeader = this.add.text(w / 2 - 110, h / 2 - 86, "SAVE GAME", {
@@ -446,7 +483,8 @@ export class HudScene extends Phaser.Scene {
       .on("pointerout", () => btn.setColor("#a0a4b0"))
       .on("pointerdown", () => {
         this.dungeon.saveToSlot(slotId);
-        this.hidePauseOverlay();
+        // The mode transition hides this overlay; doing it here too would
+        // destroy the container out from under the controller.
         this.dungeon.togglePause();
       });
       return btn;
@@ -468,9 +506,9 @@ export class HudScene extends Phaser.Scene {
         .on("pointerover", () => btn.setColor("#ffd45f"))
         .on("pointerout", () => btn.setColor("#a0a4b0"))
         .on("pointerdown", () => {
+          // A successful load stops this scene and restarts the dungeon, which
+          // rebuilds the mode controller; a failed one leaves the menu up.
           this.dungeon.loadFromSlot(slotId);
-          this.hidePauseOverlay();
-          this.dungeon.togglePause();
         });
       }
       return btn;
@@ -595,7 +633,7 @@ export class HudScene extends Phaser.Scene {
     }).setOrigin(0.5);
 
     const containerChildren: any[] = [
-      bg, box as any, title, sub,
+      bg, box as any, title, resume,
       saveHeader, loadHeader,
       save1, save2, save3,
       load1, load2, load3, loadAuto,
@@ -624,7 +662,9 @@ export class HudScene extends Phaser.Scene {
     const accent = this.dungeon.presentationPalette.accent;
     const titleColor = `#${accent.toString(16).padStart(6, "0")}`;
 
-    const bg = this.add.rectangle(w / 2, h / 2, w, h, 0x020205, 0.7);
+    // Interactive so the modal swallows world taps instead of letting them
+    // fall through to the dungeon behind it.
+    const bg = this.add.rectangle(w / 2, h / 2, w, h, 0x020205, 0.7).setInteractive();
     const box = this.add.graphics();
     box.fillStyle(0x05060a, 0.94);
     box.fillRoundedRect(w / 2 - 220, h / 2 - 180, 440, 360, 8);
@@ -697,14 +737,10 @@ export class HudScene extends Phaser.Scene {
       lineSpacing: 3
     });
 
-    const footer = this.add.text(w / 2, h / 2 + 150, "Press C to close", {
-      ...UI_STYLE,
-      fontSize: "11px",
-      color: "#808490"
-    }).setOrigin(0.5);
+    const close = this.actionButton(w / 2, h / 2 + 150, "[ CLOSE ]  (C)", "stats", "12px");
 
     this.statsOverlay = this.add.container(0, 0, [
-      bg, box as any, title, sub, statText1, statText2, secondaryText, featuresTitle, featuresText, footer
+      bg, box as any, title, sub, statText1, statText2, secondaryText, featuresTitle, featuresText, close
     ]).setDepth(2000);
   }
 
@@ -722,7 +758,9 @@ export class HudScene extends Phaser.Scene {
     const accent = this.dungeon.presentationPalette.accent;
     const titleColor = `#${accent.toString(16).padStart(6, "0")}`;
 
-    const bg = this.add.rectangle(w / 2, h / 2, w, h, 0x020205, 0.7);
+    // Interactive so the modal swallows world taps instead of letting them
+    // fall through to the dungeon behind it.
+    const bg = this.add.rectangle(w / 2, h / 2, w, h, 0x020205, 0.7).setInteractive();
     const box = this.add.graphics();
     box.fillStyle(0x05060a, 0.94);
     box.fillRoundedRect(w / 2 - 220, h / 2 - 180, 440, 360, 8);
@@ -797,14 +835,24 @@ export class HudScene extends Phaser.Scene {
       lineSpacing: 6
     });
 
-    const footer = this.add.text(w / 2, h / 2 + 150, "Up/Down select  |  E use/equip  |  D drop  |  R rest  |  I close", {
+    // Touch parity for the whole gear flow: select, use/equip, drop, rest, close.
+    const controls = [
+      this.actionButton(w / 2 - 190, h / 2 + 128, "▲", "menuUp", "15px"),
+      this.actionButton(w / 2 - 150, h / 2 + 128, "▼", "menuDown", "15px"),
+      this.actionButton(w / 2 - 88, h / 2 + 128, "[ USE / EQUIP ]", "interact", "12px"),
+      this.actionButton(w / 2 + 20, h / 2 + 128, "[ DROP ]", "drop", "12px"),
+      this.actionButton(w / 2 + 96, h / 2 + 128, "[ REST ]", "rest", "12px"),
+      this.actionButton(w / 2 + 170, h / 2 + 128, "[ CLOSE ]", "gear", "12px"),
+    ];
+
+    const footer = this.add.text(w / 2, h / 2 + 155, "Up/Down select  |  E use/equip  |  D drop  |  R rest  |  I close", {
       ...UI_STYLE,
       fontSize: "11px",
       color: "#808490"
     }).setOrigin(0.5);
 
     this.gearOverlay = this.add.container(0, 0, [
-      bg, box as any, title, sub, eqTitle, equipmentText, invTitle, invText, footer
+      bg, box as any, title, sub, eqTitle, equipmentText, invTitle, invText, ...controls, footer
     ]).setDepth(2000);
   }
 
@@ -823,7 +871,9 @@ export class HudScene extends Phaser.Scene {
     const titleColor = `#${accent.toString(16).padStart(6, "0")}`;
     const gold = "#e8c840";
 
-    const bg = this.add.rectangle(w / 2, h / 2, w, h, 0x020205, 0.7);
+    // Interactive so the modal swallows world taps instead of letting them
+    // fall through to the dungeon behind it.
+    const bg = this.add.rectangle(w / 2, h / 2, w, h, 0x020205, 0.7).setInteractive();
     const box = this.add.graphics();
     box.fillStyle(0x05060a, 0.94);
     box.fillRoundedRect(w / 2 - 240, h / 2 - 180, 480, 360, 8);
@@ -878,15 +928,24 @@ export class HudScene extends Phaser.Scene {
       ...DATA_STYLE, fontSize: "11px", lineSpacing: 6, wordWrap: { width: 210 },
     });
 
+    const controls = [
+      this.actionButton(w / 2 - 205, h / 2 + 126, "▲", "menuUp", "15px"),
+      this.actionButton(w / 2 - 168, h / 2 + 126, "▼", "menuDown", "15px"),
+      this.actionButton(w / 2 - 92, h / 2 + 126, "[ BUY / SELL ]", "menuRight", "12px"),
+      this.actionButton(w / 2 + 12, h / 2 + 126, "[ CONFIRM ]", "interact", "12px"),
+      this.actionButton(w / 2 + 110, h / 2 + 126, "[ NEXT ]", "cycle", "12px"),
+      this.actionButton(w / 2 + 186, h / 2 + 126, "[ CLOSE ]", "gear", "12px"),
+    ];
+
     const footer = this.add.text(
       w / 2,
-      h / 2 + 152,
+      h / 2 + 155,
       "Up/Down select  |  Left/Right buy/sell  |  E confirm  |  Tab next member  |  I close",
       { ...UI_STYLE, fontSize: "11px", color: "#808490" },
     ).setOrigin(0.5);
 
     this.shopOverlay = this.add.container(0, 0, [
-      bg, box as any, title, header, buyTitle, sellTitle, buyText, sellText, footer,
+      bg, box as any, title, header, buyTitle, sellTitle, buyText, sellText, ...controls, footer,
     ]).setDepth(2000);
   }
 
@@ -910,7 +969,7 @@ export class HudScene extends Phaser.Scene {
     const runIndex = this.registry.get("dungeonIndex");
     const summary = `Reward ${this.dungeon.rewardLabel}  |  Coins ${this.ctx.totalCoins}  |  Kills ${this.ctx.kills}  |  Run seed ${runIndex}`;
     this.overlay = this.add.container(0, 0, [
-      this.add.rectangle(w / 2, h / 2, w, h, 0x020205, 0.9),
+      this.add.rectangle(w / 2, h / 2, w, h, 0x020205, 0.9).setInteractive(),
       this.add
         .text(w / 2, h / 2 - 104, title, {
           fontFamily: "Georgia, serif",
@@ -935,13 +994,7 @@ export class HudScene extends Phaser.Scene {
       this.add
         .text(w / 2, h / 2 + 78, summary, { ...DATA_STYLE, fontSize: "11px", color: "#9fa5b1" })
         .setOrigin(0.5),
-      this.add
-        .text(w / 2, h / 2 + 112, "Press R to enter the next dungeon", {
-          ...UI_STYLE,
-          fontSize: "16px",
-          color: "#d4b65f",
-        })
-        .setOrigin(0.5),
+      this.actionButton(w / 2, h / 2 + 112, "[ ENTER THE NEXT DUNGEON ]  (R)", "restart", "16px"),
     ]);
     this.overlay.setDepth(2000);
   }
@@ -966,7 +1019,7 @@ export class HudScene extends Phaser.Scene {
     const subPrompt = offer ? "CHOOSE YOUR NEXT DESTINATION" : `Vault ${this.dungeon.vaultsCompletedInScroll} of ${this.dungeon.vaultsInScroll} in ${this.dungeon.activeZoneName}`;
 
     const items: Phaser.GameObjects.GameObject[] = [
-      this.add.rectangle(w / 2, h / 2, w, h, 0x020205, 0.92),
+      this.add.rectangle(w / 2, h / 2, w, h, 0x020205, 0.92).setInteractive(),
       this.add
         .text(w / 2, h / 2 - 156, mainTitle, {
           fontFamily: "Georgia, serif",
@@ -1031,34 +1084,29 @@ export class HudScene extends Phaser.Scene {
               wordWrap: { width: cardW - 10 },
             },
           )
-          .setOrigin(0.5);
+          .setOrigin(0.5)
+          // Tapping a card is the touch equivalent of ◄ ► / 1-6: it moves the
+          // selection, and the separate DESCEND control commits it.
+          .setInteractive({ useHandCursor: true })
+          .on("pointerdown", () => this.dungeon.selectBiome(index));
         items.push(card);
         return card;
       });
       this.applyBiomeSelectionTint();
 
-      const prompt = count > 1
-        ? "◄ ► or 1-6 to choose   •   R to descend"
-        : "R to descend";
-      items.push(
-        this.add
-          .text(w / 2, h / 2 + 128, prompt, {
-            ...UI_STYLE,
-            fontSize: "15px",
-            color: "#d4b65f",
-          })
-          .setOrigin(0.5),
-      );
+      const hint = count > 1
+        ? "Tap a scroll, or ◄ ► / 1-6 to choose"
+        : "";
+      if (hint) {
+        items.push(
+          this.add
+            .text(w / 2, h / 2 + 120, hint, { ...DATA_STYLE, fontSize: "10px", color: "#9fa5b1" })
+            .setOrigin(0.5),
+        );
+      }
+      items.push(this.actionButton(w / 2, h / 2 + 144, "[ DESCEND ]  (R)", "restart", "15px"));
     } else {
-      items.push(
-        this.add
-          .text(w / 2, h / 2 + 80, "Press R to descend to the next vault", {
-            ...UI_STYLE,
-            fontSize: "16px",
-            color: "#ffd45f",
-          })
-          .setOrigin(0.5),
-      );
+      items.push(this.actionButton(w / 2, h / 2 + 80, "[ DESCEND TO THE NEXT VAULT ]  (R)", "restart", "16px"));
     }
 
     this.overlay = this.add.container(0, 0, items);

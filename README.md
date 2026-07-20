@@ -38,6 +38,9 @@ Vite and opens the game directly in Chrome.
 
 ## Controls
 
+Every flow below also has an on-screen touch equivalent — the whole game is
+playable with touch alone, landscape only.
+
 | Key | Action |
 |---|---|
 | A/D or ←/→ | Move |
@@ -47,29 +50,6 @@ Vite and opens the game directly in Chrome.
 | Q | Cycle prepared spell |
 | T | Light a torch (consumes one; burns in real time) |
 | E | Interact: claim vault rewards, stabilize dying allies, disarm traps (thief), rest at campfires, exit door |
-| H | Toggle followers between FOLLOW and HOLD |
-| L | Spend the leader's luck token to reroll (while the reroll prompt is up) |
-| Tab / 1–4 | Swap leader |
-| R | Enter the next dungeon after a win or party wipe |
-| Esc | Pause / unpause the game |
-| C | Toggle character stats sheet (pauses game) |
-| I | Toggle gear / inventory panel (pauses game) |
-
-## How Shadowdark maps to the game
-
-- **Every rules event is a d20 roll** through a single `resolveCheck` service —
-  the floating number over a swing is the natural die.
-- **Light is the level design.** Outside your light radius the dungeon is genuinely
-  black. Torches burn in real time (3 real minutes in the playtest config —
-  a config value, not a rule change), cost a gear slot, and can't be held with a
-  two-handed weapon. Monsters see fine in the dark and attack unlit characters
-  with advantage; you act in darkness at disadvantage.
-- **Advantage/disadvantage is positional**: attack from above = advantage,
-  thief backstab vs unaware = advantage, airborne or in darkness = disadvantage.
-- **Fights are exchanges.** Anyone a monster strikes swings back automatically
-  and keeps trading blows until the aggressor dies or leaves reach — retreat is
-  a choice you make with your feet. Weapons have reach: the spear and staff
-  strike from beyond a monster's claws.
 | H | Toggle followers between FOLLOW and HOLD |
 | L | Spend the leader's luck token to reroll (while the reroll prompt is up) |
 | Tab / 1–4 | Swap leader |

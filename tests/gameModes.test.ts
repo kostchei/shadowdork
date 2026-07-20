@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ModeController,
+  isInterruptMode,
   isOverlayMode,
   isTerminalMode,
   pausesWorld,
@@ -17,13 +18,22 @@ function recordingHost() {
     releaseHeldInput: () => calls.push("release"),
     enterMode: (mode) => calls.push(`enter:${mode}`),
     exitMode: (mode) => calls.push(`exit:${mode}`),
+    setAudioSuspended: (suspended) => calls.push(`audio:${suspended ? "suspended" : "resumed"}`),
   };
   return { host, calls };
 }
 
 describe("mode classification", () => {
-  it("pauses the world for the briefing and every overlay", () => {
-    for (const mode of ["briefing", "paused", "stats", "gear", "shop"] as GameMode[]) {
+  it("pauses the world for the briefing, every overlay, and both interrupts", () => {
+    for (const mode of [
+      "briefing",
+      "paused",
+      "stats",
+      "gear",
+      "shop",
+      "orientation-blocked",
+      "backgrounded",
+    ] as GameMode[]) {
       expect(pausesWorld(mode)).toBe(true);
     }
   });
@@ -39,12 +49,21 @@ describe("mode classification", () => {
     expect(isOverlayMode("playing")).toBe(false);
     expect(isOverlayMode("briefing")).toBe(false);
     expect(isOverlayMode("victory")).toBe(false);
+    expect(isOverlayMode("orientation-blocked")).toBe(false);
+    expect(isOverlayMode("backgrounded")).toBe(false);
   });
 
   it("treats victory and game over as terminal", () => {
     expect(isTerminalMode("victory")).toBe(true);
     expect(isTerminalMode("gameover")).toBe(true);
     expect(isTerminalMode("paused")).toBe(false);
+  });
+
+  it("treats orientation-blocked and backgrounded as interrupts, nothing else", () => {
+    expect(isInterruptMode("orientation-blocked")).toBe(true);
+    expect(isInterruptMode("backgrounded")).toBe(true);
+    expect(isInterruptMode("paused")).toBe(false);
+    expect(isInterruptMode("playing")).toBe(false);
   });
 });
 
@@ -57,11 +76,11 @@ describe("ModeController transitions", () => {
     expect(calls).toEqual([]);
   });
 
-  it("exits, releases input, enters, then applies the pause policy — in that order", () => {
+  it("exits, releases input, enters, then applies the pause and audio policy — in that order", () => {
     const { host, calls } = recordingHost();
     const modes = new ModeController(host, "playing");
     modes.set("gear");
-    expect(calls).toEqual(["exit:playing", "release", "enter:gear", "world:paused"]);
+    expect(calls).toEqual(["exit:playing", "release", "enter:gear", "world:paused", "audio:suspended"]);
   });
 
   it("releases held input on every transition so a key cannot leak across modes", () => {
@@ -71,6 +90,7 @@ describe("ModeController transitions", () => {
       releaseHeldInput: () => actions.releaseAll(),
       enterMode: () => {},
       exitMode: () => {},
+      setAudioSuspended: () => {},
     }, "playing");
 
     actions.press("moveRight", "kb-D");
@@ -80,12 +100,12 @@ describe("ModeController transitions", () => {
     expect(actions.released("moveRight")).toBe(true);
   });
 
-  it("resumes the world when returning to play", () => {
+  it("resumes the world and audio when returning to play", () => {
     const { host, calls } = recordingHost();
     const modes = new ModeController(host, "stats");
     modes.set("playing");
     expect(modes.worldPaused).toBe(false);
-    expect(calls).toEqual(["exit:stats", "release", "enter:playing", "world:running"]);
+    expect(calls).toEqual(["exit:stats", "release", "enter:playing", "world:running", "audio:resumed"]);
   });
 
   it("is a no-op when asked for the mode it is already in", () => {
@@ -102,7 +122,7 @@ describe("ModeController transitions", () => {
     expect(modes.mode).toBe("stats");
     // The old code closed gear via a second toggle that re-ran the pause dance;
     // one transition now covers it.
-    expect(calls).toEqual(["exit:gear", "release", "enter:stats", "world:paused"]);
+    expect(calls).toEqual(["exit:gear", "release", "enter:stats", "world:paused", "audio:suspended"]);
   });
 
   it("toggles an overlay closed back to play", () => {
@@ -148,6 +168,85 @@ describe("ModeController transitions", () => {
   it("accepts overlay toggles while another overlay is open", () => {
     const { host } = recordingHost();
     expect(new ModeController(host, "shop").acceptsOverlayToggle).toBe(true);
+  });
+});
+
+describe("ModeController interrupts (orientation / backgrounding)", () => {
+  it("remembers playing and restores to paused, never straight back to playing", () => {
+    const { host, calls } = recordingHost();
+    const modes = new ModeController(host, "playing");
+    calls.length = 0;
+    modes.enterInterrupt("backgrounded");
+    expect(modes.mode).toBe("backgrounded");
+    expect(calls).toEqual(["exit:playing", "release", "enter:backgrounded", "world:paused", "audio:suspended"]);
+
+    calls.length = 0;
+    modes.exitInterrupt();
+    expect(modes.mode).toBe("paused");
+    expect(calls).toEqual(["exit:backgrounded", "release", "enter:paused", "world:paused", "audio:suspended"]);
+  });
+
+  it("restores an open overlay exactly, not paused", () => {
+    const { host } = recordingHost();
+    const modes = new ModeController(host, "gear");
+    modes.enterInterrupt("orientation-blocked");
+    modes.exitInterrupt();
+    expect(modes.mode).toBe("gear");
+  });
+
+  it("restores the briefing exactly", () => {
+    const { host } = recordingHost();
+    const modes = new ModeController(host, "briefing");
+    modes.enterInterrupt("backgrounded");
+    modes.exitInterrupt();
+    expect(modes.mode).toBe("briefing");
+  });
+
+  it("a second interrupt while already interrupted is a no-op", () => {
+    const { host, calls } = recordingHost();
+    const modes = new ModeController(host, "playing");
+    modes.enterInterrupt("backgrounded");
+    calls.length = 0;
+    modes.enterInterrupt("orientation-blocked");
+    expect(modes.mode).toBe("backgrounded");
+    expect(calls).toEqual([]);
+    // The remembered mode is still the original one, not the no-op interrupt.
+    modes.exitInterrupt();
+    expect(modes.mode).toBe("paused");
+  });
+
+  it("exitInterrupt is a no-op when not currently interrupted", () => {
+    const { host, calls } = recordingHost();
+    const modes = new ModeController(host, "gear");
+    modes.exitInterrupt();
+    expect(modes.mode).toBe("gear");
+    expect(calls).toEqual([]);
+  });
+
+  it("a terminal mode cannot be interrupted", () => {
+    const { host, calls } = recordingHost();
+    const modes = new ModeController(host, "victory");
+    calls.length = 0;
+    modes.enterInterrupt("backgrounded");
+    expect(modes.mode).toBe("victory");
+    expect(calls).toEqual([]);
+  });
+
+  it("releases held input on entering an interrupt, same as any transition", () => {
+    const actions = new ActionInput();
+    const modes = new ModeController(
+      {
+        setWorldPaused: () => {},
+        releaseHeldInput: () => actions.releaseAll(),
+        enterMode: () => {},
+        exitMode: () => {},
+        setAudioSuspended: () => {},
+      },
+      "playing",
+    );
+    actions.press("moveRight", "touch");
+    modes.enterInterrupt("orientation-blocked");
+    expect(actions.held("moveRight")).toBe(false);
   });
 });
 

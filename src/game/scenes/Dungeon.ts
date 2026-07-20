@@ -7,7 +7,8 @@
 import Phaser from "phaser";
 import { HudScene } from "./Hud";
 import { crackleBed, themeAmbience } from "../audio/ambience";
-import { isMuted, setMuted } from "../audio/context";
+import { isMuted, setMuted, suspendAudio, resumeAudioContext } from "../audio/context";
+import { saveMutedPref } from "../MobilePrefs";
 import * as sfx from "../audio/sfx";
 import { SpatialEmitter, spatialOpts, type Vec2 } from "../audio/spatial";
 import {
@@ -24,7 +25,9 @@ import { GameContext } from "../context";
 import { ActionInput } from "../input/ActionInput";
 import { KeyboardSource, polledKeysFrom } from "../input/KeyboardSource";
 import { KEY_BINDINGS, KEYBOARD_ADD_KEYS, START_DISMISS_ACTIONS, type GameAction } from "../input/actions";
-import { ModeController, type GameMode, type ModeHost } from "../modes/GameModeController";
+import { noteTouchActivity } from "../input/inputFamily";
+import { ModeController, isInterruptMode, type GameMode, type ModeHost } from "../modes/GameModeController";
+import { isPortraitBlocked, onOrientationChange } from "../orientation";
 import { RENDER_SCALE } from "../display";
 import { CharacterSprite } from "../entities/CharacterSprite";
 import { MonsterSprite, MONSTER_ATTACK_COOLDOWN_MS } from "../entities/MonsterSprite";
@@ -529,7 +532,7 @@ export class DungeonScene extends Phaser.Scene {
     // The controller's starting mode has not run a transition, so apply its
     // world-pause policy once here.
     this.setWorldPaused(this.modes.worldPaused);
-    this.installBackgroundingGuard();
+    this.installLifecycleGuard();
     this.scene.launch("Hud");
   }
 
@@ -547,6 +550,7 @@ export class DungeonScene extends Phaser.Scene {
       releaseHeldInput: () => this.releaseHeldInput(),
       enterMode: (mode) => this.showModeOverlay(mode),
       exitMode: (mode) => this.hideModeOverlay(mode),
+      setAudioSuspended: (suspended) => (suspended ? suspendAudio() : resumeAudioContext()),
     };
   }
 
@@ -587,6 +591,10 @@ export class DungeonScene extends Phaser.Scene {
         // briefing / playing / victory / gameover own no overlay of their own:
         // the briefing card is raised by the HUD on create, and the ending
         // screens are raised by the "won" / "gameover" context events.
+        // orientation-blocked's rotate prompt is a pure-CSS overlay outside
+        // Phaser entirely (see index.html); backgrounded shows nothing since
+        // the OS is showing something else. Both still freeze the world via
+        // the mode's world-pause policy, same as any other transition.
         return;
     }
   }
@@ -615,19 +623,54 @@ export class DungeonScene extends Phaser.Scene {
   }
 
   /**
-   * Switching apps (or tabs) must not leave the party walking into a pit with a
-   * key still logically held. Backgrounding drops all held input and, if the
-   * world was live, parks the run on the pause screen.
+   * The complete gameplay lifecycle policy: on window blur, the tab going
+   * hidden, pagehide (navigating away, or iOS parking the page in bfcache),
+   * or the device rotating to portrait, drop every held input, freeze
+   * physics/animation/engine time (via ModeHost, same as any other
+   * transition), quiet audio, and autosave synchronously if a run is
+   * actually in progress. Returning from any of these never resumes play on
+   * its own — `exitInterrupt` lands on `paused` rather than `playing`, so a
+   * deliberate tap is always required to pick back up.
+   *
+   * Multiple triggers can fire for one real interruption (blur *and*
+   * visibilitychange for the same app-switch); both the entry and exit paths
+   * are idempotent because `enterInterrupt`/`exitInterrupt` no-op once
+   * already (or no longer) interrupted.
    */
-  private installBackgroundingGuard(): void {
-    const onHidden = () => {
-      if (document.visibilityState !== "hidden") return;
-      this.releaseHeldInput();
-      if (this.modes.is("playing")) this.modes.set("paused");
+  private installLifecycleGuard(): void {
+    const enterBackground = () => {
+      if (!this.modes.isAny("briefing", "victory", "gameover") && !isInterruptMode(this.modes.mode)) {
+        this.saveToSlot(0);
+      }
+      this.modes.enterInterrupt("backgrounded");
     };
-    document.addEventListener("visibilitychange", onHidden);
+    const exitBackground = () => {
+      if (this.modes.mode === "backgrounded") this.modes.exitInterrupt();
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") enterBackground();
+      else exitBackground();
+    };
+    window.addEventListener("blur", enterBackground);
+    window.addEventListener("focus", exitBackground);
+    window.addEventListener("pagehide", enterBackground);
+    window.addEventListener("pageshow", exitBackground);
+    document.addEventListener("visibilitychange", onVisibility);
+
+    const onOrientation = (blocked: boolean) => {
+      if (blocked) this.modes.enterInterrupt("orientation-blocked");
+      else if (this.modes.mode === "orientation-blocked") this.modes.exitInterrupt();
+    };
+    const unsubscribeOrientation = onOrientationChange(onOrientation);
+    if (isPortraitBlocked()) onOrientation(true);
+
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
-      document.removeEventListener("visibilitychange", onHidden);
+      window.removeEventListener("blur", enterBackground);
+      window.removeEventListener("focus", exitBackground);
+      window.removeEventListener("pagehide", enterBackground);
+      window.removeEventListener("pageshow", exitBackground);
+      document.removeEventListener("visibilitychange", onVisibility);
+      unsubscribeOrientation();
     });
   }
 
@@ -637,6 +680,7 @@ export class DungeonScene extends Phaser.Scene {
    * and edge reads (`pressed("menuUp")`) both see it exactly once.
    */
   tapAction(action: GameAction): void {
+    noteTouchActivity();
     this.pendingTaps.push(action);
   }
 
@@ -1450,10 +1494,19 @@ export class DungeonScene extends Phaser.Scene {
     // Mute works everywhere — paused, overlays, game over.
     if (this.actions.pressed("mute")) {
       setMuted(!isMuted());
+      saveMutedPref(isMuted());
       this.ctx.say(isMuted() ? "Sound muted. (M to unmute)" : "Sound on.", "#a0a4b0");
     }
 
     if (this.modes.is("paused")) {
+      return;
+    }
+
+    // Interrupt modes own nothing and read no input — the world stays frozen
+    // (setWorldPaused already froze physics/anim; this stops engine rules
+    // time, which ticks independently of Phaser's physics pause) until the
+    // interrupt clears and lands on "paused" for a deliberate resume tap.
+    if (isInterruptMode(this.modes.mode)) {
       return;
     }
 

@@ -141,6 +141,21 @@ export function isMuted(): boolean {
   return muted;
 }
 
+/**
+ * Suspend the audio graph for a mode transition (pause, an overlay, an
+ * interrupt). No-op if audio was never started — suspending must never be
+ * what *creates* the AudioContext, since that would force a gesture-locked
+ * context into existence outside a user gesture.
+ */
+export function suspendAudio(): void {
+  if (ctx && ctx.state === "running") void ctx.suspend();
+}
+
+/** Resume audio suspended by `suspendAudio`. No-op if it was never started. */
+export function resumeAudioContext(): void {
+  if (ctx && ctx.state === "suspended") void ctx.resume();
+}
+
 export function installUnlock(): void {
   const resume = () => {
     const c = audioCtx();

@@ -35,7 +35,11 @@ export type GameMode =
   /** Vault cleared: summary, and possibly the scroll-destination choice. */
   | "victory"
   /** Party wiped. */
-  | "gameover";
+  | "gameover"
+  /** Device held in portrait; the fixed-landscape canvas is unplayable. */
+  | "orientation-blocked"
+  /** Tab/window backgrounded (blur, hidden, or pagehide). */
+  | "backgrounded";
 
 /**
  * The scene-side effects a transition performs. Implemented by `DungeonScene`;
@@ -50,6 +54,8 @@ export interface ModeHost {
   enterMode(mode: GameMode): void;
   /** Hide the overlay for the mode being left (no-op for `playing`). */
   exitMode(mode: GameMode): void;
+  /** Suspend or resume the audio graph, tracking the world-pause policy. */
+  setAudioSuspended(suspended: boolean): void;
 }
 
 /** Modes that freeze the world. Victory and game over deliberately let it run. */
@@ -59,6 +65,8 @@ const WORLD_PAUSING: ReadonlySet<GameMode> = new Set<GameMode>([
   "stats",
   "gear",
   "shop",
+  "orientation-blocked",
+  "backgrounded",
 ]);
 
 /** Dismissable overlays — the modes `toggle` can flip back to `playing`. */
@@ -71,6 +79,13 @@ const OVERLAY_MODES: ReadonlySet<GameMode> = new Set<GameMode>([
 
 /** Run-ending modes. Only a scene restart leaves them. */
 const TERMINAL_MODES: ReadonlySet<GameMode> = new Set<GameMode>(["victory", "gameover"]);
+
+/**
+ * Externally-driven interrupts — not opened by a menu tap, but by the device
+ * rotating or the tab losing focus. `enterInterrupt`/`exitInterrupt` (not
+ * `toggle`) are how these are entered and left.
+ */
+const INTERRUPT_MODES: ReadonlySet<GameMode> = new Set<GameMode>(["orientation-blocked", "backgrounded"]);
 
 /** True when the mode freezes physics, animation, and rules time. */
 export function pausesWorld(mode: GameMode): boolean {
@@ -87,8 +102,15 @@ export function isTerminalMode(mode: GameMode): boolean {
   return TERMINAL_MODES.has(mode);
 }
 
+/** True when the mode is an externally-driven interrupt (orientation, backgrounding). */
+export function isInterruptMode(mode: GameMode): boolean {
+  return INTERRUPT_MODES.has(mode);
+}
+
 export class ModeController {
   private current: GameMode;
+  /** The mode an interrupt (orientation/backgrounding) suspended, for `exitInterrupt`. */
+  private beforeInterrupt: GameMode | null = null;
 
   constructor(
     private readonly host: ModeHost,
@@ -139,7 +161,9 @@ export class ModeController {
     this.host.exitMode(prev);
     this.host.releaseHeldInput();
     this.host.enterMode(next);
-    this.host.setWorldPaused(pausesWorld(next));
+    const paused = pausesWorld(next);
+    this.host.setWorldPaused(paused);
+    this.host.setAudioSuspended(paused);
   }
 
   /**
@@ -150,5 +174,35 @@ export class ModeController {
    */
   toggle(mode: GameMode): void {
     this.set(this.current === mode ? "playing" : mode);
+  }
+
+  /**
+   * Enter an externally-driven interrupt (device rotated to portrait, tab
+   * backgrounded) — never a menu tap, so it goes through `set` like any other
+   * transition but remembers what it interrupted. Layering interrupts (the
+   * tab is backgrounded while already orientation-blocked) is a no-op: only
+   * the first remembers the way back. A terminal mode is not interruptible —
+   * victory/game-over already let the world run and have nothing to protect.
+   */
+  enterInterrupt(mode: "orientation-blocked" | "backgrounded"): void {
+    if (isTerminalMode(this.current) || isInterruptMode(this.current)) return;
+    this.beforeInterrupt = this.current;
+    this.set(mode);
+  }
+
+  /**
+   * Leave the current interrupt. No-op if not currently interrupted — the
+   * caller is responsible for confirming the interrupting condition actually
+   * cleared (e.g. checking both orientation *and* visibility before calling
+   * this, so a tab regaining focus while still portrait-blocked does not
+   * resume). Restores whatever mode was interrupted — except `playing`, which
+   * lands on `paused` instead: gameplay never resumes on its own, only a
+   * deliberate resume tap can restart it.
+   */
+  exitInterrupt(): void {
+    if (!isInterruptMode(this.current) || this.beforeInterrupt === null) return;
+    const restore = this.beforeInterrupt;
+    this.beforeInterrupt = null;
+    this.set(restore === "playing" ? "paused" : restore);
   }
 }

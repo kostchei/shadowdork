@@ -2,11 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
     <title>Shadowdork — Side-Scrolling Shadowdark Dungeon Crawler</title>
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <meta name="description" content="Shadowdork: A 1-player, 1–4 character side-scrolling dungeon crawler with Shadowdark RPG mechanics, running entirely in the browser." />
-    
+
     <!-- OpenGraph / Facebook -->
     <meta property="og:type" content="website" />
     <meta property="og:title" content="Shadowdork — Side-Scrolling Shadowdark Dungeon Crawler" />
@@ -24,8 +24,14 @@
         margin: 0;
         padding: 0;
         background: #0a0a0f;
-        height: 100%;
+        /* 100dvh accounts for mobile browser chrome that shows/hides on scroll;
+           the 100vh rule above it is the fallback for browsers without dvh. */
+        height: 100vh;
+        height: 100dvh;
         overflow: hidden;
+        /* Stop the page itself from rubber-banding/bouncing under touch drags —
+           the game handles its own input, the browser shouldn't scroll behind it. */
+        overscroll-behavior: none;
       }
       #game {
         width: 100%;
@@ -33,14 +39,88 @@
         display: flex;
         align-items: center;
         justify-content: center;
+        /* Inset from notches/home-indicators/rounded corners (viewport-fit=cover). */
+        padding: env(safe-area-inset-top) env(safe-area-inset-right)
+          env(safe-area-inset-bottom) env(safe-area-inset-left);
+        box-sizing: border-box;
+        /* The canvas owns all gesture handling; stop the browser from turning
+           drags/pinches into scroll or zoom before they reach Phaser's input. */
+        touch-action: none;
+        /* No text selection or callout menu on long-press inside the game.
+           Scoped to #game only — UI outside it (if any is added later) keeps
+           normal selection behaviour. */
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-touch-callout: none;
       }
       canvas {
         image-rendering: pixelated;
+      }
+
+      /* Landscape orientation gate: this game's fixed-aspect canvas is
+         unplayable in portrait on a phone. Pure CSS so it appears before any
+         script runs; src/game/orientation.ts drives the matching in-game pause
+         (see the "orientation-blocked" mode) off the same query. */
+      #orientation-gate {
+        display: none;
+        position: fixed;
+        inset: 0;
+        z-index: 10;
+        background: #0a0a0f;
+        color: #f0eee9;
+        font-family: "Trebuchet MS", Arial, sans-serif;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 24px;
+        box-sizing: border-box;
+      }
+      #orientation-gate .glyph {
+        font-size: 48px;
+        margin-bottom: 12px;
+      }
+      @media (orientation: portrait) and (pointer: coarse) {
+        #orientation-gate {
+          display: flex;
+        }
+        #game {
+          display: none;
+        }
+      }
+
+      #fullscreen-btn {
+        position: fixed;
+        bottom: max(8px, env(safe-area-inset-bottom));
+        right: max(8px, env(safe-area-inset-right));
+        z-index: 5;
+        background: rgba(10, 10, 15, 0.6);
+        color: #a0a4b0;
+        border: 1px solid #3a3d48;
+        border-radius: 6px;
+        font-size: 16px;
+        line-height: 1;
+        padding: 8px 10px;
+        cursor: pointer;
+      }
+      #fullscreen-btn:hover {
+        color: #ffd45f;
+        border-color: #ffd45f;
+      }
+      /* Only worth offering where the API exists and there's room to show it
+         without covering the HUD; toggled on by main.ts. */
+      #fullscreen-btn[hidden] {
+        display: none;
       }
     </style>
   </head>
   <body>
     <div id="game"></div>
+    <div id="orientation-gate">
+      <div class="glyph" aria-hidden="true">&#8635;</div>
+      <div>Rotate your device to landscape to play.</div>
+    </div>
+    <button id="fullscreen-btn" type="button" hidden aria-label="Toggle fullscreen">&#x26F6;</button>
     <script type="module" src="/src/game/main.ts"></script>
   </body>
 </html>

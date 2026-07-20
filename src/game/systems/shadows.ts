@@ -15,6 +15,7 @@
 import Phaser from "phaser";
 import { TILE } from "../textures";
 import type { LightSystem } from "./light";
+import { castShadowsEnabled } from "./quality";
 
 /** How far a cast shadow slides toward the far side at the edge of the light. */
 const MAX_LEAN_PX = TILE * 1.5;
@@ -112,7 +113,9 @@ export class ShadowSystem {
       }
       const footX = pos.x;
       const footY = pos.y + c.footOffset;
-      if (c.kind === "deep") {
+      if (c.kind === "deep" || !castShadowsEnabled()) {
+        // Low quality drops the leaning/stretching nearestLight raycast per caster
+        // per frame and falls back to a cheap static pool underfoot.
         const sx = c.options.baseScaleX ?? 1;
         const sy = c.options.baseScaleY ?? 1;
         const a = c.options.baseAlpha ?? 0.6;

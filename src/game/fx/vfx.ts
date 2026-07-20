@@ -1,6 +1,7 @@
 /** Shared particle effects. One place for every burst and flame in the game. */
 
 import Phaser from "phaser";
+import { particleDensity } from "../systems/quality";
 
 const BLOOD_COLORS = [0xff3333, 0xcc0000, 0x880000];
 const BONE_COLORS = [0xdeded7, 0xc2c2ba, 0x9e9e94];
@@ -16,7 +17,7 @@ export function hitBurst(scene: Phaser.Scene, x: number, y: number, undead: bool
       scale: { start: 2, end: 0 },
       lifespan: { min: 200, max: 400 },
       duration: 150,
-      maxParticles: 15,
+      maxParticles: Math.max(1, Math.round(15 * particleDensity())),
       blendMode: "NORMAL",
     })
     .setDepth(25);
@@ -34,7 +35,7 @@ export function sparkleBurst(scene: Phaser.Scene, x: number, y: number, jewel: b
       blendMode: "ADD",
     })
     .setDepth(25);
-  p.explode(12);
+  p.explode(Math.max(1, Math.round(12 * particleDensity())));
   scene.time.delayedCall(600, () => p.destroy());
 }
 
@@ -73,6 +74,15 @@ const FLAME_CONFIGS: Record<
   },
 };
 
+/** Thins a persistent emitter's spawn rate by stretching its frequency (ms between spawns). */
+function thinnedConfig(
+  config: Phaser.Types.GameObjects.Particles.ParticleEmitterConfig,
+): Phaser.Types.GameObjects.Particles.ParticleEmitterConfig {
+  const density = particleDensity();
+  if (density >= 1 || typeof config.frequency !== "number") return config;
+  return { ...config, frequency: config.frequency / density };
+}
+
 /** A persistent flame at a fixed point (braziers, campfires). Caller owns cleanup. */
 export function flameAt(
   scene: Phaser.Scene,
@@ -80,7 +90,7 @@ export function flameAt(
   y: number,
   size: FlameSize,
 ): Phaser.GameObjects.Particles.ParticleEmitter {
-  return scene.add.particles(x, y, "pixel", FLAME_CONFIGS[size]).setDepth(4);
+  return scene.add.particles(x, y, "pixel", thinnedConfig(FLAME_CONFIGS[size])).setDepth(4);
 }
 
 /** A flame that follows a sprite (a carried torch). Caller owns cleanup. */
@@ -90,7 +100,7 @@ export function flameFollowing(
   offsetX: number,
   offsetY: number,
 ): Phaser.GameObjects.Particles.ParticleEmitter {
-  const p = scene.add.particles(0, 0, "pixel", FLAME_CONFIGS.torch).setDepth(12);
+  const p = scene.add.particles(0, 0, "pixel", thinnedConfig(FLAME_CONFIGS.torch)).setDepth(12);
   p.startFollow(target, offsetX, offsetY);
   return p;
 }

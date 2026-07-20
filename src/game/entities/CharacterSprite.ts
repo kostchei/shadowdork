@@ -17,6 +17,7 @@ import { flameFollowing } from "../fx/vfx";
 import type { LightSystem } from "../systems/light";
 import { DARK_SIGHT_TINT, SELF_GLOW_RADIUS } from "../systems/light";
 import { projectShadow } from "../systems/shadows";
+import { castShadowsEnabled } from "../systems/quality";
 import { ensureCharacterAppearance, TILE } from "../textures";
 import { appearanceForCharacter, characterAppearanceKey } from "./appearance";
 
@@ -118,7 +119,9 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
       return;
     }
     this.shadow.setVisible(true);
-    projectShadow(this.shadow, this.x, this.y + 15, light.nearestLight(this.x, this.y), {
+    // Low quality skips the nearestLight scan and falls back to a static pool.
+    const nearest = castShadowsEnabled() ? light.nearestLight(this.x, this.y) : null;
+    projectShadow(this.shadow, this.x, this.y + 15, nearest, {
       baseAlpha: 0.72,
     });
   }

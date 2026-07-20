@@ -9,6 +9,7 @@
 import Phaser from "phaser";
 import type { GameContext } from "../context";
 import { TILE } from "../textures";
+import { lightResolutionScale, lightUpdateStride, tintLayerEnabled } from "./quality";
 
 export const TORCH_RADIUS = TILE * 6.5;
 export const CAMPFIRE_RADIUS = TILE * 4.5;
@@ -57,30 +58,44 @@ export class LightSystem {
   private scene: Phaser.Scene;
   private darknessColor: number;
   private darknessAlpha: number;
+  /** Fraction of device resolution the lighting textures draw at (quality.ts). */
+  private readonly texScale: number;
+  /** Redraw cadence: 1 = every tick, 2 = every other tick, etc. */
+  private readonly updateStride: number;
+  private readonly tintEnabled: boolean;
+  private tickCount = 0;
 
   constructor(scene: Phaser.Scene, ctx: GameContext, darknessColor = 0x000008, darknessAlpha = 0.84) {
     this.scene = scene;
     this.ctx = ctx;
     this.darknessColor = darknessColor;
     this.darknessAlpha = darknessAlpha;
+    this.texScale = lightResolutionScale();
+    this.updateStride = lightUpdateStride();
+    this.tintEnabled = tintLayerEnabled();
     const cam = scene.cameras.main;
     // The camera renders zoomed (high-DPI); both overlays are device-resolution
     // textures counter-scaled and offset so the zoom maps them exactly onto the
-    // viewport. At zoom 1 the offset is 0 and the scale is 1.
+    // viewport. At zoom 1 the offset is 0 and the scale is 1. Their internal
+    // resolution is further scaled by texScale (quality.ts): the display scale
+    // compensates so a half-resolution texture still covers the full viewport,
+    // just magnified — a soft blur trade for half the fill cost.
     const offX = (cam.width / 2) * (1 - 1 / cam.zoom);
     const offY = (cam.height / 2) * (1 - 1 / cam.zoom);
+    const dispScale = 1 / (cam.zoom * this.texScale);
     // Colour casts sit under the darkness overlay: fully visible where light
     // has erased it, faintly visible through a dim source's thinned dark.
-    this.tintRt = scene.add.renderTexture(offX, offY, cam.width, cam.height);
+    this.tintRt = scene.add.renderTexture(offX, offY, cam.width * this.texScale, cam.height * this.texScale);
     this.tintRt
       .setOrigin(0, 0)
       .setScrollFactor(0)
-      .setScale(1 / cam.zoom)
+      .setScale(dispScale)
       .setDepth(899)
       .setBlendMode(Phaser.BlendModes.ADD)
-      .setAlpha(0.34);
-    this.rt = scene.add.renderTexture(offX, offY, cam.width, cam.height);
-    this.rt.setOrigin(0, 0).setScrollFactor(0).setScale(1 / cam.zoom).setDepth(900);
+      .setAlpha(0.34)
+      .setVisible(this.tintEnabled);
+    this.rt = scene.add.renderTexture(offX, offY, cam.width * this.texScale, cam.height * this.texScale);
+    this.rt.setOrigin(0, 0).setScrollFactor(0).setScale(dispScale).setDepth(900);
     this.brush = scene.make.image({ key: "light-radial", add: false });
     this.brush.setOrigin(0.5, 0.5);
   }
@@ -185,23 +200,29 @@ export class LightSystem {
   }
 
   update(): void {
+    // Prune dead sources every tick regardless of redraw cadence, so a
+    // skipped-frame stale texture never keeps a departed source's light stuck
+    // on screen once the next redraw does run.
+    for (const [id, s] of [...this.sources]) {
+      if (!s.position()) this.sources.delete(id);
+    }
+    this.tickCount++;
+    if (this.tickCount % this.updateStride !== 0) return;
+
     const cam = this.scene.cameras.main;
-    // World-to-texture: the textures are drawn at device resolution, so
-    // positions and brush sizes scale by the camera zoom.
-    const z = cam.zoom;
-    const offX = (cam.width / 2) * (1 - 1 / z);
-    const offY = (cam.height / 2) * (1 - 1 / z);
+    // World-to-texture: the textures are drawn at (device resolution * texScale),
+    // so positions and brush sizes scale by the camera zoom and texScale.
+    const z = cam.zoom * this.texScale;
+    const offX = (cam.width / 2) * (1 - 1 / cam.zoom);
+    const offY = (cam.height / 2) * (1 - 1 / cam.zoom);
     this.rt.clear();
-    this.tintRt.clear();
+    if (this.tintEnabled) this.tintRt.clear();
     // Near-black preserves the mechanical danger while keeping silhouettes,
     // platforms, and foreground art readable on ordinary displays.
     this.rt.fill(this.darknessColor, this.darknessAlpha);
-    for (const [id, s] of [...this.sources.entries()]) {
+    for (const s of this.sources.values()) {
       const pos = s.position();
-      if (!pos) {
-        this.sources.delete(id);
-        continue;
-      }
+      if (!pos) continue;
       const sx = (pos.x - cam.scrollX - offX) * z;
       const sy = (pos.y - cam.scrollY - offY) * z;
       this.brush.setScale((s.radius * 2 * z) / 256);
@@ -216,6 +237,7 @@ export class LightSystem {
         this.brush.setScale((s.radius * 1.15 * z) / 256);
         this.rt.erase(this.brush, sx, sy);
       }
+      if (!this.tintEnabled) continue;
       this.brush.setScale((s.radius * 2 * z) / 256);
       this.brush.setTint(s.tint).setAlpha(s.tintAlpha);
       this.tintRt.draw(this.brush, sx, sy);

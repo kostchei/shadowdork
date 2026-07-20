@@ -5,6 +5,7 @@ import type { Dice, MonsterDef } from "../../engine";
 import type { CharacterSprite } from "./CharacterSprite";
 import type { LightSystem } from "../systems/light";
 import { projectShadow } from "../systems/shadows";
+import { castShadowsEnabled } from "../systems/quality";
 
 export type MonsterAiState = "patrol" | "aggro" | "fleeing";
 
@@ -86,7 +87,8 @@ export class MonsterSprite extends Phaser.Physics.Arcade.Sprite {
   /** Project the ground shadow away from the nearest light. */
   updateShadow(light: LightSystem): void {
     if (!this.active) return;
-    projectShadow(this.shadow, this.x, this.y + this.displayHeight * 0.42, light.nearestLight(this.x, this.y), {
+    const nearest = castShadowsEnabled() ? light.nearestLight(this.x, this.y) : null;
+    projectShadow(this.shadow, this.x, this.y + this.displayHeight * 0.42, nearest, {
       baseScaleX: this.def.id === "gloom-ogre" ? 1.45 : 0.8,
       baseAlpha: 0.62,
     });

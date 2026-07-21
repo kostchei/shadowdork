@@ -1,5 +1,6 @@
 import {
   Character,
+  initializeClassState,
   rollAlignment,
   rollStats,
   STAT_NAMES,
@@ -11,12 +12,17 @@ import {
 } from "../engine";
 import { classDef } from "./classes";
 import { item } from "./items";
-import { WIZARD_MISHAP_TABLES } from "./tables/mishaps";
+import { ALL_MISHAP_TABLES } from "./tables/mishaps";
 import {
   FIGHTER_TALENTS,
   PRIEST_TALENTS,
   THIEF_TALENTS,
   WIZARD_TALENTS,
+  PIT_FIGHTER_TALENTS,
+  SEA_WOLF_TALENTS,
+  RAS_GODAI_TALENTS,
+  WITCH_TALENTS,
+  SEER_TALENTS,
 } from "./tables/talents";
 
 import { ALL_TREASURE_TABLES } from "./tables/treasure";
@@ -24,7 +30,7 @@ import { ALL_TREASURE_TABLES } from "./tables/treasure";
 export { classDef, type ClassDef } from "./classes";
 export { allItems, item } from "./items";
 export { monster } from "./monsters";
-export { highestAvailableSpellIndex, highestAvailableDamagingSpellIndex, spell, spellsForClass } from "./spells";
+export { highestAvailableSpellIndex, highestAvailableDamagingSpellIndex, spell, spellForMagicItem, spellsForClass } from "./spells";
 export { isPlebName, plebNameForSeed, randomPlebName } from "./names";
 export { ALL_TREASURE_TABLES } from "./tables/treasure";
 
@@ -34,7 +40,12 @@ export function registerTables(engine: Engine): void {
   engine.tables.register(THIEF_TALENTS);
   engine.tables.register(PRIEST_TALENTS);
   engine.tables.register(WIZARD_TALENTS);
-  for (const table of WIZARD_MISHAP_TABLES) engine.tables.register(table);
+  engine.tables.register(PIT_FIGHTER_TALENTS);
+  engine.tables.register(SEA_WOLF_TALENTS);
+  engine.tables.register(RAS_GODAI_TALENTS);
+  engine.tables.register(WITCH_TALENTS);
+  engine.tables.register(SEER_TALENTS);
+  for (const table of ALL_MISHAP_TABLES) engine.tables.register(table);
   for (const table of ALL_TREASURE_TABLES) engine.tables.register(table);
 }
 
@@ -101,6 +112,7 @@ export function createCharacter(
     alignment: alignment ?? rollAlignment(engine.dice),
   });
   for (const f of def.features) c.addEffect(structuredClone(f) as typeof f);
+  initializeClassState(c);
 
   // Configure Grit for Fighter & martial variants:
   if (cls === "fighter" || cls === "pit-fighter" || cls === "sea-wolf") {

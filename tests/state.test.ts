@@ -121,6 +121,21 @@ describe("Save slots / serialization", () => {
     expect(hasCondition(restored, "blinded")).toBe(true);
   });
 
+  it("recomputes Bag of Holding capacity and preserves ring charges on load", () => {
+    const engine = makeEngine();
+    const thief = createCharacter(engine, "bag-user", "Vex", "thief");
+    const baseCapacity = thief.inventory.capacity;
+    thief.inventory.add(item("bag-of-holding"), 1, true);
+    thief.inventory.add(item("ring-feather-falling"), 1, true);
+    thief.itemState.setCharges("ring-feather-falling", 0);
+
+    const restored = deserializeCharacter(serializeCharacter(thief), makeEngine());
+
+    expect(restored.inventory.capacity).toBe(baseCapacity + 5);
+    expect(restored.inventory.has("bag-of-holding")).toBe(true);
+    expect(restored.itemState.get("ring-feather-falling").chargesRemaining).toBe(0);
+  });
+
   it("keeps iron spikes across a save/load, but still strips rope and grappling hook", () => {
     const engine = makeEngine();
     const t = createCharacter(engine, "t", "Rook", "thief");

@@ -86,13 +86,13 @@ const CLASS_LIST: readonly ClassDef[] = [
     startingWeaponId: "longsword",
     armorId: "leather-armor",
     startsWithShield: true,
-    talentTableId: "fighter-talents",
+    talentTableId: "pit-fighter-talents",
     startingSpellIds: [],
     features: [
       {
         id: "feat-pit-fighter-flourish",
         name: "Flourish: regain 1d6 HP on melee hit (3/day)",
-        hooks: [{ kind: "damageBonus", bonus: 1 }],
+        hooks: [],
       },
       {
         id: "feat-pit-fighter-implacable",
@@ -108,18 +108,18 @@ const CLASS_LIST: readonly ClassDef[] = [
     startingWeaponId: "spear",
     armorId: "chainmail",
     startsWithShield: true,
-    talentTableId: "fighter-talents",
+    talentTableId: "sea-wolf-talents",
     startingSpellIds: [],
     features: [
       {
         id: "feat-sea-wolf-shield-wall",
         name: "Shield Wall: AC becomes 20 in defensive stance with a shield",
-        hooks: [{ kind: "acBonus", bonus: 2 }],
+        hooks: [],
       },
       {
         id: "feat-sea-wolf-seafarer",
         name: "Seafarer: advantage on navigation and boating",
-        hooks: [],
+        hooks: [{ kind: "seafarer" }],
       },
     ],
   },
@@ -130,7 +130,7 @@ const CLASS_LIST: readonly ClassDef[] = [
     startingWeaponId: "dagger",
     armorId: "leather-armor",
     startsWithShield: false,
-    talentTableId: "thief-talents",
+    talentTableId: "ras-godai-talents",
     startingSpellIds: [],
     features: [
       {
@@ -147,9 +147,9 @@ const CLASS_LIST: readonly ClassDef[] = [
     startingWeaponId: "staff",
     armorId: "leather-armor",
     startsWithShield: false,
-    talentTableId: "wizard-talents",
+    talentTableId: "witch-talents",
     castStat: "CHA",
-    startingSpellIds: ["magic-missile", "burning-hands", "mage-armor"],
+    startingSpellIds: ["cauldron", "witchlight", "fog"],
     features: [
       {
         id: "feat-witch-familiar",
@@ -165,9 +165,9 @@ const CLASS_LIST: readonly ClassDef[] = [
     startingWeaponId: "staff",
     armorId: "leather-armor",
     startsWithShield: false,
-    talentTableId: "priest-talents",
+    talentTableId: "seer-talents",
     castStat: "WIS",
-    startingSpellIds: ["cure-wounds", "light", "turn-undead"],
+    startingSpellIds: ["chant", "trance", "seer-potion"],
     features: [
       {
         id: "feat-seer-destined",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { Inventory } from "../src/engine/inventory";
+import { Inventory, type ItemDef } from "../src/engine/inventory";
 import { item } from "../src/data/items";
 
 const ration = item("ration");
@@ -37,5 +37,40 @@ describe("Inventory.canSwap", () => {
     inv.canSwap("ration", longsword);
     expect(inv.count("ration")).toBe(1);
     expect(inv.count("longsword")).toBe(0);
+  });
+});
+
+describe("capacity-granting items", () => {
+  const bag: ItemDef = {
+    id: "test-bag",
+    name: "Test Bag",
+    slotCost: 1,
+    bundleSize: 1,
+    tags: ["magic"],
+    capacityBonus: 5,
+  };
+  const stone: ItemDef = {
+    id: "stone",
+    name: "Stone",
+    slotCost: 1,
+    bundleSize: 1,
+    tags: ["gear"],
+  };
+
+  it("lets a full inventory add a bag, then use its bonus capacity", () => {
+    const inventory = new Inventory(1);
+    inventory.add(stone);
+    inventory.add(bag);
+    expect(inventory.capacity).toBe(6);
+    inventory.add(stone, 4);
+    expect(inventory.slotsUsed()).toBe(6);
+  });
+
+  it("refuses to remove a bag while its contents exceed base capacity", () => {
+    const inventory = new Inventory(1);
+    inventory.add(bag);
+    inventory.add(stone, 4);
+    expect(() => inventory.remove(bag.id)).toThrow("empty it first");
+    expect(inventory.has(bag.id)).toBe(true);
   });
 });

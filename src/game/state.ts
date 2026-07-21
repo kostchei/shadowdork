@@ -1,6 +1,7 @@
 import type {
   Alignment,
   Character,
+  ClassState,
   DyingState,
   Effect,
   Engine,
@@ -9,7 +10,7 @@ import type {
   Stats,
   VoiceRegister,
 } from "../engine";
-import { Character as EngineCharacter } from "../engine";
+import { Character as EngineCharacter, initializeClassState } from "../engine";
 import { item } from "../data";
 import type { VisualSkinId, ZonePackId } from "./visual/model";
 
@@ -42,6 +43,8 @@ export interface SavedCharacter {
   carriedShieldId: string | null;
   shieldStowed: boolean;
   luckToken: boolean;
+  /** Alternate-class per-rest resources. Optional for pre-Phase-2 saves. */
+  classState?: ClassState;
   dying: DyingState | null;
   dead: boolean;
 }
@@ -123,6 +126,7 @@ export function serializeCharacter(c: Character): SavedCharacter {
     carriedShieldId: c.carriedShield?.id ?? null,
     shieldStowed: c.shieldStowed,
     luckToken: c.luckToken,
+    classState: { ...c.classState, cauldronItems: c.classState.cauldronItems.map((entry) => ({ ...entry })) },
     dying: c.dying ? { ...c.dying } : null,
     dead: c.dead,
   };
@@ -146,10 +150,18 @@ export function deserializeCharacter(state: SavedCharacter, engine: Engine): Cha
   (c as any).baseMaxHp = state.maxHp;
   c.hp = state.hp;
   c.luckToken = state.luckToken;
+  initializeClassState(c);
+  c.classState = {
+    ...c.classState,
+    ...(state.classState ?? {}),
+    cauldronItems: (state.classState?.cauldronItems ?? []).map((entry) => ({ ...entry })),
+  };
   c.dead = state.dead;
   c.dying = state.dying ? { ...state.dying } : null;
   c.knownSpells = state.knownSpells.map((s) => ({ ...s }));
-  c.effects = state.effects.map((e) => ({ ...e }));
+  // Focus is an active scene relationship (targets, areas, light positions),
+  // so it ends cleanly rather than reviving stale references after load/transition.
+  c.effects = state.effects.filter((effect) => effect.duration?.unit !== "focus").map((e) => ({ ...e }));
   c.itemState.load((state.itemState ?? []).map(([id, s]) => [id, { ...s }]));
   c.shieldStowed = state.shieldStowed;
 

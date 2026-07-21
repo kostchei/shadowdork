@@ -27,6 +27,7 @@ export const SHOP_STOCK: readonly string[] = [
   "grappling-hook",
   "iron-spikes",
   "potion-healing",
+  "serpent-venom",
   "longsword",
   "leather-armor",
 ];

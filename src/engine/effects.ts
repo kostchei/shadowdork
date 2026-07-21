@@ -23,14 +23,33 @@ export type EffectHook =
   | { kind: "disadvantageOn"; applies: CheckKind }
   | { kind: "critRange"; value: number } // attacks crit on natural >= value
   | { kind: "statBonus"; stat: StatName; bonus: number }
+  /** A temporary floor for a stat score (giant strength, polymorph, etc.). */
+  | { kind: "statMinimum"; stat: StatName; value: number }
   | { kind: "statBonusChoice"; stats: StatName[]; bonus: number }
   | { kind: "acBonus"; bonus: number }
+  | { kind: "acMinimum"; value: number }
   | { kind: "armorAcBonusChoice"; bonus: number }
   | { kind: "armorAcBonus"; armorId: string; bonus: number }
   | { kind: "damageBonus"; bonus: number }
   /** Weapon Mastery scaling: +floor(level / 2) damage. */
   | { kind: "damageBonusHalfLevel" }
   | { kind: "maxHpBonus"; bonus: number }
+  | { kind: "invisible" }
+  | { kind: "waterBreathing" }
+  | { kind: "canFly" }
+  | { kind: "canClimbWalls" }
+  | { kind: "emitsLight" }
+  | { kind: "seeInvisible" }
+  | { kind: "hidden" }
+  | { kind: "poisonedWeapon"; damage: string }
+  | { kind: "seafarer" }
+  | { kind: "obscured" }
+  | { kind: "moraleImmune" }
+  | { kind: "extraDamageDice"; dice: string }
+  | { kind: "speedBonus"; bonus: number }
+  | { kind: "focusSpell"; spellId: string; tier: number }
+  | { kind: "focusTarget"; targetId: string }
+  | { kind: "focusPoint"; x: number; y: number }
   /** Ancestry/talent immunity to a named status condition (see ./conditions). */
   | { kind: "conditionImmunity"; condition: string };
 
@@ -106,6 +125,21 @@ export function sumHook(
 
 export function hasHook(effects: readonly Effect[], kind: EffectHook["kind"]): boolean {
   return effects.some((e) => e.hooks.some((h) => h.kind === kind));
+}
+
+/** Highest temporary minimum for a stat, or the supplied base score. */
+export function effectiveStatScore(
+  effects: readonly Effect[],
+  stat: StatName,
+  baseScore: number,
+): number {
+  let score = baseScore;
+  for (const effect of effects) {
+    for (const hook of effect.hooks) {
+      if (hook.kind === "statMinimum" && hook.stat === stat) score = Math.max(score, hook.value);
+    }
+  }
+  return score;
 }
 
 export function sumStatBonus(effects: readonly Effect[], stat: StatName): number {

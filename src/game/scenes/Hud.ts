@@ -8,6 +8,8 @@ import {
   activeConditions,
   alignmentLabel,
   conditionAbbr,
+  isHidden,
+  isShieldWallActive,
   partyCoinSlots,
   xpToNextLevel,
   type Character,
@@ -31,6 +33,22 @@ const UI_STYLE = {
   color: "#f0eee9",
   resolution: RENDER_SCALE,
 } as const;
+
+function timedBenefitTags(character: Character): string[] {
+  const labels: Record<string, string> = {
+    "potion:invisibility": "INV",
+    "potion:water-breathing": "AIR",
+    "potion:flying": "FLY",
+    "potion:giant-strength": "STR18",
+  };
+  return character.effects.flatMap((effect) => {
+    const label = labels[effect.id];
+    const duration = effect.duration;
+    if (!label || !duration) return [];
+    const suffix = duration.unit === "rounds" ? `${Math.max(0, Math.ceil(duration.remaining))}r` : "";
+    return [`${label}${suffix}`];
+  });
+}
 
 const DATA_STYLE = {
   fontFamily: "Consolas, monospace",
@@ -540,7 +558,7 @@ export class HudScene extends Phaser.Scene {
         this.dungeon.togglePause();
       });
       return btn;
-    };
+};
 
     const makeLoadButton = (x: number, y: number, slotId: number, name: string) => {
       const hasSaved = SaveRepository.exists(slotId);
@@ -889,8 +907,13 @@ export class HudScene extends Phaser.Scene {
       const slots = s.def.slotCost === 0 ? "free" : `${s.def.slotCost} slot${s.def.slotCost > 1 ? "s" : ""}`;
       const equipped = c.wieldedWeapon?.id === s.def.id || c.wornArmor?.id === s.def.id ||
         (c.carriedShield?.id === s.def.id && !c.shieldStowed);
+      const itemState = c.itemState.get(s.def.id);
+      const charges = s.def.use?.charges === undefined
+        ? ""
+        : ` [${itemState.chargesRemaining ?? s.def.use.charges}/${s.def.use.charges}]`;
+      const state = itemState.broken ? " [BROKEN]" : itemState.inert ? " [INERT]" : charges;
       const cursor = selectedItemId === s.def.id ? ">" : " ";
-      return `${cursor} ${s.qty}x ${s.def.name}${equipped ? " [EQ]" : ""} (${slots})`;
+      return `${cursor} ${s.qty}x ${s.def.name}${equipped ? " [EQ]" : ""}${state} (${slots})`;
     });
     const gearList = coinsLine
       + (rowsAbove > 0 ? `  ▲ ${rowsAbove} more above\n` : "")
@@ -1061,7 +1084,7 @@ export class HudScene extends Phaser.Scene {
 
     const bg = this.add.rectangle(w / 2, h / 2, w, h, 0x020205, 0.7).setInteractive();
     const rowH = 22;
-    const subtitleH = subtitle ? 18 : 0;
+    const subtitleH = subtitle ? 46 : 0;
     const boxH = Math.max(140, 96 + subtitleH + labels.length * rowH);
     const box = this.add.graphics();
     box.fillStyle(0x05060a, 0.94);
@@ -1083,6 +1106,8 @@ export class HudScene extends Phaser.Scene {
           ...DATA_STYLE,
           fontSize: "11px",
           color: "#9fa5b1",
+          align: "center",
+          wordWrap: { width: 360 },
         }).setOrigin(0.5)
       : null;
 
@@ -1333,7 +1358,8 @@ export class HudScene extends Phaser.Scene {
         .setText(`AC${c.ac}  XP${xp}  G${c.inventory.slotsUsed()}/${c.inventory.capacity}${torch}`)
         .setColor(c.dead ? "#70727a" : "#d9dbe1");
       const conditions = c.dead ? [] : activeConditions(c);
-      const conditionTag = conditions.length > 0 ? ` ${conditions.map(conditionAbbr).join(",")}` : "";
+      const statusTags = [...conditions.map(conditionAbbr), ...timedBenefitTags(c)];
+      const conditionTag = statusTags.length > 0 ? ` ${statusTags.join(",")}` : "";
       hpText
         .setVisible(true)
         .setText(c.dead ? "DEAD" : c.dying ? `DOWN ${c.dying.roundsRemaining}` : `${c.hp}/${c.maxHp}${conditionTag}`);
@@ -1353,6 +1379,19 @@ export class HudScene extends Phaser.Scene {
       leaderDetails.push(`K CAST ${spell(slot.spellId).name}${slot.status === "lost" ? " [LOST]" : ""}`);
     }
     if (leader.character.luckToken) leaderDetails.push("L LUCK READY");
+    const focus = leader.character.effects.find((effect) => effect.duration?.unit === "focus");
+    if (focus) leaderDetails.push(focus.name.toUpperCase());
+    if (isShieldWallActive(leader.character)) leaderDetails.push("SHIELD WALL AC20");
+    if (isHidden(leader.character)) leaderDetails.push("HIDDEN");
+    if (leader.character.className === "pit-fighter") {
+      leaderDetails.push(`FLOURISH ${leader.character.classState.flourishUses}/3`);
+    }
+    if (leader.character.className === "seer") {
+      leaderDetails.push(`OMEN ${leader.character.classState.omenUses}/1`);
+    }
+    if (leader.character.className === "witch") {
+      leaderDetails.push(leader.character.classState.familiarAlive ? "FAMILIAR READY" : "FAMILIAR LOST");
+    }
     if (leader.mode === "hold") leaderDetails.push("HOLDING");
     this.leaderDetail.setText(leaderDetails.length > 0 ? leaderDetails.join("   |   ") : "Leader ready");
 

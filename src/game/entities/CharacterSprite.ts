@@ -5,8 +5,8 @@
  */
 
 import Phaser from "phaser";
-import type { Character } from "../../engine";
-import { classDef, type ClassDef } from "../../data";
+import { applyUseOutcome, canUseItem, hasCapability, type Character } from "../../engine";
+import { classDef, item, type ClassDef } from "../../data";
 import type { GameContext } from "../context";
 import type { MonsterSprite } from "./MonsterSprite";
 import { crackleBed, type AmbienceHandle } from "../audio/ambience";
@@ -27,9 +27,14 @@ const TILES_PER_FALL_DIE = 3;
 
 const CLASS_SPEED: Record<string, number> = {
   fighter: 160,
+  "pit-fighter": 170,
+  "sea-wolf": 155,
   thief: 200,
+  "ras-godai": 195,
   priest: 150,
+  seer: 155,
   wizard: 150,
+  witch: 155,
 };
 
 export const JUMP_VELOCITY = -450;
@@ -62,6 +67,8 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
   torchTimerId: string | null = null;
   /** Selected spell index into character.knownSpells (casters). */
   spellIndex = 0;
+  /** Last real-time attack attempt, used by Evoke Rage's aggression clause. */
+  lastOffensiveActionAt = 0;
 
   private lastGroundedAt = 0;
   private lastJumpPressedAt = -Infinity;
@@ -129,7 +136,9 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
   get speed(): number {
     const s = CLASS_SPEED[this.character.className];
     if (s === undefined) throw new Error(`No speed for class ${this.character.className}`);
-    return s;
+    const bonus = this.character.effects.flatMap((effect) => effect.hooks)
+      .reduce((total, hook) => total + (hook.kind === "speedBonus" ? hook.bonus : 0), 0);
+    return s + bonus;
   }
 
   get weaponDamage(): string {
@@ -233,6 +242,11 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
 
   tick(delta: number): void {
     this.swingCooldown = Math.max(0, this.swingCooldown - delta);
+    const body = this.body as Phaser.Physics.Arcade.Body;
+    const flying = hasCapability(this.character, "canFly");
+    if (flying) body.setAllowGravity(false);
+    else if (!this.climbing && !this.ledgeGrabState) body.setAllowGravity(true);
+    this.setAlpha(hasCapability(this.character, "invisible") ? 0.38 : 1);
     if (this.ledgeGrabState) {
       this.setVelocity(0, 0);
       (this.body as Phaser.Physics.Arcade.Body).allowGravity = false;
@@ -370,6 +384,15 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
       featherLand({ gain: this.isLeader ? 1 : 0.3 });
       floatText(this.scene, this.x, this.y - 16, "FEATHER FALL", "#a7d8ff");
       this.ctx.say(`${this.character.name} drifts safely to the ground.`, "#a7d8ff");
+      return;
+    }
+    const featherRing = item("ring-feather-falling");
+    const ringCheck = canUseItem(this.character, this.character.itemState, featherRing, "activate");
+    if (ringCheck.ok) {
+      applyUseOutcome(this.character.itemState, featherRing, "success");
+      featherLand({ gain: this.isLeader ? 1 : 0.3 });
+      floatText(this.scene, this.x, this.y - 16, "RING: FEATHER FALL", "#a7d8ff");
+      this.ctx.say(`${this.character.name}'s ring bears them safely to the ground.`, "#a7d8ff");
       return;
     }
     // A damaging landing gets both settling rubble and the existing hard impact.

@@ -110,6 +110,23 @@ describe("ModeController transitions", () => {
     expect(calls).toEqual(["exit:stats", "release", "enter:playing", "world:running", "audio:resumed"]);
   });
 
+  it("keeps a non-cancelable decision mode paused until an explicit choice returns to play", () => {
+    const { host, calls } = recordingHost();
+    const modes = new ModeController(host, "playing");
+    modes.set("actionChoice");
+    expect(modes.mode).toBe("actionChoice");
+    expect(modes.worldPaused).toBe(true);
+    expect(calls.at(-2)).toBe("world:paused");
+
+    // Merely waiting or polling the mode cannot resume simulation.
+    expect(modes.mode).toBe("actionChoice");
+    expect(modes.worldPaused).toBe(true);
+
+    modes.set("playing");
+    expect(modes.worldPaused).toBe(false);
+    expect(calls.at(-2)).toBe("world:running");
+  });
+
   it("is a no-op when asked for the mode it is already in", () => {
     const { host, calls } = recordingHost();
     const modes = new ModeController(host, "gear");

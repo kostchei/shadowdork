@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { DC, getBaseRole } from "../../engine";
+import { DC, getBaseRole, hasHook } from "../../engine";
 import type { FeaturedTrapSpec, TilePoint } from "../level/dungeons";
 import type { GameContext } from "../context";
 import type { CharacterSprite } from "../entities/CharacterSprite";
@@ -786,8 +786,10 @@ export class TrapSystem {
       ) {
         submerged.add(member);
         const body = member.body as Phaser.Physics.Arcade.Body;
-        body.setGravityY(-850);
-        if (body.velocity.y > 110) body.setVelocityY(110);
+        const seafarer = hasHook(member.character.effects, "seafarer");
+        body.setGravityY(seafarer ? -980 : -850);
+        if (body.velocity.y > (seafarer ? 45 : 110)) body.setVelocityY(seafarer ? 45 : 110);
+        if (seafarer) body.setVelocityX(body.velocity.x * 0.88);
         if (member.torchLit) this.snuffTorch(member);
       }
     }

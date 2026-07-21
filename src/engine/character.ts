@@ -1,6 +1,6 @@
 /** Character model: six stats, class, effects (talents + conditions), HP/AC/XP, spells. */
 
-import { critThreshold, hasHook, sumHook, sumStatBonus, type Effect } from "./effects";
+import { critThreshold, effectiveStatScore, hasHook, sumHook, type Effect } from "./effects";
 import type { Dice } from "./dice";
 import { Inventory, ItemStateTracker, type ItemDef } from "./inventory";
 
@@ -105,6 +105,24 @@ export interface DyingState {
   roundsRemaining: number;
 }
 
+export interface ClassState {
+  /** Pit Fighter Flourish uses remaining until rest. */
+  flourishUses: number;
+  /** Witch familiar availability and restoration state. */
+  familiarAlive: boolean;
+  /** Seer omen readings remaining until rest. */
+  omenUses: number;
+  /** Gear held between Cauldron castings (maximum 3 slots). */
+  cauldronItems: { itemId: string; qty: number }[];
+}
+
+export const DEFAULT_CLASS_STATE: Readonly<ClassState> = {
+  flourishUses: 0,
+  familiarAlive: false,
+  omenUses: 0,
+  cauldronItems: [],
+};
+
 export function statModifier(score: number): number {
   if (!Number.isInteger(score) || score < 1 || score > 20) {
     throw new Error(`Invalid stat score: ${score}`);
@@ -174,6 +192,7 @@ export class Character {
 
   /** One reroll, Shadowdark luck. Spent through the game layer. */
   luckToken = true;
+  classState: ClassState = { ...DEFAULT_CLASS_STATE, cauldronItems: [] };
 
   /** Set while at 0 HP; cleared by stabilization or healing. */
   dying: DyingState | null = null;
@@ -199,7 +218,7 @@ export class Character {
   }
 
   mod(stat: StatName): number {
-    return statModifier(this.stats[stat]);
+    return statModifier(effectiveStatScore(this.effects, stat, this.stats[stat]));
   }
 
   get maxHp(): number {
@@ -216,7 +235,13 @@ export class Character {
     const armored = this.wornArmor?.armor;
     const base = armored ? armored.acBase + Math.min(dex, armored.dexCap) : 10 + dex;
     const shield = this.carriedShield && !this.shieldStowed ? 2 : 0;
-    return base + shield + sumHook(this.effects, "acBonus") + this.armorAcBonus();
+    const calculated = base + shield + sumHook(this.effects, "acBonus") + this.armorAcBonus();
+    let minimum = calculated;
+    for (const effect of this.effects) {
+      if (effect.id === "class:sea-wolf:shield-wall" && (!this.carriedShield || this.shieldStowed)) continue;
+      for (const hook of effect.hooks) if (hook.kind === "acMinimum") minimum = Math.max(minimum, hook.value);
+    }
+    return minimum;
   }
 
   private armorAcBonus(): number {

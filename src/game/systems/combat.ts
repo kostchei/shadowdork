@@ -5,7 +5,18 @@
  */
 
 import Phaser from "phaser";
-import { getBaseRole, monsterAttackRoll, moraleCheck, type CheckResult, type ItemDef } from "../../engine";
+import {
+  POISONED_WEAPON_EFFECT_ID,
+  assassinExtraDamageDice,
+  getBaseRole,
+  monsterAttackRoll,
+  moraleCheck,
+  poisonedWeaponDamage,
+  hasHook,
+  revealCharacter,
+  type CheckResult,
+  type ItemDef,
+} from "../../engine";
 import { item } from "../../data";
 import type { GameContext } from "../context";
 import { RENDER_SCALE } from "../display";
@@ -91,6 +102,7 @@ export function buildAttackContext(
   }
 
   if (!attacker.grounded) disadvantage.push("airborne");
+  if (target.spellObscured) disadvantage.push("fog");
   if (light.levelAt(attacker.x, attacker.y) === "dark") disadvantage.push("darkness");
 
   return { advantage, disadvantage };
@@ -170,6 +182,8 @@ export interface SwingOutcome {
   swung: boolean;
   /** Check result when a target was actually attacked. */
   check?: CheckResult;
+  /** Total damage dealt by a successful hit. */
+  damage?: number;
 }
 
 /** One melee swing from a character. */
@@ -199,29 +213,41 @@ export function meleeSwing(deps: MeleeDeps, attacker: CharacterSprite): SwingOut
         Phaser.Math.Distance.Between(attacker.x, attacker.y, b.x, b.y),
     )[0];
   if (!target) return { swung: true };
+  attacker.lastOffensiveActionAt = scene.time.now;
 
   const posCtx = buildAttackContext(attacker, target, light, ctx, scene);
   // Backstab: advantage AND extra weapon dice (1 + half level), per RAW.
   const backstab = posCtx.advantage.includes("backstab");
+  const unaware = target.aiState === "patrol" || target.isSleeping;
+  const assassinDice = assassinExtraDamageDice(attacker.character, unaware);
   const result = ctx.engine.attack({
     attacker: attacker.character,
     targetAc: target.def.ac,
     damage: attacker.weaponDamage,
     weapon: attacker.character.weapon,
-    extraDamageDice: backstab ? 1 + Math.floor(attacker.character.level / 2) : 0,
+    extraDamageDice: (backstab ? 1 + Math.floor(attacker.character.level / 2) : 0) + assassinDice,
     advantage: posCtx.advantage,
     disadvantage: posCtx.disadvantage,
   });
 
+  const wasHidden = revealCharacter(attacker.character);
   const die = result.check.natural;
+  let totalDamage = result.damage;
   if (result.check.success) {
-    const label = result.check.crit ? `${die}! CRIT ${result.damage}` : `${die} → ${result.damage}`;
+    const poisonDice = poisonedWeaponDamage(attacker.character);
+    if (poisonDice) {
+      const poison = ctx.engine.dice.roll(poisonDice);
+      totalDamage += poison;
+      attacker.character.removeEffect(POISONED_WEAPON_EFFECT_ID);
+      floatText(deps.scene, target.x, target.y - 32, `+${poison} poison`, "#8bd450", 11);
+    }
+    const label = result.check.crit ? `${die}! CRIT ${totalDamage}` : `${die} → ${totalDamage}`;
     floatText(deps.scene, target.x, target.y - 16, label, result.check.crit ? "#ffd040" : "#ff7050");
     if (result.check.crit) deps.scene.cameras.main.shake(150, 0.008);
     else deps.scene.cameras.main.shake(80, 0.003);
     if (result.check.crit) swordCrit();
     else swordClang();
-    applyDamageToMonster(deps, target, result.damage);
+    applyDamageToMonster(deps, target, totalDamage);
   } else {
     whoosh();
     floatText(deps.scene, target.x, target.y - 16, `${die} miss`, "#8888aa");
@@ -231,7 +257,10 @@ export function meleeSwing(deps: MeleeDeps, attacker: CharacterSprite): SwingOut
   } else if (posCtx.disadvantage.length > 0 && posCtx.advantage.length === 0) {
     floatText(deps.scene, attacker.x, attacker.y - 34, posCtx.disadvantage[0]!, "#d07070", 11);
   }
-  return { swung: true, check: result.check };
+  if (wasHidden && assassinDice > 0) {
+    floatText(scene, attacker.x, attacker.y - 46, "ASSASSIN!", "#d9b3ff", 12);
+  }
+  return { swung: true, check: result.check, damage: result.check.success ? totalDamage : undefined };
 }
 
 export function applyDamageToMonster(deps: MeleeDeps, target: MonsterSprite, damage: number): void {
@@ -264,6 +293,7 @@ export function rangedShot(
 ): void {
   if (!attacker.canSwing()) return;
   attacker.startSwingCooldown();
+  attacker.lastOffensiveActionAt = deps.scene.time.now;
   const { scene, ctx, light } = deps;
   if (!weapon.damage) throw new Error(`${weapon.name} has no damage dice`);
 
@@ -325,12 +355,15 @@ export function monsterSwing(
   target.lastAttackedBy = monster;
   target.lastAttackedAt = scene.time.now;
   const inDark = light.levelAt(target.x, target.y) === "dark";
+  const obscured = hasHook(target.character.effects, "obscured");
+  const forcedDisadvantage = monster.spellDisadvantageNextAction || obscured;
   const result = monsterAttackRoll(
     ctx.engine.dice,
     monster.def,
     target.character.ac,
-    inDark ? "advantage" : "normal",
+    forcedDisadvantage ? "disadvantage" : inDark ? "advantage" : "normal",
   );
+  monster.spellDisadvantageNextAction = false;
   if (result.hit) {
     // Staff Sunder Ability: if target is wielding a staff in 2 hands when hit, sacrifice/destroy staff to block all hit damage!
     const wielded = target.character.wieldedWeapon;

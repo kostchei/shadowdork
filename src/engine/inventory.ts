@@ -84,6 +84,12 @@ export class ItemStateTracker {
     if (!s.broken) this.put(itemId, { ...s, inert: false });
   }
 
+  /** Mundane repair magic clears broken/inert state without restoring charges. */
+  repair(itemId: string): void {
+    const s = this.get(itemId);
+    this.put(itemId, { ...s, inert: false, broken: false });
+  }
+
   entries(): readonly (readonly [string, ItemInstanceState])[] {
     return [...this.state.entries()];
   }
@@ -104,8 +110,12 @@ export interface ItemDef {
   /** Units carried free before slots are charged (coins: first 100 free). */
   freeQty?: number;
   tags: readonly string[];
+  /** Short rules-facing text for the lightweight inventory inspection view. */
+  description?: string;
   /** XP value when picked up, for treasure items. */
   xpValue?: number;
+  /** Extra carrying capacity supplied while this item remains in inventory. */
+  capacityBonus?: number;
   /** Base coin value. Buy price = valueGp; sell price = floor(valueGp * SELL_RATE).
    * Items without a valueGp are neither stocked nor sellable. */
   valueGp?: number;
@@ -153,12 +163,19 @@ function stackSlots(def: ItemDef, qty: number): number {
 }
 
 export class Inventory {
-  readonly capacity: number;
+  private readonly baseCapacity: number;
   private stacks: ItemStack[] = [];
 
   constructor(capacity: number) {
     if (capacity < 1) throw new Error(`Invalid inventory capacity ${capacity}`);
-    this.capacity = capacity;
+    this.baseCapacity = capacity;
+  }
+
+  get capacity(): number {
+    return this.baseCapacity + this.stacks.reduce(
+      (total, stack) => total + (stack.def.capacityBonus ?? 0) * stack.qty,
+      0,
+    );
   }
 
   slotsUsed(): number {
@@ -178,7 +195,8 @@ export class Inventory {
       this.slotsUsed() -
       (existing ? stackSlots(def, existing.qty) : 0) +
       stackSlots(def, (existing?.qty ?? 0) + qty);
-    return newSlots <= this.capacity;
+    const addedCapacity = (def.capacityBonus ?? 0) * qty;
+    return newSlots <= this.capacity + addedCapacity;
   }
 
   /**
@@ -189,7 +207,6 @@ export class Inventory {
   canSwap(removeId: string, addDef: ItemDef, removeQty = 1, addQty = 1): boolean {
     const removeStack = this.stacks.find((s) => s.def.id === removeId);
     if (!removeStack || removeStack.qty < removeQty) return false;
-    if (addDef.slotCost === 0) return true;
     const freed = stackSlots(removeStack.def, removeStack.qty) - stackSlots(removeStack.def, removeStack.qty - removeQty);
     const usedAfter = this.slotsUsed() - freed;
     const existingQty =
@@ -197,7 +214,11 @@ export class Inventory {
         ? removeStack.qty - removeQty
         : this.stacks.find((s) => s.def.id === addDef.id)?.qty ?? 0;
     const newSlots = usedAfter - stackSlots(addDef, existingQty) + stackSlots(addDef, existingQty + addQty);
-    return newSlots <= this.capacity;
+    const capacityAfter =
+      this.capacity -
+      (removeStack.def.capacityBonus ?? 0) * removeQty +
+      (addDef.capacityBonus ?? 0) * addQty;
+    return newSlots <= capacityAfter;
   }
 
   add(def: ItemDef, qty = 1, force = false): void {
@@ -224,6 +245,11 @@ export class Inventory {
     const stack = this.stacks.find((s) => s.def.id === itemId);
     if (!stack || stack.qty < qty) {
       throw new Error(`Cannot remove ${qty}x "${itemId}": have ${stack?.qty ?? 0}`);
+    }
+    const capacityAfter = this.capacity - (stack.def.capacityBonus ?? 0) * qty;
+    const slotsAfter = this.slotsUsed() - stackSlots(stack.def, stack.qty) + stackSlots(stack.def, stack.qty - qty);
+    if (slotsAfter > capacityAfter) {
+      throw new Error(`Cannot remove ${stack.def.name}: empty it first (${slotsAfter}/${capacityAfter} slots)`);
     }
     stack.qty -= qty;
     if (stack.qty === 0) this.stacks = this.stacks.filter((s) => s !== stack);

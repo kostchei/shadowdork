@@ -115,40 +115,42 @@ must become usable gameplay.
 
 ### Initial consumables
 
-- [ ] Potion of Healing: consume, heal, remove the item, and allow recovery from
+- [x] Potion of Healing: consume, heal, remove the item, and allow recovery from
   dying where appropriate.
-- [ ] Potion of Invisibility: end on attack or spellcasting.
-- [ ] Potion of Flying: grant bounded vertical movement for a short duration.
-- [ ] Potion of Water Breathing: ignore drowning rules for its duration.
-- [ ] Potion of Giant Strength: temporarily increase Strength without corrupting
+- [x] Potion of Invisibility: end on attack or spellcasting.
+- [x] Potion of Flying: grant bounded vertical movement for a short duration.
+- [x] Potion of Water Breathing: ignore drowning rules for its duration. (The
+  current flooded chamber has buoyancy but no drowning damage; the capability
+  hook is live and ready for any future drowning clock.)
+- [x] Potion of Giant Strength: temporarily increase Strength without corrupting
   the saved base stat.
-- [ ] Add a visible duration and a contextual `Use` action for every potion.
+- [x] Add a visible duration and a contextual `Use` action for every potion.
 
 ### Scrolls and wands
 
-- [ ] A caster may use a scroll or wand only when the spell belongs to their
+- [x] A caster may use a scroll or wand only when the spell belongs to their
   spell list, even if they do not know it.
-- [ ] Cast from an item using DC `10 + spell tier`.
-- [ ] A scroll's writing disappears after any casting attempt.
-- [ ] A scroll critical failure also triggers the caster's mishap table.
-- [ ] A wand becomes inert until rest after a normal failure.
-- [ ] A wand permanently breaks on a critical failure and triggers a mishap.
-- [ ] Item casting must not lose the character's known copy of the spell.
-- [ ] Implement the existing Cure Wounds, Light, Burning Hands, Feather Fall,
+- [x] Cast from an item using DC `10 + spell tier`.
+- [x] A scroll's writing disappears after any casting attempt.
+- [x] A scroll critical failure also triggers the caster's mishap table.
+- [x] A wand becomes inert until rest after a normal failure.
+- [x] A wand permanently breaks on a critical failure and triggers a mishap.
+- [x] Item casting must not lose the character's known copy of the spell.
+- [x] Implement the existing Cure Wounds, Light, Burning Hands, Feather Fall,
   and Fireball item entries first.
 
 ### First utility and personality items
 
 - [ ] Immovable Rod: pin moving geometry, doors, lifts, crushers, or an anchor
   point where explicitly supported.
-- [ ] Bag of Holding: increase useful capacity without eliminating gear-slot
+- [x] Bag of Holding: increase useful capacity without eliminating gear-slot
   pressure.
-- [ ] Ring of Feather Falling: automatically prevent a limited number of
+- [x] Ring of Feather Falling: automatically prevent a limited number of
   dangerous falls per rest or destination.
 - [ ] Add one weapon with a strong benefit and a meaningful curse.
 - [ ] Add one conscious item with an alignment, virtue, flaw, demand, and
   refusal condition.
-- [ ] Add a lightweight `Inspect` view that reveals known properties without
+- [x] Add a lightweight `Inspect` view that reveals known properties without
   becoming a large inventory encyclopedia.
 
 ### Treasure generation
@@ -179,35 +181,38 @@ must become usable gameplay.
 
 ### Luck before consequences
 
-- [ ] On a natural 1 spell check, freeze resolution before applying the mishap.
-- [ ] Offer `Spend Luck` or `Accept Mishap` when the caster has a token.
-- [ ] Make the prompt work with keyboard and one-tap mobile actions.
-- [ ] Resolve the rerolled check fully and use the new result.
-- [ ] Add regression tests ensuring a mishap cannot apply twice or survive a
+- [x] On a natural 1 spell check, freeze resolution before applying the mishap.
+- [x] Offer `Spend Luck` or `Accept Mishap` when the caster has a token.
+- [x] Make the prompt work with keyboard and one-tap mobile actions. (Uses the
+  shared world-pausing action chooser with wrapped preview text.)
+- [x] Resolve the rerolled check fully and use the new result.
+- [x] Add regression tests ensuring a mishap cannot apply twice or survive a
   successful luck reroll.
 
 ### Wizard mishaps
 
-- [ ] Expand each Wizard tier band to a full, varied table.
-- [ ] Include redirected spells that strike the caster or a nearby ally.
-- [ ] Include lost or vanished gear.
-- [ ] Include suppressed light or a magical beacon.
-- [ ] Include a sinkhole or other room-geometry consequence.
-- [ ] Include hostile summons and portals.
-- [ ] Include temporary spell loss and rare permanent spell loss.
-- [ ] Include a growing magical tear or repeated uncontrolled casting at high
+- [x] Expand each Wizard tier band to a full, varied table. (Each band is now a
+  contiguous 1d12 table.)
+- [x] Include redirected spells that strike the caster or a nearby ally.
+- [x] Include lost or vanished gear.
+- [x] Include suppressed light or a magical beacon.
+- [x] Include a sinkhole or other room-geometry consequence.
+- [x] Include hostile summons and portals.
+- [x] Include temporary spell loss and rare permanent spell loss.
+- [x] Include a growing magical tear or repeated uncontrolled casting at high
   tiers.
-- [ ] Ensure every spatial outcome has a safe fallback in unsupported room
+- [x] Ensure every spatial outcome has a safe fallback in unsupported room
   geometry.
 
 ### Diabolical Witch mishaps
 
-- [ ] Give Witch casting its own Diabolical Mishap tables.
-- [ ] Include temporary transformation, uncontrollable laughter, stolen gear,
+- [x] Give Witch casting its own Diabolical Mishap tables. (Witches now cast
+  with CHA and use their own 1d12 table for every tier band.)
+- [x] Include temporary transformation, uncontrollable laughter, stolen gear,
   swamp gas, a salt prison, hostile familiars or imps, and patron displeasure.
-- [ ] Prefer destination-length curses over permanent campaign destruction when
+- [x] Prefer destination-length curses over permanent campaign destruction when
   the original result would be excessively punitive in this format.
-- [ ] Make severe consequences clearly previewed before the player accepts the
+- [x] Make severe consequences clearly previewed before the player accepts the
   mishap instead of spending luck.
 
 ### Acceptance criteria
@@ -353,72 +358,72 @@ without turning the spell list into a damage catalog.
 
 ### Core Wizard damage ladder
 
-- [ ] Tier 2 - Acid Arrow: a far-range corrosive bolt that deals 1d6 damage
+- [x] Tier 2 - Acid Arrow: a far-range corrosive bolt that deals 1d6 damage
   each round while the Wizard maintains Focus. This is the sustained
   single-target option and the first live test of Focus under combat pressure.
-- [ ] Tier 3 - Lightning Bolt: deal 3d6 damage to every creature in a straight
+- [x] Tier 3 - Lightning Bolt: deal 3d6 damage to every creature in a straight
   line out to far range. Fireball already provides tier 3 area damage;
   Lightning Bolt adds a distinct positioning and friendly-fire problem.
-- [ ] Tier 4 - Cloudkill: create a near-sized persistent poison cloud at far
+- [x] Tier 4 - Cloudkill: create a near-sized persistent poison cloud at far
   range that spreads around corners, blinds creatures inside, and deals 2d6 at
   the start of their turns. Implement the core low-level-creature lethality
   rule only with clear area telegraphing and pathfinding that lets creatures
   attempt to escape.
-- [ ] Tier 5 - Prismatic Orb: choose fire, cold, or electricity, deal 3d8 to one
+- [x] Tier 5 - Prismatic Orb: choose fire, cold, or electricity, deal 3d8 to one
   far target, and double the damage when the chosen energy is anathema to the
   target. This makes monster knowledge and elemental identity matter.
-- [ ] Unlock these spells through normal spell discovery and maximum-tier
+- [x] Unlock these spells through normal spell discovery and maximum-tier
   progression; do not grant all four automatically.
-- [ ] Apply each spell to allies as well as enemies where the core area rule
+- [x] Apply each spell to allies as well as enemies where the core area rule
   says `all creatures`.
 - [ ] Give lines and persistent areas clear previews that work with mouse,
   keyboard, controller-ready selection, and touch.
 
 ### Initial Witch spells
 
-- [ ] Spidersilk: walk on supported vertical surfaces while focused.
-- [ ] Witchlight: control a movable close-radius light while focused.
-- [ ] Cauldron: repair a mundane item or temporarily store limited gear.
-- [ ] Fog: create moving concealment and ranged-attack disadvantage.
-- [ ] Cat's Eye: reveal invisible creatures and nearby secrets while focused.
-- [ ] Bogboil: create temporary blocking terrain.
-- [ ] Broomstick: focused flight with clear indoor boundaries.
-- [ ] Howl: force an immediate morale check.
-- [ ] Speak With Dead: ask bounded questions that can reveal seeded room facts.
+- [x] Spidersilk: walk on supported vertical surfaces while focused.
+- [x] Witchlight: control a movable close-radius light while focused.
+- [x] Cauldron: repair a mundane item or temporarily store limited gear.
+- [x] Fog: create moving concealment and ranged-attack disadvantage.
+- [x] Cat's Eye: reveal invisible creatures and nearby secrets while focused.
+- [x] Bogboil: create temporary blocking terrain.
+- [x] Broomstick: focused flight with clear indoor boundaries.
+- [x] Howl: force an immediate morale check.
+- [x] Speak With Dead: ask bounded questions that can reveal seeded room facts.
 
 ### Initial Seer spells
 
-- [ ] Chant: reveal hidden and invisible things without granting darkvision.
-- [ ] Trance: grant one luck token to another character.
-- [ ] Potion: cure poison or stop dying while leaving the target unconscious.
-- [ ] Evoke Rage: grant a willing ally melee power and morale immunity while
+- [x] Chant: reveal hidden and invisible things without granting darkvision.
+- [x] Trance: grant one luck token to another character.
+- [x] Potion: cure poison or stop dying while leaving the target unconscious.
+- [x] Evoke Rage: grant a willing ally melee power and morale immunity while
   requiring aggression.
-- [ ] Fate: damage a target and remove luck-like protection where supported.
-- [ ] Read The Runes: reveal a truthful yes/no omen from authored run facts.
-- [ ] Cast Out: prevent one creature from entering the Seer's near zone while
+- [x] Fate: damage a target and remove luck-like protection where supported.
+- [x] Read The Runes: reveal a truthful yes/no omen from authored run facts.
+- [x] Cast Out: prevent one creature from entering the Seer's near zone while
   focused.
-- [ ] Wolfshape: grant a distinct traversal and combat form.
+- [x] Wolfshape: grant a distinct traversal and combat form.
 
 ### Focus rules
 
-- [ ] Mark appropriate spells as Focus spells.
-- [ ] A caster may focus on only one spell at a time.
-- [ ] Make a spellcasting check to maintain Focus at the appropriate cadence.
-- [ ] Failure ends Focus but does not lose the spell solely because the Focus
+- [x] Mark appropriate spells as Focus spells.
+- [x] A caster may focus on only one spell at a time.
+- [x] Make a spellcasting check to maintain Focus at the appropriate cadence.
+- [x] Failure ends Focus but does not lose the spell solely because the Focus
   check failed.
-- [ ] Damage and other distractions trigger a Focus check rather than always
+- [x] Damage and other distractions trigger a Focus check rather than always
   ending the spell automatically.
-- [ ] Show the focused spell and its affected target or area in the HUD.
-- [ ] End Focus cleanly on death, unconsciousness, rest, scene transition, or a
+- [x] Show the focused spell and its affected target or area in the HUD.
+- [x] End Focus cleanly on death, unconsciousness, rest, scene transition, or a
   voluntary cancel action.
 
 ### Targeting
 
-- [ ] Support self, ally, enemy, point, and object spell targets.
-- [ ] Keep quick-cast behavior for unambiguous spells.
-- [ ] Open a compact target chooser only when more than one valid target or
+- [x] Support self, ally, enemy, point, and object spell targets.
+- [x] Keep quick-cast behavior for unambiguous spells.
+- [x] Open a compact target chooser only when more than one valid target or
   point exists.
-- [ ] Prevent utility spells from becoming mandatory single-solution gates.
+- [x] Prevent utility spells from becoming mandatory single-solution gates.
 
 ### Acceptance criteria
 
@@ -435,44 +440,46 @@ without turning the spell list into a damage catalog.
 
 ### Witch
 
-- [ ] Use Charisma for Witch casting.
-- [ ] Replace borrowed Wizard starting spells with Witch spells.
-- [ ] Use Witch spell-known progression and talent data.
-- [ ] Implement a familiar that can scout, carry a tiny object, and serve as a
+- [x] Use Charisma for Witch casting.
+- [x] Replace borrowed Wizard starting spells with Witch spells.
+- [x] Use Witch spell-known progression and talent data.
+- [x] Implement a familiar that can scout, carry a tiny object, and serve as a
   spell origin where safe.
-- [ ] Define familiar death and restoration costs.
-- [ ] Use Diabolical Mishaps.
+- [x] Define familiar death and restoration costs.
+- [x] Use Diabolical Mishaps.
 
 ### Seer
 
-- [ ] Replace borrowed Priest spells with Seer spells.
-- [ ] Use the Seer spell-known progression and talent table.
-- [ ] Implement Destined so spending luck adds its intended bonus.
-- [ ] Connect Seer abilities to Oaths and omens.
+- [x] Replace borrowed Priest spells with Seer spells.
+- [x] Use the Seer spell-known progression and talent table.
+- [x] Implement Destined so spending luck adds its intended bonus.
+- [x] Connect Seer abilities to persistent, limited-use omens.
+- [ ] Connect Seer abilities to destination Oaths when the P2-7 Oath system is
+  implemented.
 
 ### Ras-Godai
 
-- [ ] Make Assassin depend on the shared hidden/unaware state.
-- [ ] Implement the intended unaware-target damage.
-- [ ] Add poison training so normal poison accidents occur only on a natural 1.
-- [ ] Give the class its own talent table rather than the Thief table.
+- [x] Make Assassin depend on the shared hidden/unaware state.
+- [x] Implement the intended unaware-target damage.
+- [x] Add poison training so normal poison accidents occur only on a natural 1.
+- [x] Give the class its own talent table rather than the Thief table.
 
 ### Sea Wolf
 
-- [ ] Implement Shield Wall as an activated defensive stance requiring a
+- [x] Implement Shield Wall as an activated defensive stance requiring a
   readied shield.
-- [ ] Apply the intended AC behavior instead of a passive generic bonus.
-- [ ] Define movement, attack, and cancellation rules for the stance.
-- [ ] Adapt Seafarer into a dungeon-relevant feature: advantage on swimming,
+- [x] Apply the intended AC behavior instead of a passive generic bonus.
+- [x] Define movement, attack, and cancellation rules for the stance.
+- [x] Adapt Seafarer into a dungeon-relevant feature: advantage on swimming,
   balancing on wet or icy surfaces, and resisting water-driven forced movement.
-- [ ] Give the class its own talent table.
+- [x] Give the class its own talent table.
 
 ### Pit Fighter
 
-- [ ] Implement Flourish as limited healing triggered by a valid melee hit.
-- [ ] Track daily or rest-based uses.
-- [ ] Implement Implacable for injury and poison resistance checks.
-- [ ] Give the class its own talent table.
+- [x] Implement Flourish as limited healing triggered by a valid melee hit.
+- [x] Track daily or rest-based uses.
+- [x] Implement Implacable for injury and poison resistance checks.
+- [x] Give the class its own talent table.
 
 ### Additional classes - after the above are complete
 
@@ -587,7 +594,9 @@ without turning the spell list into a damage catalog.
 
 ## P2-10 - Risky resting and camp procedure
 
-- [ ] Require one ration per resting character.
+- [x] Require one ration per resting character. (The old gear/hotkey path that
+  spent only the leader's ration while healing everyone now shares the same
+  per-character resolver as campfires.)
 - [ ] Allow three torches to create an eight-hour stationary campfire.
 - [ ] Advance the encounter clock for the full rest.
 - [ ] Check for interruptions using the location's danger cadence.
@@ -663,8 +672,8 @@ These systems are useful but should not block the core Phase 2 loop.
 
 If Phase 2 must be divided into smaller releases, ship this package first:
 
-- [ ] Five functional potions.
-- [ ] Scroll and wand casting rules.
+- [x] Five functional potions.
+- [x] Scroll and wand casting rules.
 - [ ] Immovable Rod, Bag of Holding, Ring of Feather Falling, one cursed weapon,
   and one conscious item.
 - [ ] Random encounter distance, activity, and reaction.
@@ -673,7 +682,7 @@ If Phase 2 must be divided into smaller releases, ship this package first:
 - [ ] Acid Arrow, Lightning Bolt, Cloudkill, and Prismatic Orb as the core
   Wizard tier 2-5 damage ladder.
 - [ ] Focus and at least six utility spells split between Witch and Seer.
-- [ ] Expanded Wizard mishaps and a Diabolical Witch mishap table.
+- [x] Expanded Wizard mishaps and a Diabolical Witch mishap table.
 - [ ] Functional Witch and Seer class identities.
 - [ ] One Oath system for Midnight Sun and one Patron Bargain system for
   Diablerie.

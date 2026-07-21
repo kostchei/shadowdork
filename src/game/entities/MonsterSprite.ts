@@ -49,6 +49,11 @@ export class MonsterSprite extends Phaser.Physics.Arcade.Sprite {
   private alertedUntil = 0;
   attackCooldown = 0;
   patrolDir: 1 | -1 = 1;
+  /** Fate consumes this on the monster's next attack. */
+  spellDisadvantageNextAction = false;
+  spellObscured = false;
+  /** Seer id whose active Cast Out boundary repels this monster. */
+  spellCastOutCasterId: string | null = null;
   private patrolOriginX: number;
   private shadow: Phaser.GameObjects.Image;
   private readonly customTexture: boolean;

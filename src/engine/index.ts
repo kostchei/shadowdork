@@ -5,6 +5,7 @@
 
 import { awardXp, canLevelUp, levelUp, type LevelUpResult, type XpAward } from "./advancement";
 import { Character } from "./character";
+import { restoreClassResources } from "./classAbilities";
 import { DC, resolveCheck, type CheckInput, type CheckResult } from "./check";
 import { Dice } from "./dice";
 import { EventLog } from "./events";
@@ -12,6 +13,10 @@ import type { ItemDef } from "./inventory";
 import { restoreOnRest } from "./itemActions";
 import {
   castSpell,
+  castSpellFromItem,
+  acceptPendingMishap,
+  spendLuckOnPendingMishap,
+  type CastSource,
   completePenance,
   recoverSpells,
   type CastResult,
@@ -23,6 +28,7 @@ import { DEFAULT_CONFIG, GameClock, type EngineConfig } from "./time";
 export * from "./advancement";
 export * from "./character";
 export * from "./check";
+export * from "./classAbilities";
 export * from "./conditions";
 export * from "./dice";
 export * from "./effects";
@@ -31,6 +37,7 @@ export * from "./events";
 export * from "./inventory";
 export * from "./itemActions";
 export * from "./monster";
+export * from "./potions";
 export * from "./spells";
 export * from "./tables";
 export * from "./time";
@@ -102,6 +109,7 @@ export class Engine {
 
   private tickRound(): void {
     for (const c of this.characters.values()) {
+      this.checkFocus(c, "round");
       // Round-based conditions tick down.
       c.effects = c.effects.filter((e) => {
         if (e.duration?.unit !== "rounds") return true;
@@ -132,6 +140,33 @@ export class Engine {
         }
       }
     }
+  }
+
+  /** Focus is rechecked each round and whenever damage distracts the caster. */
+  private checkFocus(character: Character, reason: "round" | "damage"): boolean {
+    const focus = character.effects.find((effect) =>
+      effect.duration?.unit === "focus" && effect.hooks.some((hook) => hook.kind === "focusSpell"),
+    );
+    if (!focus || character.dead || character.dying) return true;
+    const hook = focus.hooks.find((candidate) => candidate.kind === "focusSpell");
+    if (!hook || hook.kind !== "focusSpell") return true;
+    const stat = character.className === "wizard" ? "INT" : character.className === "witch" ? "CHA" : "WIS";
+    const result = resolveCheck(this.dice, {
+      actor: character,
+      stat,
+      dc: 10 + hook.tier,
+      kind: "spellcast",
+    });
+    this.log.append(this.clock.elapsedMs, "focus.check", {
+      who: character.id,
+      spell: hook.spellId,
+      reason,
+      natural: result.natural,
+      success: result.success,
+    });
+    if (result.success) return true;
+    character.effects = character.effects.filter((effect) => effect.duration?.unit !== "focus");
+    return false;
   }
 
   check(input: CheckInput): CheckResult {
@@ -168,6 +203,11 @@ export class Engine {
     if (check.success) {
       const diceRolls = 1 + (input.extraDamageDice ?? 0);
       for (let i = 0; i < diceRolls; i++) damage += this.dice.roll(input.damage);
+      for (const effect of a.effects) {
+        for (const hook of effect.hooks) {
+          if (hook.kind === "extraDamageDice") damage += this.dice.roll(hook.dice);
+        }
+      }
       damage += a.damageBonus;
       // Crits double the damage dice (all of them, backstab dice included).
       if (check.crit) for (let i = 0; i < diceRolls; i++) damage += this.dice.roll(input.damage);
@@ -193,6 +233,37 @@ export class Engine {
       mishap: result.mishap?.entry.text,
     });
     return result;
+  }
+
+  castItem(caster: Character, spell: SpellDef, opts?: Parameters<typeof castSpellFromItem>[4]): CastResult {
+    const result = castSpellFromItem(this.dice, this.tables, caster, spell, opts);
+    this.log.append(this.clock.elapsedMs, "cast.item", {
+      who: caster.id,
+      spell: spell.id,
+      outcome: result.outcome,
+      natural: result.check.natural,
+      mishap: result.mishap?.entry.text,
+    });
+    return result;
+  }
+
+  acceptMishap(caster: Character, pending: CastResult, source: CastSource): CastResult {
+    const result = acceptPendingMishap(caster, pending, source);
+    this.log.append(this.clock.elapsedMs, "cast.mishap.accepted", {
+      who: caster.id,
+      spell: result.spell.id,
+      source,
+      mishap: result.mishap?.entry.text,
+    });
+    return result;
+  }
+
+  spendLuckOnMishap(caster: Character, pending: CastResult): void {
+    spendLuckOnPendingMishap(caster, pending);
+    this.log.append(this.clock.elapsedMs, "cast.mishap.luck", {
+      who: caster.id,
+      spell: pending.spell.id,
+    });
   }
 
   /** Complete divine penance; affected spells still require a later rest. */
@@ -242,8 +313,12 @@ export class Engine {
   damageCharacter(character: Character, amount: number): boolean {
     if (character.dead) throw new Error(`${character.name} is already dead`);
     character.takeDamage(amount);
-    // Focus spells end when the caster takes damage.
-    character.effects = character.effects.filter((e) => e.duration?.unit !== "focus");
+    // Damage is a distraction: a failed spell check ends Focus without losing the known spell.
+    if (character.hp === 0) {
+      character.effects = character.effects.filter((effect) => effect.duration?.unit !== "focus");
+    } else {
+      this.checkFocus(character, "damage");
+    }
     if (character.hp === 0 && !character.dying) {
       const rounds = Math.max(1, this.dice.roll("1d4") + character.mod("CON"));
       character.dying = { roundsRemaining: rounds };
@@ -280,8 +355,11 @@ export class Engine {
     character.inventory.remove(rationDef.id, 1);
     character.heal(character.maxHp);
     recoverSpells(character);
-    character.effects = character.effects.filter((e) => e.duration?.unit !== "untilRest");
+    character.effects = character.effects.filter(
+      (e) => e.duration?.unit !== "untilRest" && e.duration?.unit !== "focus",
+    );
     restoreOnRest(character);
+    restoreClassResources(character);
     this.log.append(this.clock.elapsedMs, "rest", { who: character.id });
   }
 
@@ -293,8 +371,11 @@ export class Engine {
     if (character.dead) throw new Error(`${character.name} is dead`);
     character.heal(character.maxHp);
     recoverSpells(character);
-    character.effects = character.effects.filter((e) => e.duration?.unit !== "untilRest");
+    character.effects = character.effects.filter(
+      (e) => e.duration?.unit !== "untilRest" && e.duration?.unit !== "focus",
+    );
     restoreOnRest(character);
+    restoreClassResources(character);
     this.log.append(this.clock.elapsedMs, "rest.free", { who: character.id });
   }
 }

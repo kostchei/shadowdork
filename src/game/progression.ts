@@ -1,4 +1,4 @@
-import { getBaseRole, type Alignment, type ClassName } from "../engine";
+import { getBaseRole, type Alignment, type ClassName, type SpellClass } from "../engine";
 import { characterTitle } from "../engine";
 import type { SaveSlot, SavedCharacter } from "./state";
 import type { VisualSkinId, ZonePackId } from "./visual/model";
@@ -44,7 +44,7 @@ export interface SpellReward {
   title: string;
   description: string;
   spellId: string;
-  className: "wizard" | "priest";
+  className: SpellClass;
 }
 
 export type DungeonReward = CompanionReward | ItemReward | GoldReward | SpellReward;
@@ -59,9 +59,11 @@ const REWARD_CYCLE: readonly RewardKind[] = [
 
 const COMPANION_CLASSES = ["thief", "priest", "wizard"] as const;
 
-const STARTING_SPELLS: Record<"wizard" | "priest", readonly string[]> = {
+const STARTING_SPELLS: Record<SpellClass, readonly string[]> = {
   wizard: classDef("wizard").startingSpellIds,
   priest: classDef("priest").startingSpellIds,
+  witch: classDef("witch").startingSpellIds,
+  seer: classDef("seer").startingSpellIds,
 };
 
 /** Shadowdark unlock bands: tiers 1-5 arrive at levels 1, 3, 5, 7, and 9. */
@@ -109,9 +111,8 @@ function missingCompanion(
 
 function unknownSpell(party: readonly PartyProgress[], dungeonIndex: number): SpellReward | null {
   const casters = party.flatMap((member, partyIndex) => {
-    const base = getBaseRole(member.className as ClassName);
-    if (member.dead || (base !== "wizard" && base !== "priest")) return [];
-    const className: "wizard" | "priest" = base;
+    if (member.dead || !["wizard", "priest", "witch", "seer"].includes(member.className)) return [];
+    const className = member.className as SpellClass;
     const firstDiscovery = member.knownSpellIds.every((id) => STARTING_SPELLS[className].includes(id));
     const maxTier = firstDiscovery ? 1 : maximumSpellTier(member.level);
     const eligible = spellsForClass(className).filter(
@@ -134,8 +135,8 @@ function unknownSpell(party: readonly PartyProgress[], dungeonIndex: number): Sp
   ]!;
   return {
     kind: "spells",
-    title: `${chosen.name} ${caster.className === "priest" ? "Litany" : "Grimoire"}`,
-    description: `${caster.member.className === "priest" ? "The Cleric" : "The Wizard"} learns the tier ${chosen.tier} spell ${chosen.name}.`,
+    title: `${chosen.name} ${caster.className === "priest" || caster.className === "seer" ? "Litany" : "Grimoire"}`,
+    description: `${caster.member.className} learns the tier ${chosen.tier} spell ${chosen.name}.`,
     spellId: chosen.id,
     className: caster.className,
   };

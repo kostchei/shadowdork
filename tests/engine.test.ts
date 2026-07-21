@@ -171,8 +171,11 @@ describe("spellcasting state machine", () => {
       const wiz = createCharacter(engine, "w", "Wizard", "wizard");
       const result = engine.cast(wiz, spell("magic-missile"));
       if (result.check.natural === 1) {
-        expect(result.outcome).toBe("mishap");
+        expect(result.outcome).toBe("pendingMishap");
         expect(result.mishap).toBeDefined();
+        expect(wiz.knownSpell("magic-missile").status).toBe("available");
+        const accepted = engine.acceptMishap(wiz, result, "known");
+        expect(accepted.outcome).toBe("mishap");
         expect(wiz.knownSpell("magic-missile").status).toBe("lost");
         return;
       }
@@ -196,6 +199,10 @@ describe("spellcasting state machine", () => {
       if (result.check.natural !== 1) continue;
 
       const known = priest.knownSpell("cure-wounds");
+      expect(result.outcome).toBe("pendingMishap");
+      expect(known.status).toBe("available");
+      expect(known.requiresAtonement).toBe(false);
+      engine.acceptMishap(priest, result, "known");
       expect(known.status).toBe("lost");
       expect(known.requiresAtonement).toBe(true);
       engine.freeRest(priest);

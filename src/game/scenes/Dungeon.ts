@@ -1059,6 +1059,19 @@ export class DungeonScene extends Phaser.Scene {
     }).setOrigin(0.5).setDepth(4);
   }
 
+  /** Clears accrued open-terrain hazard marks (freezing, city watch, venom, etc). */
+  private clearDangerTrack(): void {
+    if (!dangerRuleForSkin(this.visualSkin?.id, this.openSkyDaytime)) return;
+    const hadDanger = this.dangerKillPending
+      || [...this.dangerFails.values()].some((fails) => fails > 0);
+    if (hadDanger) {
+      this.ctx.say("Shelter clears the expedition's danger track.", "#72d887");
+    }
+    this.dangerFails.clear();
+    this.dangerDistancePx = 0;
+    this.dangerKillPending = false;
+  }
+
   private updateOpenTerrainDanger(currentRoom: string): void {
     const rule = dangerRuleForSkin(this.visualSkin?.id, this.openSkyDaytime);
     if (!rule) return;
@@ -1067,14 +1080,7 @@ export class DungeonScene extends Phaser.Scene {
     this.dangerLastLeaderPos = { x: leader.x, y: leader.y };
 
     if (currentRoom === this.safeZoneId) {
-      const hadDanger = this.dangerKillPending
-        || [...this.dangerFails.values()].some((fails) => fails > 0);
-      if (hadDanger) {
-        this.ctx.say("Shelter clears the expedition's danger track.", "#72d887");
-      }
-      this.dangerFails.clear();
-      this.dangerDistancePx = 0;
-      this.dangerKillPending = false;
+      this.clearDangerTrack();
       return;
     }
 
@@ -3644,6 +3650,7 @@ export class DungeonScene extends Phaser.Scene {
         this.ctx.say(`${c.name} rests: full HP, spells recovered, 1 ration consumed.`, "#60e080");
       }
     }
+    if (free) this.clearDangerTrack();
     this.saveToSlot(0); // Checkpoint auto-saved!
   }
 

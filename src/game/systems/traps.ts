@@ -133,6 +133,7 @@ export class TrapSystem {
   private readonly rollingStones: RollingStoneRuntime[] = [];
   private readonly collapsingFloors: CollapsingFloorRuntime[] = [];
   private readonly swimmers = new Set<CharacterSprite>();
+  private readonly nextAutoDisarmAt = new Map<string, number>();
 
   constructor(
     scene: Phaser.Scene,
@@ -296,6 +297,32 @@ export class TrapSystem {
       }
     }
 
+    return this.findDisarmInteraction(member);
+  }
+
+  /** Companion thieves automatically use the same tested disarm action as the interaction UI. */
+  tryAutoDisarm(member: CharacterSprite, time: number): boolean {
+    if (getBaseRole(member.character.className) !== "thief" || !member.alive) return false;
+    if (time < (this.nextAutoDisarmAt.get(member.character.id) ?? 0)) return false;
+    const interaction = this.findDisarmInteraction(member);
+    if (!interaction) return false;
+    this.nextAutoDisarmAt.set(member.character.id, time + 3000);
+    member.startSwingCooldown();
+    interaction.run();
+    return true;
+  }
+
+  /** Runtime hazards that are not represented by '^' in the dungeon grid. */
+  isDangerousTile(tileX: number, tileY: number): boolean {
+    for (const runtime of this.spikeTraps) {
+      if (runtime.disabled) continue;
+      if (runtime.bankA.state === "active" && runtime.bankA.points.some((point) => point.x === tileX && point.y === tileY)) return true;
+      if (runtime.bankB.state === "active" && runtime.bankB.points.some((point) => point.x === tileX && point.y === tileY)) return true;
+    }
+    return false;
+  }
+
+  private findDisarmInteraction(member: CharacterSprite): TrapInteraction | null {
     for (const runtime of this.spikeTraps) {
       if (!runtime.disabled && this.near(member, runtime.spec.mechanism)) {
         return this.disarmInteraction(

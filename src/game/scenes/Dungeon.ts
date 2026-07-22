@@ -84,6 +84,7 @@ import { CAMPFIRE_RADIUS, LightSystem } from "../systems/light";
 import { ShadowSystem } from "../systems/shadows";
 import { PartyManager } from "../systems/party";
 import { chooseAutoLootCarrier } from "../systems/partyInventory";
+import { nearestSafeStandingTile } from "../systems/trapSafety";
 import {
   PORTER_CAPACITY_SLOTS,
   PORTER_HIRE_PRICE,
@@ -352,6 +353,7 @@ export class DungeonScene extends Phaser.Scene {
   private porter: CharacterSprite | null = null;
   private porterOwnerId: string | null = null;
   private porterHireAttempted = false;
+  private readonly nextSimpleTrapDisarmAt = new Map<string, number>();
 
   constructor() {
     super("Dungeon");
@@ -398,6 +400,7 @@ export class DungeonScene extends Phaser.Scene {
     this.biomeSelectionIndex = 0;
     this.descending = false;
     this.gearSelectionIndex = 0;
+    this.nextSimpleTrapDisarmAt.clear();
     this.shopMode = "buy";
     this.shopCursor = 0;
     this.shopMemberIndex = 0;
@@ -554,9 +557,7 @@ export class DungeonScene extends Phaser.Scene {
       (member) => this.snuffTorch(member),
       this.presentationPalette.accent,
     );
-    this.trapSystem.onDisarmedCoins = (x, y) => {
-      this.addPickup(x, y, "coins", this.ctx.engine.dice.roll("1d6"));
-    };
+    this.trapSystem.onDisarmedCoins = (x, y) => this.dropTrapLoot(x, y);
     this.setupInput();
 
     // Colliders
@@ -3212,7 +3213,7 @@ export class DungeonScene extends Phaser.Scene {
     }
 
     // 3. Disarm spikes (thief)
-    if (leader.character.className === "thief") {
+    if (getBaseRole(leader.character.className) === "thief") {
       const nearSpikes = this.spikes.filter(
         (s) => s.active && Phaser.Math.Distance.Between(leader.x, leader.y, s.x, s.y) < TILE * 2,
       );
@@ -3225,11 +3226,15 @@ export class DungeonScene extends Phaser.Scene {
               stat: "DEX",
               dc: DC.NORMAL,
               kind: "stat",
+              advantage: ["thief trap mastery"],
             });
             if (result.success) {
               for (const s of nearSpikes) s.destroy();
               this.spikes = this.spikes.filter((s) => s.active);
-              this.ctx.say(`${leader.character.name} disarms the spike trap. (rolled ${result.total})`, "#60e080");
+              const x = nearSpikes.reduce((sum, spike) => sum + spike.x, 0) / nearSpikes.length;
+              const y = nearSpikes.reduce((sum, spike) => sum + spike.y, 0) / nearSpikes.length;
+              this.dropTrapLoot(x, y);
+              this.ctx.say(`${leader.character.name} disarms the spike trap, recovering some loot. (rolled ${result.total})`, "#60e080");
             } else {
               this.ctx.say(`Disarm failed (rolled ${result.total} vs DC ${DC.NORMAL}).`, "#d07070");
             }
@@ -3625,6 +3630,7 @@ export class DungeonScene extends Phaser.Scene {
     leader.startSwingCooldown();
     const result = this.ctx.engine.stabilize(leader.character, dying.character);
     if (result.success) {
+      this.relocateStabilizedCharacter(dying, leader);
       floatText(this, dying.x, dying.y - 20, `${result.natural} stable!`, "#60e080");
       this.ctx.say(`${dying.character.name} is stabilized at 1 HP.`, "#60e080");
     } else {
@@ -3953,11 +3959,71 @@ export class DungeonScene extends Phaser.Scene {
     m.startSwingCooldown();
     const result = this.ctx.engine.stabilize(m.character, dying.character);
     if (result.success) {
+      this.relocateStabilizedCharacter(dying, m);
       floatText(this, dying.x, dying.y - 20, `${result.natural} stable!`, "#60e080");
       this.ctx.say(`${m.character.name} stabilizes ${dying.character.name} at 1 HP.`, "#60e080");
     } else {
       floatText(this, dying.x, dying.y - 20, `${result.natural} — failed`, "#d07070");
     }
+  }
+
+  private relocateStabilizedCharacter(member: CharacterSprite, rescuer: CharacterSprite): void {
+    const origin = { x: Math.floor(member.x / TILE), y: Math.floor(member.y / TILE) };
+    const originRoom = roomAt(this.activeDungeon.regions, origin.x, origin.y)?.id;
+    const safe = nearestSafeStandingTile(
+      this.activeDungeon.grid,
+      origin,
+      (tileX, tileY) => {
+        if (originRoom && roomAt(this.activeDungeon.regions, tileX, tileY)?.id !== originRoom) return true;
+        if (this.activeDungeon.grid[tileY]?.[tileX] === "^") return true;
+        if (this.trapSystem.isDangerousTile(tileX, tileY)) return true;
+        const worldX = tileX * TILE + TILE / 2;
+        const worldY = tileY * TILE + TILE / 2;
+        return this.spikes.some(
+          (spike) => spike.active && Math.abs(spike.x - worldX) < TILE * 0.7 && Math.abs(spike.y - worldY) < TILE,
+        );
+      },
+    );
+    const destination = safe
+      ? { x: safe.x * TILE + TILE / 2, y: safe.y * TILE + TILE / 2 }
+      : { x: rescuer.x, y: rescuer.y - 4 };
+    const moved = Phaser.Math.Distance.Between(member.x, member.y, destination.x, destination.y) > TILE * 0.4;
+    member.setPosition(destination.x, destination.y).setVelocity(0, 0);
+    member.aiMoveTarget = null;
+    if (moved) this.ctx.say(`${rescuer.character.name} drags ${member.character.name} clear of the hazard.`, "#60e080");
+  }
+
+  private tryAutoDisarmSimpleSpikes(thief: CharacterSprite, time: number): boolean {
+    if (time < (this.nextSimpleTrapDisarmAt.get(thief.character.id) ?? 0)) return false;
+    const nearby = this.spikes.filter(
+      (spike) => spike.active && Phaser.Math.Distance.Between(thief.x, thief.y, spike.x, spike.y) < TILE * 2,
+    );
+    if (nearby.length === 0) return false;
+    this.nextSimpleTrapDisarmAt.set(thief.character.id, time + 3000);
+    thief.startSwingCooldown();
+    const result = this.ctx.engine.check({
+      actor: thief.character,
+      stat: "DEX",
+      dc: DC.NORMAL,
+      kind: "stat",
+      advantage: ["thief trap mastery"],
+    });
+    if (!result.success) {
+      this.ctx.say(`${thief.character.name} fails to disarm the spikes (${result.total} vs DC ${DC.NORMAL}).`, "#d07070");
+      return true;
+    }
+    const x = nearby.reduce((sum, spike) => sum + spike.x, 0) / nearby.length;
+    const y = nearby.reduce((sum, spike) => sum + spike.y, 0) / nearby.length;
+    for (const spike of nearby) spike.destroy();
+    this.spikes = this.spikes.filter((spike) => spike.active);
+    this.dropTrapLoot(x, y);
+    floatText(this, x, y - 20, "DISARMED! +LOOT", "#65d48a", 15);
+    this.ctx.say(`${thief.character.name} automatically disarms the spikes and recovers loot.`, "#65d48a");
+    return true;
+  }
+
+  private dropTrapLoot(x: number, y: number): void {
+    this.addPickup(x, y, "coins", this.ctx.engine.dice.roll("1d6"));
   }
 
   /**
@@ -4011,7 +4077,12 @@ export class DungeonScene extends Phaser.Scene {
         m.aiMoveTarget = null;
       }
 
-      // 2. Priest / Seer: Turn Undead (works with torch & shield out!) or mend wounded allies (stows shield for divine casting).
+      // 2. Thief-role companions proactively disarm nearby mechanisms and spikes.
+      if (getBaseRole(c.className) === "thief" && m.canSwing()) {
+        if (this.trapSystem.tryAutoDisarm(m, time) || this.tryAutoDisarmSimpleSpikes(m, time)) continue;
+      }
+
+      // 3. Priest / Seer: Turn Undead (works with torch & shield out!) or mend wounded allies (stows shield for divine casting).
       const isPriest = getBaseRole(c.className) === "priest";
       if (isPriest && m.canSwing()) {
         const undeadNear = this.monsters.find(

@@ -155,16 +155,36 @@ must become usable gameplay.
 
 ### Treasure generation
 
-- [ ] Route room, boss, NPC, secret, and vault rewards through the registered
-  core and Cursed Scroll treasure tables.
-- [ ] Preserve curated campaign rewards where necessary, but stop using the
-  fixed companion/weapon/armor/gold/spell cycle as the only major reward path.
-- [ ] Respect danger or level bands when choosing treasure tables.
+**Scoping note (2026-07-22):** shipped the *vault* reward slot only — the
+`magic-weapon`/`magic-armor` cycle positions in `chooseDungeonReward`
+(`src/game/progression.ts`) now roll the registered core (0-3/4-6/7-9/10+)
+and Cursed Scroll (Diablerie/Red Sands/Midnight Sun) treasure tables instead
+of always granting Starfall Blade/Aegis Mail. Room, boss, NPC, and secret
+rewards are still not table-driven — those don't currently roll from any
+treasure table at all, fixed or otherwise, so this is new coverage, not a
+narrowing of old coverage.
+
+- [x] Route **vault** rewards through the registered core and Cursed Scroll
+  treasure tables. Room/boss/NPC/secret rewards remain open.
+- [x] Stop using a fixed single item for the weapon/armor cycle slots. (Gold
+  and companion/spell slots were already dynamic before this; only
+  weapon/armor were genuinely fixed.)
+- [x] Respect level bands when choosing treasure tables. (Banded by the
+  party's furthest-advanced level; danger-level banding doesn't exist as a
+  concept yet, so this uses level as the closest available proxy.)
 - [ ] Roll item benefit, curse, and personality deterministically where a
-  generated magic item calls for them.
+  generated magic item calls for them. (Not applicable yet — rolled items are
+  existing static `ItemDef`s, not procedurally-generated ones with rollable
+  benefit/curse/personality.)
 - [ ] Prevent unlimited light, unlimited inventory, or other items that erase a
-  core Shadowdark pressure.
-- [ ] Add seeded distribution tests and save/load tests for generated treasure.
+  core Shadowdark pressure. (Not audited as part of this pass — `portable-hole`
+  is reachable via `TREASURE_10_PLUS`; worth a deliberate look before it's
+  handed out more widely.)
+- [x] Add seeded distribution tests for generated (vault) treasure — variety
+  across cycles, level-band separation, Cursed Scroll flavor tables actually
+  firing, and a reload-determinism check, all in `tests/progression.test.ts`.
+  No separate save/load test needed: the reward object is never persisted,
+  it's recomputed from `(dungeonIndex, party, zone)` on every load.
 
 ### Acceptance criteria
 

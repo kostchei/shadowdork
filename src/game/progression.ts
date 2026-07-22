@@ -1,9 +1,17 @@
-import { getBaseRole, type Alignment, type ClassName, type SpellClass } from "../engine";
+import { getBaseRole, type Alignment, type ClassName, type SpellClass, type RollableTable, type TableEntry } from "../engine";
 import { characterTitle } from "../engine";
 import type { SaveSlot, SavedCharacter } from "./state";
 import type { VisualSkinId, ZonePackId } from "./visual/model";
-import { resolveSkinForZone } from "./visual/skins";
-import { classDef, plebNameForSeed, spellsForClass } from "../data";
+import { classDef, item, plebNameForSeed, spellsForClass } from "../data";
+import {
+  TREASURE_0_3,
+  TREASURE_4_6,
+  TREASURE_7_9,
+  TREASURE_10_PLUS,
+  DIABOLICAL_TREASURE,
+  DESERT_PLUNDER,
+  SEAWOLF_PLUNDER,
+} from "../data/tables/treasure";
 import { resolveClassForZone } from "./systems/companion";
 
 export type RewardKind = "companion" | "magic-weapon" | "magic-armor" | "gold" | "spells";
@@ -29,14 +37,15 @@ export interface ItemReward {
   kind: "magic-weapon" | "magic-armor";
   title: string;
   description: string;
-  itemId: "starfall-blade" | "aegis-mail";
+  itemId: string;
+  qty: number;
 }
 
 export interface GoldReward {
   kind: "gold";
   title: string;
   description: string;
-  amount: 500;
+  amount: number;
 }
 
 export interface SpellReward {
@@ -78,6 +87,70 @@ function stableIndex(seed: number, size: number): number {
   value = Math.imul(value ^ (value >>> 16), 0x21f0aaad);
   value = Math.imul(value ^ (value >>> 15), 0x735a2d97);
   return ((value ^ (value >>> 15)) >>> 0) % size;
+}
+
+/** Shadowdark's own tier bands: 0-3, 4-6, 7-9, 10 (the level cap). */
+function levelBandTable(maxLevel: number): RollableTable {
+  if (maxLevel <= 3) return TREASURE_0_3;
+  if (maxLevel <= 6) return TREASURE_4_6;
+  if (maxLevel <= 9) return TREASURE_7_9;
+  return TREASURE_10_PLUS;
+}
+
+/** Only the three original Cursed Scrolls have a dedicated flavor table so far. */
+const ZONE_FLAVOR_TABLES: Partial<Record<ZonePackId, RollableTable>> = {
+  diablerie: DIABOLICAL_TREASURE,
+  "red-sands": DESERT_PLUNDER,
+  "midnight-sun": SEAWOLF_PLUNDER,
+};
+
+/**
+ * Picks one entry from `table` using a seed hash instead of the engine's dice —
+ * the reward must stay a pure function of (dungeonIndex, party) so a reloaded
+ * save reproduces the exact same vault reward without replaying every prior
+ * dice roll (see the `stableIndex` calls throughout this file).
+ */
+function rollTableEntry(table: RollableTable, seed: number): TableEntry {
+  const first = table.entries[0]!;
+  const last = table.entries[table.entries.length - 1]!;
+  const span = last.max - first.min + 1;
+  const roll = first.min + stableIndex(seed, span);
+  const entry = table.entries.find((e) => roll >= e.min && roll <= e.max);
+  if (!entry) throw new Error(`Table "${table.id}" has no entry for roll ${roll}`);
+  return entry;
+}
+
+/**
+ * Resolves the "magic-weapon"/"magic-armor" reward-cycle slots against the
+ * registered core and Cursed Scroll treasure tables instead of a single fixed
+ * item, so repeat runs stop converging on identical gear. Banded by the
+ * party's furthest-advanced level; a Cursed Scroll destination has a chance to
+ * roll its own flavor table instead of the level-banded core one.
+ */
+function rollVaultTreasure(
+  kind: "magic-weapon" | "magic-armor",
+  dungeonIndex: number,
+  party: readonly PartyProgress[],
+  zone: ZonePackId | undefined,
+): ItemReward | GoldReward {
+  const living = party.filter((member) => !member.dead);
+  const maxLevel = living.length > 0 ? Math.max(...living.map((member) => member.level)) : 1;
+  const partySalt = party.reduce((acc, m, i) => acc + m.className.charCodeAt(0) * (i + 1), 0);
+  const slotSalt = kind === "magic-weapon" ? 1 : 2;
+  const flavorTable = zone ? ZONE_FLAVOR_TABLES[zone] : undefined;
+  const useFlavor = flavorTable !== undefined
+    && stableIndex(dungeonIndex * 353 + partySalt + slotSalt * 61, 100) < 40;
+  const table = useFlavor ? flavorTable! : levelBandTable(maxLevel);
+  const entry = rollTableEntry(table, dungeonIndex * 2711 + partySalt * 97 + slotSalt);
+
+  const data = entry.data as { itemId?: string; valueGp?: number; qty?: number; cp?: number } | undefined;
+  if (!data) throw new Error(`Treasure entry "${entry.text}" has no data payload`);
+  if (!data.itemId) {
+    const amount = Math.max(1, Math.round(data.cp ?? data.valueGp ?? 0));
+    return { kind: "gold", title: "A Meager Find", description: entry.text, amount };
+  }
+  const def = item(data.itemId);
+  return { kind, title: def.name, description: entry.text, itemId: data.itemId, qty: data.qty ?? 1 };
 }
 
 function missingCompanion(
@@ -159,21 +232,8 @@ export function chooseDungeonReward(
       amount: 500,
     };
   }
-  if (kind === "magic-weapon") {
-    return {
-      kind,
-      title: "Starfall Blade",
-      description: "A magical blade that strikes harder than mortal steel.",
-      itemId: "starfall-blade",
-    };
-  }
-  if (kind === "magic-armor") {
-    return {
-      kind,
-      title: "Aegis Mail",
-      description: "Weightless enchanted armour wearable by any adventurer.",
-      itemId: "aegis-mail",
-    };
+  if (kind === "magic-weapon" || kind === "magic-armor") {
+    return rollVaultTreasure(kind, dungeonIndex, party, zone);
   }
   if (kind === "gold") {
     return {

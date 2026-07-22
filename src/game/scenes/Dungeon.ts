@@ -125,7 +125,6 @@ import type { EnvironmentTextureKeys, VisualPalette, VisualSkin, VisualSkinId, Z
 import {
   parseVisualSkinId,
   visualSkinById,
-  resolveSkinForZone,
   zoneForRun,
   zonePackInfo,
 } from "../visual/skins";
@@ -461,6 +460,7 @@ export class DungeonScene extends Phaser.Scene {
       this.loadedState
         ? progressFromSavedParty(this.loadedState.party)
         : [{ name: this.startingFighterName, className: "fighter", level: 1, knownSpellIds: [] }],
+      this.activeZone,
     );
 
     // The soundscape follows the backdrop; SHUTDOWN fires on restart too, so
@@ -2514,9 +2514,6 @@ export class DungeonScene extends Phaser.Scene {
             leader.setVelocityY(0);
           }
         }
-      } else if (leader.climbing) {
-        leader.climbing = false;
-        body.setAllowGravity(true);
       }
     } else if (leader.climbing) {
       leader.climbing = false;
@@ -3417,13 +3414,15 @@ export class DungeonScene extends Phaser.Scene {
         this.party.leader,
         ...this.party.aliveMembers().filter((member) => member !== this.party.leader),
       ];
-      const recipient = recipients.find((member) => member.character.inventory.canAdd(def));
+      const recipient = recipients.find((member) => member.character.inventory.canAdd(def, reward.qty));
       if (!recipient) {
         this.ctx.say(`No living party member has room for ${def.name}. Make room in the gear screen first.`, "#d07070");
         return;
       }
-      recipient.character.inventory.add(def);
-      message = `${recipient.character.name} receives ${def.name}. Open Gear (I) to equip it.`;
+      recipient.character.inventory.add(def, reward.qty);
+      message = reward.qty > 1
+        ? `${recipient.character.name} receives ${reward.qty}x ${def.name}. Open Gear (I) to equip it.`
+        : `${recipient.character.name} receives ${def.name}. Open Gear (I) to equip it.`;
     } else if (reward.kind === "spells") {
       const caster = this.party.aliveMembers().find(
         (member) =>

@@ -6,7 +6,7 @@ import {
   nextDungeonSave,
   type PartyProgress,
 } from "../src/game/progression";
-import { isPlebName, spell } from "../src/data";
+import { isPlebName, item, spell } from "../src/data";
 import { skinsForZone } from "../src/game/visual/skins";
 
 const fighter: PartyProgress = { className: "fighter", level: 1, knownSpellIds: [] };
@@ -61,6 +61,81 @@ describe("campaign rewards", () => {
     expect(chooseDungeonReward(2, fullParty).kind).toBe("magic-armor");
     expect(chooseDungeonReward(3, fullParty).kind).toBe("gold");
     expect(chooseDungeonReward(4, fullParty).kind).toBe("spells");
+  });
+
+  it("rolls the vault treasure tables instead of always the same item", () => {
+    const fullParty = [fighter, thief, priest, wizard];
+    const weaponSlotItemIds = new Set<string>();
+    const armorSlotItemIds = new Set<string>();
+    // Every 5th dungeonIndex lands back on "magic-weapon"/"magic-armor" (the
+    // cycle is length 5); sample several cycles so a real spread of items
+    // shows up instead of the old single hardcoded Starfall Blade/Aegis Mail.
+    for (let cycle = 0; cycle < 12; cycle++) {
+      const weaponReward = chooseDungeonReward(1 + cycle * 5, fullParty);
+      const armorReward = chooseDungeonReward(2 + cycle * 5, fullParty);
+      if (weaponReward.kind === "magic-weapon") weaponSlotItemIds.add(weaponReward.itemId);
+      if (armorReward.kind === "magic-armor") armorSlotItemIds.add(armorReward.itemId);
+    }
+    expect(weaponSlotItemIds.size).toBeGreaterThan(1);
+    expect(armorSlotItemIds.size).toBeGreaterThan(1);
+    expect(weaponSlotItemIds).not.toEqual(new Set(["starfall-blade"]));
+    expect(armorSlotItemIds).not.toEqual(new Set(["aegis-mail"]));
+  });
+
+  it("bands vault treasure by the party's furthest-advanced level", () => {
+    const lowParty = [fighter, thief, priest, wizard];
+    const highParty = [
+      { ...fighter, level: 10 },
+      { ...thief, level: 10 },
+      { ...priest, level: 10 },
+      { ...wizard, level: 10 },
+    ];
+    // Sample many cycles at each tier; a levelled-up party should see at least
+    // one reward a fresh level-1 party never rolls (and vice versa isn't
+    // required, since low-tier loot can still appear high-tier tables' text
+    // never does at level 1) — the meaningful signal is the two samples differ.
+    const lowItems = new Set<string>();
+    const highItems = new Set<string>();
+    for (let cycle = 0; cycle < 20; cycle++) {
+      const lowReward = chooseDungeonReward(1 + cycle * 5, lowParty);
+      const highReward = chooseDungeonReward(1 + cycle * 5, highParty);
+      if (lowReward.kind === "magic-weapon") lowItems.add(lowReward.itemId);
+      if (highReward.kind === "magic-weapon") highItems.add(highReward.itemId);
+    }
+    expect(lowItems).not.toEqual(highItems);
+  });
+
+  it("gives a Cursed Scroll destination a chance at its own flavor treasure", () => {
+    const fullParty = [fighter, thief, priest, wizard];
+    const itemIds = new Set<string>();
+    for (let cycle = 0; cycle < 30; cycle++) {
+      const reward = chooseDungeonReward(1 + cycle * 5, fullParty, "diablerie");
+      if (reward.kind === "magic-weapon") itemIds.add(reward.itemId);
+    }
+    // carved-flame-bone only exists in DIABOLICAL_TREASURE (CS1's flavor table).
+    expect(itemIds.has("carved-flame-bone")).toBe(true);
+  });
+
+  it("keeps a rolled vault-treasure reward stable when the same save is reloaded", () => {
+    const fullParty = [fighter, thief, priest, wizard];
+    expect(chooseDungeonReward(1, fullParty, "red-sands")).toEqual(
+      chooseDungeonReward(1, fullParty, "red-sands"),
+    );
+  });
+
+  it("only ever grants vault treasure itemIds that resolve to a real item", () => {
+    const fullParty = [fighter, thief, priest, wizard];
+    for (let cycle = 0; cycle < 40; cycle++) {
+      for (const zone of [undefined, "diablerie", "red-sands", "midnight-sun", "city-of-masks"] as const) {
+        const weaponReward = chooseDungeonReward(1 + cycle * 5, fullParty, zone);
+        const armorReward = chooseDungeonReward(2 + cycle * 5, fullParty, zone);
+        for (const reward of [weaponReward, armorReward]) {
+          if (reward.kind === "magic-weapon" || reward.kind === "magic-armor") {
+            expect(() => item(reward.itemId)).not.toThrow();
+          }
+        }
+      }
+    }
   });
 
   it("always makes a caster's first discovered spell tier 1, even at high level", () => {

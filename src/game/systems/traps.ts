@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { DC, getBaseRole, hasHook } from "../../engine";
+import { getBaseRole, hasHook } from "../../engine";
 import type { FeaturedTrapSpec, TilePoint } from "../level/dungeons";
 import type { GameContext } from "../context";
 import type { CharacterSprite } from "../entities/CharacterSprite";

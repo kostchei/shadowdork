@@ -97,16 +97,6 @@ export function skinsForZone(zone: ZonePackId): readonly VisualSkin[] {
   return list;
 }
 
-/**
- * Deterministically pick one skin within a scroll from a seed. Returning to the
- * same scroll on a later descent advances the seed, so the specific skin can
- * refresh to a different one of the scroll's three.
- */
-export function resolveSkinForZone(zone: ZonePackId, seed: number): VisualSkin {
-  const list = skinsForZone(zone);
-  return list[hashSeed(seed) % list.length]!;
-}
-
 /** The random scroll a fresh campaign starts in; never consumes rules RNG. */
 export function zoneForRun(seed: number): ZonePackId {
   return ZONE_PACKS[hashSeed(seed ^ 0x5bd1e995) % ZONE_PACKS.length]!;

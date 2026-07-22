@@ -137,7 +137,7 @@ export function serializeCharacter(c: Character): SavedCharacter {
   };
 }
 
-export function deserializeCharacter(state: SavedCharacter, engine: Engine): Character {
+export function deserializeCharacter(state: SavedCharacter, _engine: Engine): Character {
   const c = new EngineCharacter({
     id: state.id,
     name: state.name,

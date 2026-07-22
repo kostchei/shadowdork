@@ -662,7 +662,6 @@ describe("fighter class feature rules", () => {
   });
 
   it("swaps stats for Fighter if neither STR nor DEX is heroic (>= 15)", () => {
-    const engine = makeEngine();
     let foundSeed = -1;
     let originalStats: any = null;
     for (let seed = 0; seed < 1000; seed++) {

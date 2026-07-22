@@ -366,8 +366,6 @@ function seededRng(seed: number) {
   };
 }
 
-type Rng = ReturnType<typeof seededRng>;
-
 function buildRoom1(g: GridBuilder, variant: number, npc?: string): void {
   // The player always enters at x=2, y=14.
   g.put(2, 14, "P");

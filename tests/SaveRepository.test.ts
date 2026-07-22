@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { SaveRepository, SAVE_SCHEMA_VERSION } from "../src/game/SaveRepository";
 import type { SaveSlot } from "../src/game/state";
 

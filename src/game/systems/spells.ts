@@ -15,11 +15,9 @@ import {
 } from "../../engine";
 import { spellCast, spellMishap, whoosh } from "../audio/sfx";
 import { item, spell } from "../../data";
-import type { GameContext } from "../context";
 import type { CharacterSprite } from "../entities/CharacterSprite";
 import type { MonsterSprite } from "../entities/MonsterSprite";
 import { applyDamageToMonster, floatText, type MeleeDeps } from "./combat";
-import type { LightSystem } from "./light";
 import { TORCH_RADIUS } from "./light";
 import { CLOSE_PX, FAR_PX, NEAR_PX, zoneBetween } from "./position";
 import { TILE } from "../textures";

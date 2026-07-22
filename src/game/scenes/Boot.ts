@@ -2,7 +2,6 @@
 
 import Phaser from "phaser";
 import { GameContext } from "../context";
-import { DUNGEONS } from "../level/dungeons";
 import { generateTextures } from "../textures";
 import { RENDER_SCALE, GAME_W, GAME_H } from "../display";
 import { SaveRepository } from "../SaveRepository";
@@ -123,7 +122,7 @@ export class BootScene extends Phaser.Scene {
           } else {
             btnText = `[ Load ${label}: empty ]`;
           }
-        } catch (e: any) {
+        } catch {
           btnText = `[ Load ${label}: corrupt ]`;
         }
       }

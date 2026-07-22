@@ -77,6 +77,40 @@ function redundantEdges(form: TopologyForm): (readonly [number, number])[] {
   return form.edges.filter((e) => undirectedReach(form, 0, e).size === NODE_COUNT);
 }
 
+/**
+ * Undirected reachability over an arbitrary room-id edge list (as opposed to
+ * `undirectedReach`, which only knows the static topology). Used to prove a
+ * candidate edge trim keeps every room mutually reachable before committing it —
+ * a static per-room degree count cannot see that two trims from the same room
+ * can compound to isolate it, even though each trim looks safe in isolation.
+ */
+function allReachable(roomIds: readonly string[], edges: ReadonlySet<string>): boolean {
+  if (roomIds.length === 0) return true;
+  const adj = new Map<string, string[]>();
+  for (const id of roomIds) adj.set(id, []);
+  for (const key of edges) {
+    const [from, to] = key.split("|") as [string, string];
+    adj.get(from)?.push(to);
+    adj.get(to)?.push(from);
+  }
+  const seen = new Set<string>([roomIds[0]!]);
+  const stack = [roomIds[0]!];
+  while (stack.length > 0) {
+    const n = stack.pop()!;
+    for (const m of adj.get(n) ?? []) {
+      if (!seen.has(m)) {
+        seen.add(m);
+        stack.push(m);
+      }
+    }
+  }
+  return seen.size === roomIds.length;
+}
+
+function edgeKey(from: string, to: string): string {
+  return from < to ? `${from}|${to}` : `${to}|${from}`;
+}
+
 /** Graph distance in edges from `from` to every node (undirected). */
 function graphDistances(form: TopologyForm, from: number): number[] {
   const adj = adjacency(form);
@@ -328,17 +362,34 @@ function tryBuild(seed: number, candidate: number, opts: GenerateOptions): Abstr
     const initiallyOpen = (connection: DungeonConnection) =>
       connection.state === "open" || connection.state === "guarded" || connection.state === "one-way";
     const openDegree = new Map<string, number>();
-    for (const connection of connections) if (initiallyOpen(connection)) {
-      openDegree.set(connection.fromRoomId, (openDegree.get(connection.fromRoomId) ?? 0) + 1);
-      openDegree.set(connection.toRoomId, (openDegree.get(connection.toRoomId) ?? 0) + 1);
+    // Track every currently-non-secret connection (not just the ones eligible for
+    // trimming) so the reachability check below sees the whole graph a player can
+    // actually cross without finding a secret — a locked/guarded/one-way edge still
+    // keeps two rooms mutually reachable for this purpose.
+    const nonSecretEdges = new Set<string>();
+    for (const connection of connections) {
+      if (connection.state === "secret") continue;
+      nonSecretEdges.add(edgeKey(connection.fromRoomId, connection.toRoomId));
+      if (initiallyOpen(connection)) {
+        openDegree.set(connection.fromRoomId, (openDegree.get(connection.fromRoomId) ?? 0) + 1);
+        openDegree.set(connection.toRoomId, (openDegree.get(connection.toRoomId) ?? 0) + 1);
+      }
     }
+    const allRoomIds = rooms.map((r) => r.id);
     for (const connection of [...connections].reverse()) {
       if (!optionalIds.has(connection.id) || !initiallyOpen(connection)) continue;
       if ((openDegree.get(connection.fromRoomId) ?? 0) <= 3 && (openDegree.get(connection.toRoomId) ?? 0) <= 3) continue;
+      const key = edgeKey(connection.fromRoomId, connection.toRoomId);
+      const withoutThisEdge = new Set(nonSecretEdges);
+      withoutThisEdge.delete(key);
+      // A degree count alone cannot see that two trims from the same room compound;
+      // only commit this trim if the room graph stays fully connected without it.
+      if (!allReachable(allRoomIds, withoutThisEdge)) continue;
       connection.state = "secret";
       connection.kind = "secret-door";
       connection.direction = "two-way";
       connection.classFavoured = false;
+      nonSecretEdges.delete(key);
       openDegree.set(connection.fromRoomId, (openDegree.get(connection.fromRoomId) ?? 1) - 1);
       openDegree.set(connection.toRoomId, (openDegree.get(connection.toRoomId) ?? 1) - 1);
     }

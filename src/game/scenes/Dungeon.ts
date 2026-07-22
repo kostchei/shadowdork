@@ -31,11 +31,13 @@ import {
   armPoisonedWeapon,
   applyUseOutcome,
   cancelShieldWall,
+  chooseOldGods,
   canUseItem,
   partyCoinSlots,
   poisonApplicationAccident,
   xpToReachNextLevel,
   getBaseRole,
+  goBerserk,
   hasHook,
   hasCondition,
   hasCapability,
@@ -43,6 +45,7 @@ import {
   isHidden,
   isShieldWallActive,
   destinedLuckBonus,
+  restoreFamiliar,
   triggerFlourish,
   usePotion,
   type Alignment,
@@ -2893,6 +2896,16 @@ export class DungeonScene extends Phaser.Scene {
       });
     }
 
+    if (leader.character.className === "sea-wolf" && (leader.character.classState.resourceUses.berserk ?? 0) > 0) {
+      candidates.push({
+        label: `go berserk (${leader.character.classState.resourceUses.berserk} left)`,
+        run: () => {
+          goBerserk(leader.character);
+          this.ctx.say(`${leader.character.name} goes berserk and cannot be damaged for 3 rounds!`, "#ff9050");
+        },
+      });
+    }
+
     if (leader.character.className === "ras-godai" && !isHidden(leader.character)) {
       candidates.push({
         label: "hide in the shadows",
@@ -2908,19 +2921,17 @@ export class DungeonScene extends Phaser.Scene {
       });
     }
 
-    if (leader.character.className === "seer" && leader.character.classState.omenUses > 0) {
+    if (leader.character.className === "seer" && leader.character.classState.omenUses > 0 && !leader.character.luckToken) {
       candidates.push({
-        label: "read an omen (1/rest)",
+        label: `read an omen (${leader.character.classState.omenUses} left)`,
         run: () => {
           leader.character.classState.omenUses--;
-          const unseen = this.activeDungeon.regions.find((region) => !this.discoveredRoomIds.has(region.id));
-          if (unseen) this.discoveredRoomIds.add(unseen.id);
-          this.ctx.say(
-            unseen
-              ? `An omen reveals ${unseen.hud}: ${this.currentReward.title} waits deeper within.`
-              : `The omen warns: ${this.currentReward.title} is close, and no room remains unseen.`,
-            "#f0d98f",
-          );
+          leader.character.classState.resourceUses.omen = leader.character.classState.omenUses;
+          const omen = this.ctx.engine.check({ actor: leader.character, stat: "WIS", dc: DC.EASY, kind: "stat" });
+          if (omen.success && !leader.character.luckToken) leader.character.luckToken = true;
+          this.ctx.say(omen.success
+            ? `${leader.character.name} reads the signs and gains a Luck token.`
+            : `${leader.character.name} finds no clear omen.`, "#f0d98f");
         },
       });
     }
@@ -3115,17 +3126,30 @@ export class DungeonScene extends Phaser.Scene {
       (f) => Phaser.Math.Distance.Between(leader.x, leader.y, f.x, f.y) < TILE * 2.5,
     );
     if (fire) {
+      if (leader.character.className === "sea-wolf") {
+        const godChoices = hasHook(leader.character.effects, "oldGodDuality")
+          ? ([
+              ["odin", "freya"], ["odin", "loki"], ["freya", "loki"],
+            ] as const)
+          : ([["odin"], ["freya"], ["loki"]] as const);
+        for (const gods of godChoices) candidates.push({
+          label: `align with ${gods.map((god) => god[0]!.toUpperCase() + god.slice(1)).join(" + ")}`,
+          run: () => {
+            chooseOldGods(leader.character, gods);
+            this.ctx.say(`${leader.character.name} aligns with ${gods.join(" and ")} until the next rest.`, "#a9c9ef");
+          },
+        });
+      }
       if (
         leader.character.className === "witch" &&
         !leader.character.classState.familiarAlive &&
-        this.ctx.spendableGold >= 25
+        leader.character.maxHp > 1
       ) {
         candidates.push({
-          label: "restore familiar (25 gold)",
+          label: "restore familiar (sacrifice 1d4 max HP)",
           run: () => {
-            this.ctx.spendGold(25);
-            leader.character.classState.familiarAlive = true;
-            this.ctx.say(`${leader.character.name} calls the familiar back through smoke and blood.`, "#c8a5e8");
+            const sacrificed = restoreFamiliar(leader.character, this.ctx.engine.dice);
+            this.ctx.say(`${leader.character.name} sacrifices ${sacrificed} max HP and restores the familiar.`, "#c8a5e8");
           },
         });
       }
@@ -3269,6 +3293,7 @@ export class DungeonScene extends Phaser.Scene {
     if (result === "requires-key" || result === "requires-switch") return false;
     for (const [gate, mapped] of this.connectorGates) if (mapped.id === connector.id) gate.destroy();
     for (const [wall, mapped] of this.connectorWeakWalls) if (mapped.id === connector.id) wall.destroy();
+    sfx.doorThump();
     return true;
   }
 

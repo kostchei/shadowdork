@@ -131,7 +131,10 @@ export function castSpell(
     stat: casterStat(caster, spell),
     dc: 10 + spell.tier,
     kind: "spellcast",
-    advantage: opts.advantage,
+    advantage: [
+      ...(opts.advantage ?? []),
+      ...(caster.effects.some((effect) => effect.hooks.some((hook) => hook.kind === "advantageOnSpell" && hook.spellId === spell.id)) ? ["talent"] : []),
+    ],
     disadvantage: opts.disadvantage,
   });
 

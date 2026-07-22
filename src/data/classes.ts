@@ -99,6 +99,8 @@ const CLASS_LIST: readonly ClassDef[] = [
         name: "Implacable: advantage on CON checks to resist injury/poison",
         hooks: [{ kind: "advantageOnStat", stat: "CON" }],
       },
+      { id: "feat-pit-fighter-last-stand", name: "Last Stand: rise from dying on 18-20", hooks: [] },
+      { id: "feat-pit-fighter-relentless", name: "Relentless: 3/day DC 18 CON to remain at 1 HP", hooks: [] },
     ],
   },
   {
@@ -121,6 +123,7 @@ const CLASS_LIST: readonly ClassDef[] = [
         name: "Seafarer: advantage on navigation and boating",
         hooks: [{ kind: "seafarer" }],
       },
+      { id: "feat-sea-wolf-old-gods", name: "Old Gods: choose Odin, Freya, or Loki each day", hooks: [] },
     ],
   },
   {
@@ -138,6 +141,7 @@ const CLASS_LIST: readonly ClassDef[] = [
         name: "Assassin: advantage on stealth/hiding, double damage vs unaware targets",
         hooks: [{ kind: "advantageOn", applies: "stealth" }],
       },
+      { id: "feat-ras-godai-smoke-step", name: "Smoke Step: teleport within near 3/day without an action", hooks: [] },
     ],
   },
   {
@@ -167,13 +171,14 @@ const CLASS_LIST: readonly ClassDef[] = [
     startsWithShield: false,
     talentTableId: "seer-talents",
     castStat: "WIS",
-    startingSpellIds: ["chant", "trance", "seer-potion"],
+    startingSpellIds: ["chant"],
     features: [
       {
         id: "feat-seer-destined",
         name: "Destined: add 1d6 when spending luck tokens",
         hooks: [],
       },
+      { id: "feat-seer-omen", name: "Omen: 3/day, DC 9 WIS to gain a Luck token", hooks: [] },
     ],
   },
 ];

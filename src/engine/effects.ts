@@ -8,6 +8,7 @@ import type { StatName } from "./character";
 
 export type CheckKind =
   | "attack"
+  | "meleeAttack"
   | "spellcast"
   | "initiative"
   | "morale"
@@ -19,6 +20,7 @@ export type EffectHook =
   | { kind: "checkBonus"; applies: CheckKind; bonus: number }
   | { kind: "checkBonusHalfLevel"; applies: CheckKind }
   | { kind: "advantageOn"; applies: CheckKind }
+  | { kind: "advantageOnSpell"; spellId: string }
   | { kind: "advantageOnStat"; stat: StatName }
   | { kind: "disadvantageOn"; applies: CheckKind }
   | { kind: "critRange"; value: number } // attacks crit on natural >= value
@@ -31,11 +33,13 @@ export type EffectHook =
   | { kind: "armorAcBonusChoice"; bonus: number }
   | { kind: "armorAcBonus"; armorId: string; bonus: number }
   | { kind: "damageBonus"; bonus: number }
+  | { kind: "meleeDamageBonus"; bonus: number }
   /** Weapon Mastery scaling: +floor(level / 2) damage. */
   | { kind: "damageBonusHalfLevel" }
   | { kind: "maxHpBonus"; bonus: number }
   | { kind: "invisible" }
   | { kind: "waterBreathing" }
+  | { kind: "waterWalking" }
   | { kind: "canFly" }
   | { kind: "canClimbWalls" }
   | { kind: "emitsLight" }
@@ -51,7 +55,28 @@ export type EffectHook =
   | { kind: "focusTarget"; targetId: string }
   | { kind: "focusPoint"; x: number; y: number }
   /** Ancestry/talent immunity to a named status condition (see ./conditions). */
-  | { kind: "conditionImmunity"; condition: string };
+  | { kind: "conditionImmunity"; condition: string }
+  | { kind: "resourceBonus"; resource: ClassResource; bonus: number }
+  | { kind: "flourishExtraDie"; bonus: number }
+  | { kind: "destinedDieStep"; bonus: number }
+  | { kind: "assassinDamageMultiplier"; value: number }
+  | { kind: "dualWieldAcBonus"; bonus: number }
+  | { kind: "enemyMoraleDcMinimum"; value: number }
+  | { kind: "oldGodDuality" }
+  | { kind: "damageImmune" };
+
+export type ClassResource =
+  | "ignoreAttack"
+  | "relentless"
+  | "berserk"
+  | "smokeStep"
+  | "paralyze"
+  | "waterWalk"
+  | "sleep"
+  | "wallWalk"
+  | "unseen"
+  | "familiarTeleport"
+  | "omen";
 
 export type DurationUnit = "rounds" | "crawlingRounds" | "realMs" | "untilRest" | "focus";
 
@@ -74,10 +99,10 @@ export function sumCheckBonus(effects: readonly Effect[], kind: CheckKind, level
   let total = 0;
   for (const e of effects) {
     for (const h of e.hooks) {
-      if (h.kind === "checkBonus" && (h.applies === kind || h.applies === "any")) {
+      if (h.kind === "checkBonus" && (h.applies === kind || h.applies === "any" || (kind === "meleeAttack" && h.applies === "attack"))) {
         total += h.bonus;
       }
-      if (h.kind === "checkBonusHalfLevel" && (h.applies === kind || h.applies === "any")) {
+      if (h.kind === "checkBonusHalfLevel" && (h.applies === kind || h.applies === "any" || (kind === "meleeAttack" && h.applies === "attack"))) {
         total += Math.floor(level / 2);
       }
     }
@@ -87,14 +112,14 @@ export function sumCheckBonus(effects: readonly Effect[], kind: CheckKind, level
 
 export function grantsAdvantage(effects: readonly Effect[], kind: CheckKind): boolean {
   return effects.some((e) =>
-    e.hooks.some((h) => h.kind === "advantageOn" && (h.applies === kind || h.applies === "any")),
+    e.hooks.some((h) => h.kind === "advantageOn" && (h.applies === kind || h.applies === "any" || (kind === "meleeAttack" && h.applies === "attack"))),
   );
 }
 
 export function grantsDisadvantage(effects: readonly Effect[], kind: CheckKind): boolean {
   return effects.some((e) =>
     e.hooks.some(
-      (h) => h.kind === "disadvantageOn" && (h.applies === kind || h.applies === "any"),
+      (h) => h.kind === "disadvantageOn" && (h.applies === kind || h.applies === "any" || (kind === "meleeAttack" && h.applies === "attack")),
     ),
   );
 }

@@ -5,7 +5,7 @@
 
 import { awardXp, canLevelUp, levelUp, type LevelUpResult, type XpAward } from "./advancement";
 import { Character } from "./character";
-import { restoreClassResources } from "./classAbilities";
+import { ignoreAttackDamage, pitFighterLastStandThreshold, restoreClassResources } from "./classAbilities";
 import { DC, resolveCheck, type CheckInput, type CheckResult } from "./check";
 import { Dice } from "./dice";
 import { EventLog } from "./events";
@@ -40,6 +40,7 @@ export * from "./monster";
 export * from "./potions";
 export * from "./spells";
 export * from "./tables";
+export * from "./talents";
 export * from "./time";
 
 export interface AttackInput {
@@ -120,7 +121,7 @@ export class Engine {
       });
       // Death timers count down in rounds; a natural 20 self-revives at 1 HP.
       if (c.dying && !c.dead) {
-        if (this.dice.d20().natural === 20) {
+        if (this.dice.d20().natural >= pitFighterLastStandThreshold(c)) {
           c.dying = null;
           c.hp = 1;
           this.log.append(this.clock.elapsedMs, "dying.selfRevive", { who: c.id });
@@ -191,11 +192,12 @@ export class Engine {
     const ranged = input.weapon?.tags.includes("ranged") === true;
     const a = input.attacker;
     const stat = ranged || (finesse && a.mod("DEX") > a.mod("STR")) ? "DEX" : "STR";
+    const melee = !ranged;
     const check = this.check({
       actor: a,
       stat,
       dc: input.targetAc,
-      kind: "attack",
+      kind: melee ? "meleeAttack" : "attack",
       advantage: input.advantage,
       disadvantage: input.disadvantage,
     });
@@ -209,6 +211,9 @@ export class Engine {
         }
       }
       damage += a.damageBonus;
+      if (melee) for (const effect of a.effects) for (const hook of effect.hooks) {
+        if (hook.kind === "meleeDamageBonus") damage += hook.bonus;
+      }
       // Crits double the damage dice (all of them, backstab dice included).
       if (check.crit) for (let i = 0; i < diceRolls; i++) damage += this.dice.roll(input.damage);
       damage = Math.max(1, damage);
@@ -310,8 +315,14 @@ export class Engine {
   }
 
   /** Damage that can drop a character to dying. Returns true if they went down. */
-  damageCharacter(character: Character, amount: number): boolean {
+  damageCharacter(character: Character, amount: number, opts: { attack?: boolean } = {}): boolean {
     if (character.dead) throw new Error(`${character.name} is already dead`);
+    if (opts.attack && (character.classState.resourceUses.ignoreAttack ?? 0) > 0) {
+      ignoreAttackDamage(character);
+      this.log.append(this.clock.elapsedMs, "pit-fighter.ignore-attack", { who: character.id, amount });
+      return false;
+    }
+    if (character.effects.some((effect) => effect.hooks.some((hook) => hook.kind === "damageImmune"))) return false;
     character.takeDamage(amount);
     // Damage is a distraction: a failed spell check ends Focus without losing the known spell.
     if (character.hp === 0) {
@@ -320,6 +331,16 @@ export class Engine {
       this.checkFocus(character, "damage");
     }
     if (character.hp === 0 && !character.dying) {
+      const relentless = character.classState.resourceUses.relentless ?? 0;
+      if (character.className === "pit-fighter" && relentless > 0) {
+        character.classState.resourceUses.relentless = relentless - 1;
+        const result = resolveCheck(this.dice, { actor: character, stat: "CON", dc: DC.EXTREME, kind: "stat" });
+        if (result.success) {
+          character.hp = 1;
+          this.log.append(this.clock.elapsedMs, "pit-fighter.relentless", { who: character.id, success: true });
+          return false;
+        }
+      }
       const rounds = Math.max(1, this.dice.roll("1d4") + character.mod("CON"));
       character.dying = { roundsRemaining: rounds };
       this.log.append(this.clock.elapsedMs, "dying.start", { who: character.id, rounds });

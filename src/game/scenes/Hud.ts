@@ -11,6 +11,7 @@ import {
   isHidden,
   isShieldWallActive,
   partyCoinSlots,
+  resourceMaximum,
   xpToNextLevel,
   type Character,
   type LevelUpResult,
@@ -1387,7 +1388,7 @@ export class HudScene extends Phaser.Scene {
       leaderDetails.push(`FLOURISH ${leader.character.classState.flourishUses}/3`);
     }
     if (leader.character.className === "seer") {
-      leaderDetails.push(`OMEN ${leader.character.classState.omenUses}/1`);
+      leaderDetails.push(`OMEN ${leader.character.classState.omenUses}/${resourceMaximum(leader.character, "omen")}`);
     }
     if (leader.character.className === "witch") {
       leaderDetails.push(leader.character.classState.familiarAlive ? "FAMILIAR READY" : "FAMILIAR LOST");

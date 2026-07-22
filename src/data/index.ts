@@ -1,5 +1,6 @@
 import {
   Character,
+  applyTalentResult,
   initializeClassState,
   rollAlignment,
   rollStats,
@@ -23,6 +24,7 @@ import {
   RAS_GODAI_TALENTS,
   WITCH_TALENTS,
   SEER_TALENTS,
+  BLACK_LOTUS_TALENTS,
 } from "./tables/talents";
 
 import { ALL_TREASURE_TABLES } from "./tables/treasure";
@@ -45,6 +47,7 @@ export function registerTables(engine: Engine): void {
   engine.tables.register(RAS_GODAI_TALENTS);
   engine.tables.register(WITCH_TALENTS);
   engine.tables.register(SEER_TALENTS);
+  engine.tables.register(BLACK_LOTUS_TALENTS);
   for (const table of ALL_MISHAP_TABLES) engine.tables.register(table);
   for (const table of ALL_TREASURE_TABLES) engine.tables.register(table);
 }
@@ -114,8 +117,8 @@ export function createCharacter(
   for (const f of def.features) c.addEffect(structuredClone(f) as typeof f);
   initializeClassState(c);
 
-  // Configure Grit for Fighter & martial variants:
-  if (cls === "fighter" || cls === "pit-fighter" || cls === "sea-wolf") {
+  // Grit is a Fighter feature; the alternate martial classes use their own features.
+  if (cls === "fighter") {
     const gritStat = stats.DEX > stats.STR ? "DEX" : "STR";
     c.addEffect({
       id: `feat-${cls}-grit`,
@@ -125,6 +128,10 @@ export function createCharacter(
   }
 
   for (const spellId of def.startingSpellIds) c.learnSpell(spellId);
+  if (cls === "ras-godai") {
+    const blackLotus = engine.tables.roll(engine.dice, "black-lotus-talents");
+    applyTalentResult(engine.dice, engine.tables, c, blackLotus, "talent-black-lotus-start");
+  }
   const startingWeapon = item(def.startingWeaponId);
   c.inventory.add(startingWeapon, 1, true);
   c.equipWeapon(startingWeapon);
@@ -157,13 +164,7 @@ export function createCharacter(
   const talentCount = ancestry === "human" ? 2 : 1;
   for (let i = 0; i < talentCount; i++) {
     const talent = engine.tables.roll(engine.dice, def.talentTableId);
-    if (talent.entry.effects) {
-      c.addEffect({
-        id: `talent-start-${i}-${talent.roll}`,
-        name: talent.entry.text,
-        hooks: [...talent.entry.effects],
-      });
-    }
+    applyTalentResult(engine.dice, engine.tables, c, talent, `talent-start-${i}`);
   }
 
   engine.registerCharacter(c);

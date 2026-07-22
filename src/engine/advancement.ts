@@ -7,6 +7,7 @@
 import type { Character } from "./character";
 import type { Dice } from "./dice";
 import type { TableRegistry, TableRollResult } from "./tables";
+import { applyTalentResult, type AppliedTalent } from "./talents";
 
 export const MAX_LEVEL = 10;
 
@@ -20,6 +21,8 @@ export interface LevelUpResult {
   hpRolled: number;
   hpGained: number;
   talent: TableRollResult;
+  /** Primary roll plus any chained/rerolled talents actually applied. */
+  talents: AppliedTalent[];
 }
 
 export interface XpAward {
@@ -60,15 +63,9 @@ export function levelUp(
   character.heal(character.maxHp);
 
   const talent = tables.roll(dice, talentTableId);
-  if (talent.entry.effects) {
-    character.addEffect({
-      id: `talent-L${character.level}-${talent.roll}`,
-      name: talent.entry.text,
-      hooks: [...talent.entry.effects],
-    });
-  }
+  const talents = applyTalentResult(dice, tables, character, talent, `talent-L${character.level}`);
 
-  return { newLevel: character.level, hpRolled, hpGained, talent };
+  return { newLevel: character.level, hpRolled, hpGained, talent, talents };
 }
 
 /**

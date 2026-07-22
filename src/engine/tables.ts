@@ -15,7 +15,15 @@ export interface TableEntry {
   effects?: readonly EffectHook[];
   /** Free-form structured data for non-effect entries (mishaps, treasure). */
   data?: Record<string, unknown>;
+  /** Follow-up work for talents that cannot be represented as passive hooks. */
+  talent?: readonly TalentInstruction[];
 }
+
+export type TalentInstruction =
+  | { kind: "learnSpell"; spells: readonly { id: string; tier: number }[] }
+  | { kind: "advantageKnownSpell" }
+  | { kind: "rollTable"; tableId: string; count: number }
+  | { kind: "gainHitDie"; dice: string };
 
 export interface RollableTable {
   id: string;

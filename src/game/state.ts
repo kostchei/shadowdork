@@ -126,7 +126,12 @@ export function serializeCharacter(c: Character): SavedCharacter {
     carriedShieldId: c.carriedShield?.id ?? null,
     shieldStowed: c.shieldStowed,
     luckToken: c.luckToken,
-    classState: { ...c.classState, cauldronItems: c.classState.cauldronItems.map((entry) => ({ ...entry })) },
+    classState: {
+      ...c.classState,
+      resourceUses: { ...c.classState.resourceUses },
+      oldGods: [...c.classState.oldGods],
+      cauldronItems: c.classState.cauldronItems.map((entry) => ({ ...entry })),
+    },
     dying: c.dying ? { ...c.dying } : null,
     dead: c.dead,
   };
@@ -154,6 +159,8 @@ export function deserializeCharacter(state: SavedCharacter, engine: Engine): Cha
   c.classState = {
     ...c.classState,
     ...(state.classState ?? {}),
+    resourceUses: { ...c.classState.resourceUses, ...(state.classState?.resourceUses ?? {}) },
+    oldGods: [...(state.classState?.oldGods ?? c.classState.oldGods)],
     cauldronItems: (state.classState?.cauldronItems ?? []).map((entry) => ({ ...entry })),
   };
   c.dead = state.dead;

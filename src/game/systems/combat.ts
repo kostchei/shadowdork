@@ -11,6 +11,7 @@ import {
   getBaseRole,
   monsterAttackRoll,
   moraleCheck,
+  oldGodKillHealing,
   poisonedWeaponDamage,
   hasHook,
   revealCharacter,
@@ -247,7 +248,7 @@ export function meleeSwing(deps: MeleeDeps, attacker: CharacterSprite): SwingOut
     else deps.scene.cameras.main.shake(80, 0.003);
     if (result.check.crit) swordCrit();
     else swordClang();
-    applyDamageToMonster(deps, target, totalDamage);
+    applyDamageToMonster(deps, target, totalDamage, attacker);
   } else {
     whoosh();
     floatText(deps.scene, target.x, target.y - 16, `${die} miss`, "#8888aa");
@@ -263,7 +264,7 @@ export function meleeSwing(deps: MeleeDeps, attacker: CharacterSprite): SwingOut
   return { swung: true, check: result.check, damage: result.check.success ? totalDamage : undefined };
 }
 
-export function applyDamageToMonster(deps: MeleeDeps, target: MonsterSprite, damage: number): void {
+export function applyDamageToMonster(deps: MeleeDeps, target: MonsterSprite, damage: number, attacker?: CharacterSprite): void {
   target.wake();
   target.hp -= damage;
   target.setTintFill(0xffffff);
@@ -271,6 +272,10 @@ export function applyDamageToMonster(deps: MeleeDeps, target: MonsterSprite, dam
   hitBurst(deps.scene, target.x, target.y, target.def.undead);
 
   if (target.hp <= 0) {
+    if (attacker) {
+      const healed = oldGodKillHealing(attacker.character, deps.ctx.engine.dice);
+      if (healed > 0) floatText(deps.scene, attacker.x, attacker.y - 44, `+${healed} ODIN`, "#72d887", 11);
+    }
     deps.onMonsterKilled(target);
   } else if (target.aiState === "patrol") {
     target.aiState = "aggro";
@@ -333,7 +338,7 @@ export function rangedShot(
       if (result.check.success) {
         const label = result.check.crit ? `${die}! CRIT ${result.damage}` : `${die} → ${result.damage}`;
         floatText(scene, target.x, target.y - 16, label, result.check.crit ? "#ffd040" : "#ff7050");
-        applyDamageToMonster(deps, target, result.damage);
+        applyDamageToMonster(deps, target, result.damage, attacker);
       } else {
         whoosh({ gain: 0.6 });
         floatText(scene, target.x, target.y - 16, `${die} miss`, "#8888aa");
@@ -391,7 +396,7 @@ export function monsterSwing(
 
     thud();
     floatText(scene, target.x, target.y - 16, `-${result.damage}`, "#ff5050");
-    const wentDown = ctx.engine.damageCharacter(target.character, result.damage);
+    const wentDown = ctx.engine.damageCharacter(target.character, result.damage, { attack: true });
     scene.cameras.main.shake(80, 0.004);
     hitBurst(scene, target.x, target.y, false);
 

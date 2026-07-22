@@ -112,6 +112,10 @@ export interface ClassState {
   familiarAlive: boolean;
   /** Seer omen readings remaining until rest. */
   omenUses: number;
+  /** Remaining daily uses granted by alternate-class features and talents. */
+  resourceUses: Partial<Record<import("./effects").ClassResource, number>>;
+  /** Sea Wolf gods selected until the next rest. */
+  oldGods: ("odin" | "freya" | "loki")[];
   /** Gear held between Cauldron castings (maximum 3 slots). */
   cauldronItems: { itemId: string; qty: number }[];
 }
@@ -120,6 +124,8 @@ export const DEFAULT_CLASS_STATE: Readonly<ClassState> = {
   flourishUses: 0,
   familiarAlive: false,
   omenUses: 0,
+  resourceUses: {},
+  oldGods: [],
   cauldronItems: [],
 };
 
@@ -192,7 +198,7 @@ export class Character {
 
   /** One reroll, Shadowdark luck. Spent through the game layer. */
   luckToken = true;
-  classState: ClassState = { ...DEFAULT_CLASS_STATE, cauldronItems: [] };
+  classState: ClassState = { ...DEFAULT_CLASS_STATE, resourceUses: {}, oldGods: [], cauldronItems: [] };
 
   /** Set while at 0 HP; cleared by stabilization or healing. */
   dying: DyingState | null = null;
@@ -235,7 +241,12 @@ export class Character {
     const armored = this.wornArmor?.armor;
     const base = armored ? armored.acBase + Math.min(dex, armored.dexCap) : 10 + dex;
     const shield = this.carriedShield && !this.shieldStowed ? 2 : 0;
-    const calculated = base + shield + sumHook(this.effects, "acBonus") + this.armorAcBonus();
+    const dualWield = this.handFreeOfShield && this.inventory.all().filter((stack) =>
+      stack.def.tags.includes("weapon") && !stack.def.tags.includes("ranged")
+    ).reduce((count, stack) => count + stack.qty, 0) >= 2
+      ? this.effects.flatMap((effect) => effect.hooks).reduce((sum, hook) => sum + (hook.kind === "dualWieldAcBonus" ? hook.bonus : 0), 0)
+      : 0;
+    const calculated = base + shield + sumHook(this.effects, "acBonus") + this.armorAcBonus() + dualWield;
     let minimum = calculated;
     for (const effect of this.effects) {
       if (effect.id === "class:sea-wolf:shield-wall" && (!this.carriedShield || this.shieldStowed)) continue;
@@ -328,6 +339,12 @@ export class Character {
       return h;
     });
     this.effects.push({ ...effect, hooks: resolvedHooks });
+    for (const hook of resolvedHooks) {
+      if (hook.kind === "resourceBonus") {
+        this.classState.resourceUses[hook.resource] = (this.classState.resourceUses[hook.resource] ?? 0) + hook.bonus;
+        if (hook.resource === "omen") this.classState.omenUses = this.classState.resourceUses.omen ?? 0;
+      }
+    }
   }
 
   removeEffect(id: string): void {
@@ -338,6 +355,12 @@ export class Character {
     if (amount < 1) throw new Error(`HP increase must be positive, got ${amount}`);
     this.baseMaxHp += amount;
     this.hp += amount;
+  }
+
+  permanentlyReduceMaxHp(amount: number): void {
+    if (amount < 1 || amount >= this.baseMaxHp) throw new Error(`Invalid permanent HP sacrifice ${amount}`);
+    this.baseMaxHp -= amount;
+    this.hp = Math.min(this.hp, this.maxHp);
   }
 
   learnSpell(spellId: string): void {

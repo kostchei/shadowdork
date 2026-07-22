@@ -19,6 +19,13 @@ export interface SavedInventoryItem {
   qty: number;
 }
 
+export interface SavedPorter {
+  name: string;
+  ownerId: string;
+  hp: number;
+  inventory: SavedInventoryItem[];
+}
+
 export interface SavedCharacter {
   id: string;
   name: string;
@@ -94,6 +101,10 @@ export interface SaveSlot {
   /** Spendable shop wallet, separate from the XP-driving coinsBanked. Absent on
    * legacy saves, which seed it from coinsBanked on load. */
   spendableGold?: number;
+  /** Optional hired porter and the loot entrusted to them. */
+  porter?: SavedPorter;
+  /** A failed recruitment roll cannot be spammed by reopening or reloading this shop. */
+  porterHireAttempted?: boolean;
   party: SavedCharacter[];
   rescuedIds: string[]; // Classes of characters already rescued
   messages: { text: string; color: string }[];

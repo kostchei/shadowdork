@@ -156,7 +156,8 @@ export function partyCoinSlots(totalCoins: number, partySize = 1): number {
   return Math.ceil((totalCoins - freeAllowance) / 100);
 }
 
-function stackSlots(def: ItemDef, qty: number): number {
+/** Actual slots occupied by a quantity, including bundles and any free allowance. */
+export function stackSlots(def: ItemDef, qty: number): number {
   if (def.slotCost === 0) return 0;
   const charged = Math.max(0, qty - (def.freeQty ?? 0));
   return Math.ceil(charged / def.bundleSize) * def.slotCost;

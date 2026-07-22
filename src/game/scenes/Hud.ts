@@ -11,9 +11,11 @@ import {
   isHidden,
   isShieldWallActive,
   partyCoinSlots,
+  stackSlots,
   resourceMaximum,
   xpToNextLevel,
   type Character,
+  type ItemStack,
   type LevelUpResult,
 } from "../../engine";
 import type { GameContext } from "../context";
@@ -854,7 +856,7 @@ export class HudScene extends Phaser.Scene {
 
     const isLeader = c.id === this.dungeon.party.leader.character.id;
     const totalCoins = this.dungeon.ctx.totalCoins;
-    const partySize = this.dungeon.party.aliveMembers().length;
+    const partySize = this.dungeon.party.aliveMembers().length + (this.dungeon.hiredPorter?.alive ? 1 : 0);
     const coinSlots = isLeader ? partyCoinSlots(totalCoins, partySize) : 0;
     const usedSlots = c.inventory.slotsUsed() + coinSlots;
 
@@ -885,7 +887,7 @@ export class HudScene extends Phaser.Scene {
       fontStyle: "bold"
     });
 
-    const stacks = c.inventory.all();
+    const stacks = c.inventory.all() as readonly ItemStack[];
     const coinsLine = isLeader && totalCoins > 0
       ? `  ${totalCoins}x Coins (Purse) (${coinSlots === 0 ? "free" : `${coinSlots} slot${coinSlots > 1 ? "s" : ""}`})\n`
       : "";
@@ -894,7 +896,7 @@ export class HudScene extends Phaser.Scene {
     // window of rows centred on the current selection instead of dumping
     // every stack into one unclipped text block.
     const VISIBLE_GEAR_ROWS = 12;
-    const selectedIndex = stacks.findIndex((s: any) => s.def.id === selectedItemId);
+    const selectedIndex = stacks.findIndex((s) => s.def.id === selectedItemId);
     const windowStart = stacks.length <= VISIBLE_GEAR_ROWS
       ? 0
       : Math.min(
@@ -904,8 +906,9 @@ export class HudScene extends Phaser.Scene {
     const visibleStacks = stacks.slice(windowStart, windowStart + VISIBLE_GEAR_ROWS);
     const rowsAbove = windowStart;
     const rowsBelow = stacks.length - (windowStart + visibleStacks.length);
-    const rows = visibleStacks.map((s: any) => {
-      const slots = s.def.slotCost === 0 ? "free" : `${s.def.slotCost} slot${s.def.slotCost > 1 ? "s" : ""}`;
+    const rows = visibleStacks.map((s) => {
+      const occupiedSlots = stackSlots(s.def, s.qty);
+      const slots = occupiedSlots === 0 ? "free" : `${occupiedSlots} slot${occupiedSlots > 1 ? "s" : ""}`;
       const equipped = c.wieldedWeapon?.id === s.def.id || c.wornArmor?.id === s.def.id ||
         (c.carriedShield?.id === s.def.id && !c.shieldStowed);
       const itemState = c.itemState.get(s.def.id);
@@ -1014,7 +1017,7 @@ export class HudScene extends Phaser.Scene {
     });
 
     const blockNote = (row: ShopRow): string =>
-      row.block === "gold" ? " (need gold)" : row.block === "room" ? " (no room)" : "";
+      row.block === "gold" ? " (need gold)" : row.block === "room" ? " (no room)" : row.block === "hired" ? " (already hired)" : row.block === "attempted" ? " (declined)" : "";
     const buyLines = view.buy.length === 0
       ? "—"
       : view.buy.map((row, i) => {

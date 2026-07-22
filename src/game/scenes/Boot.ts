@@ -1,7 +1,6 @@
 /** Boot: generate all runtime textures, create the game context, start the dungeon. */
 
 import Phaser from "phaser";
-import { GameContext } from "../context";
 import { generateTextures } from "../textures";
 import { RENDER_SCALE, GAME_W, GAME_H } from "../display";
 import { SaveRepository } from "../SaveRepository";
@@ -71,13 +70,7 @@ export class BootScene extends Phaser.Scene {
       "[ Start New Game ]",
       () => {
         const startRun = () => {
-          // Campaign progression starts at dungeon 0 so its first reward is always
-          // appropriate for a new party.  The independent seed makes the actual
-          // dungeon type and its room selections fresh every time.
-          this.registry.set("dungeonIndex", 0);
-          this.registry.set("runSeed", Math.floor(Math.random() * 0x1_0000_0000));
-          this.registry.set("ctx", new GameContext());
-          this.scene.start("Dungeon");
+          this.scene.start("NewGame");
         };
         if (SaveRepository.exists(0) || SaveRepository.exists(1) || SaveRepository.exists(2) || SaveRepository.exists(3)) {
           showConfirm(this, "Starting a new game will eventually overwrite your autosave and progress. Proceed?", startRun);

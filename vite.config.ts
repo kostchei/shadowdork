@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { defineConfig, type Plugin } from "vite";
+import type { Plugin } from "vite";
+import { configDefaults, defineConfig } from "vitest/config";
 
 /** Dev-only: POST a canvas dataURL to /__shot and it lands on disk for inspection. */
 function screenshotEndpoint(): Plugin {
@@ -34,4 +35,9 @@ export default defineConfig({
   server: { port: process.env.PORT ? Number(process.env.PORT) : 5173 },
   build: { target: "es2022" },
   plugins: [screenshotEndpoint()],
+  test: {
+    // e2e/ holds Playwright specs (playwright.config.ts), a different runner
+    // with a different global `test`/`expect` — vitest must never collect them.
+    exclude: [...configDefaults.exclude, "e2e/**"],
+  },
 });

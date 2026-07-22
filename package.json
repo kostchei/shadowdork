@@ -8,6 +8,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "lint": "eslint src tests --max-warnings 365 && knip --include exports --max-issues 62 --max-show-issues 10 && knip --include types --max-issues 32 --max-show-issues 10 && knip --exclude exports,types"
   },
   "dependencies": {
@@ -15,6 +16,8 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.61.1",
+    "@types/node": "^26.1.1",
     "eslint": "^10.7.0",
     "knip": "^6.27.0",
     "typescript": "^5.6.0",

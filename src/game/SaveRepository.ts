@@ -258,6 +258,18 @@ export class SaveRepository {
     if (typeof obj.kills !== "number") return false;
     if (typeof obj.coinsBanked !== "number") return false;
     if (obj.spendableGold !== undefined && (typeof obj.spendableGold !== "number" || obj.spendableGold < 0)) return false;
+    if (obj.porterHireAttempted !== undefined && typeof obj.porterHireAttempted !== "boolean") return false;
+    if (obj.porter !== undefined) {
+      if (!obj.porter || typeof obj.porter !== "object" || Array.isArray(obj.porter)) return false;
+      if (typeof obj.porter.name !== "string" || typeof obj.porter.ownerId !== "string") return false;
+      if (typeof obj.porter.hp !== "number" || obj.porter.hp < 1) return false;
+      if (!Array.isArray(obj.porter.inventory)) return false;
+      if (!obj.porter.inventory.every((stack: unknown) => {
+        if (!stack || typeof stack !== "object") return false;
+        const candidate = stack as { itemId?: unknown; qty?: unknown };
+        return typeof candidate.itemId === "string" && Number.isInteger(candidate.qty) && (candidate.qty as number) > 0;
+      })) return false;
+    }
     
     // Check party list
     if (!Array.isArray(obj.party)) return false;

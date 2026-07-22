@@ -3,3 +3,6 @@ dist/
 .shots/
 *.zip
 *.pdf
+playwright-report/
+test-results/
+e2e/.artifacts/

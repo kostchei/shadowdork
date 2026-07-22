@@ -62,6 +62,7 @@ export interface ShopRow {
   block?: BuyBlock;
   /** Set on sell rows: how many the member carries. */
   qty?: number;
+  kind?: "item" | "porter";
 }
 
 /** Everything the HUD needs to render the shop, built by the scene. */
@@ -77,7 +78,7 @@ export interface ShopView {
 }
 
 /** Why a purchase is blocked, or null if it can proceed. */
-export type BuyBlock = "gold" | "room" | null;
+export type BuyBlock = "gold" | "room" | "hired" | "attempted" | null;
 
 export function buyBlocker(wallet: Wallet, inv: Inventory, def: ItemDef): BuyBlock {
   if (wallet.spendableGold < buyPrice(def)) return "gold";

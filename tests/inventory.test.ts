@@ -1,9 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { Inventory, type ItemDef } from "../src/engine/inventory";
+import { Inventory, stackSlots, type ItemDef } from "../src/engine/inventory";
 import { item } from "../src/data/items";
 
 const ration = item("ration");
 const longsword = item("longsword");
+
+describe("stack slot presentation", () => {
+  it("reports the actual slots occupied by bundled quantities", () => {
+    expect(stackSlots(ration, 1)).toBe(1);
+    expect(stackSlots(ration, 3)).toBe(1);
+    expect(stackSlots(ration, 4)).toBe(2);
+  });
+});
 
 describe("Inventory.canSwap", () => {
   it("accepts a longsword when a full pack holds exactly the ration being spent", () => {

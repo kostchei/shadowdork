@@ -6,6 +6,7 @@ import { BootScene } from "./scenes/Boot";
 import { DungeonScene } from "./scenes/Dungeon";
 import { HudScene } from "./scenes/Hud";
 import { EquipmentShowroomScene } from "./scenes/EquipmentShowroom";
+import { NewGameScene } from "./scenes/NewGame";
 
 // Before anything reads quality.ts's auto-detected default or the audio
 // graph exists — restores whatever the player last chose.
@@ -33,7 +34,7 @@ const game = new Phaser.Game({
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
-  scene: [BootScene, DungeonScene, HudScene, EquipmentShowroomScene],
+  scene: [BootScene, NewGameScene, DungeonScene, HudScene, EquipmentShowroomScene],
 });
 
 declare global {

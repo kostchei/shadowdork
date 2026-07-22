@@ -56,6 +56,7 @@ import {
   type EncounterDistance,
   type MonsterActivity,
   type MonsterReaction,
+  Inventory,
   type StatName,
 } from "../../engine";
 import { GameContext } from "../context";
@@ -82,6 +83,15 @@ import { EncounterSystem } from "../systems/encounters";
 import { CAMPFIRE_RADIUS, LightSystem } from "../systems/light";
 import { ShadowSystem } from "../systems/shadows";
 import { PartyManager } from "../systems/party";
+import { chooseAutoLootCarrier } from "../systems/partyInventory";
+import {
+  PORTER_CAPACITY_SLOTS,
+  PORTER_HIRE_PRICE,
+  PORTER_UPKEEP_GP,
+  porterHireBlock,
+  porterHireDc,
+  chooseMonsterTarget,
+} from "../systems/porter";
 import { CLOSE_PX, FAR_PX, NEAR_PX, zoneBetween } from "../systems/position";
 import {
   acceptCastMishap,
@@ -147,7 +157,7 @@ import {
   roomsAlertedByNoise,
 } from "../level/connectors";
 import { TILE } from "../textures";
-import { serializeCharacter, deserializeCharacter, type SaveSlot } from "../state";
+import { serializeCharacter, deserializeCharacter, type SaveSlot, type SavedPorter } from "../state";
 import { SaveRepository } from "../SaveRepository";
 import {
   chooseDungeonReward,
@@ -161,6 +171,7 @@ import {
   rollVaultCountForScroll,
   type BiomeOffer,
 } from "../biomeChoice";
+import { startingClassesForZone } from "../startingChoices";
 
 /**
  * How long after being hit a character keeps swinging back. Monsters attack
@@ -333,7 +344,12 @@ export class DungeonScene extends Phaser.Scene {
   private shopMemberIndex = 0;
   private safeZoneName?: string;
   private usedCharacterNames = new Set<string>();
-  private startingFighterName = "";
+  private startingCharacterName = "";
+  private startingClass: ClassName = "fighter";
+  /** A non-adventurer follower: carries loot, earns no XP, and is targeted only after adventurers. */
+  private porter: CharacterSprite | null = null;
+  private porterOwnerId: string | null = null;
+  private porterHireAttempted = false;
 
   constructor() {
     super("Dungeon");
@@ -411,8 +427,11 @@ export class DungeonScene extends Phaser.Scene {
     this.openedConnectors = new Set(this.loadedState?.openedConnectorIds ?? []);
     this.connectorActorState = new WeakMap();
     this.rewardClaimed = this.loadedState?.hasCrown ?? false;
-    this.usedCharacterNames = new Set(this.loadedState?.party.map((member) => member.name) ?? []);
-    this.startingFighterName = this.loadedState ? "" : this.nextPlebName();
+    this.usedCharacterNames = new Set([
+      ...(this.loadedState?.party.map((member) => member.name) ?? []),
+      ...(this.loadedState?.porter ? [this.loadedState.porter.name] : []),
+    ]);
+    this.startingCharacterName = this.loadedState ? "" : this.nextPlebName();
 
     const storedIndex = this.registry.get("dungeonIndex");
     const dungeonIndex = typeof storedIndex === "number" ? storedIndex : 0;
@@ -421,18 +440,29 @@ export class DungeonScene extends Phaser.Scene {
     const layoutSeed = (runSeed + dungeonIndex) >>> 0;
     this.activeDungeon = this.resolveActiveDungeon(layoutSeed);
 
-    this.activeZone = this.loadedState?.zone ?? zoneForRun(runSeed);
+    const requestedStartingZone = this.registry.get("startingZone") as ZonePackId | undefined;
+    this.activeZone = this.loadedState?.zone ?? requestedStartingZone ?? zoneForRun(runSeed);
+    const requestedStartingClass = this.registry.get("startingClass") as ClassName | undefined;
+    if (!this.loadedState && requestedStartingClass && startingClassesForZone(this.activeZone).includes(requestedStartingClass)) {
+      this.startingClass = requestedStartingClass;
+    }
     this.vaultsInScroll = this.loadedState?.vaultsInScroll ?? rollVaultCountForScroll(runSeed);
     this.vaultsCompletedInScroll = this.loadedState?.vaultsCompletedInScroll ?? 0;
     this.skinHistoryInScroll = [...(this.loadedState?.skinHistoryInScroll ?? [])];
 
     const requestedSkin = parseVisualSkinId(new URLSearchParams(window.location.search).get("skin"));
+    const startingSkin = !this.loadedState
+      ? parseVisualSkinId(this.registry.get("startingSkinId") as string | null)
+      : undefined;
     if (requestedSkin) {
       // A dev/QA override always wins so the regression matrix stays reachable.
       this.visualSkin = visualSkinById(requestedSkin);
     } else if (this.loadedState?.skinId) {
       // A save from the biome-choice era carries the exact skin it advanced into.
       this.visualSkin = visualSkinById(this.loadedState.skinId);
+    } else if (startingSkin && visualSkinById(startingSkin).zone === this.activeZone) {
+      this.visualSkin = visualSkinById(startingSkin);
+      this.skinHistoryInScroll.push(startingSkin);
     } else {
       // Pick a skin within the current scroll, respecting the max 2x per biome rule.
       const chosenSkin = pickSkinForScrollRun(this.activeZone, this.skinHistoryInScroll, layoutSeed);
@@ -459,7 +489,7 @@ export class DungeonScene extends Phaser.Scene {
       dungeonIndex,
       this.loadedState
         ? progressFromSavedParty(this.loadedState.party)
-        : [{ name: this.startingFighterName, className: "fighter", level: 1, knownSpellIds: [] }],
+        : [{ name: this.startingCharacterName, className: this.startingClass, level: 1, knownSpellIds: [] }],
       this.activeZone,
     );
 
@@ -485,6 +515,9 @@ export class DungeonScene extends Phaser.Scene {
     this.weakWalls = this.physics.add.staticGroup();
     this.portcullises = this.physics.add.staticGroup();
     this.party = new PartyManager(this.ctx);
+    this.porter = null;
+    this.porterOwnerId = null;
+    this.porterHireAttempted = this.loadedState?.porterHireAttempted ?? false;
     this.light = new LightSystem(
       this,
       this.ctx,
@@ -497,6 +530,7 @@ export class DungeonScene extends Phaser.Scene {
     );
     this.shadows = new ShadowSystem(this, this.light);
     this.buildLevel();
+    if (this.loadedState?.porter) this.restorePorter(this.loadedState.porter);
     this.createSafeZoneVignette(layoutSeed);
     this.createConnectorTelegraphs();
     const torchbearer = this.party.aliveMembers().find((m) => getBaseRole(m.character.className) === "priest") || this.party.leader;
@@ -524,7 +558,7 @@ export class DungeonScene extends Phaser.Scene {
     this.setupInput();
 
     // Colliders
-    this.partyGroup = this.add.group(this.party.members);
+    this.partyGroup = this.add.group([...this.party.members, ...(this.porter ? [this.porter] : [])]);
     this.monsterGroup = this.add.group(this.monsters);
     this.physics.add.collider(this.partyGroup, this.walls);
     this.physics.add.collider(this.partyGroup, this.weakWalls);
@@ -552,6 +586,7 @@ export class DungeonScene extends Phaser.Scene {
     this.physics.add.collider(this.monsterGroup, this.weakWalls);
     this.physics.add.collider(this.monsterGroup, this.portcullises);
     for (const member of this.party.members) this.trapSystem.registerActor(member);
+    if (this.porter) this.trapSystem.registerActor(this.porter);
     for (const monster of this.monsters) this.trapSystem.registerActor(monster);
     for (const pickup of this.pickups) this.trapSystem.registerActor(pickup.sprite);
 
@@ -1315,9 +1350,9 @@ export class DungeonScene extends Phaser.Scene {
           case "P": {
             if (!this.loadedState) {
               const fighter = this.spawnCharacter(
-                "pc-fighter",
-                this.startingFighterName,
-                "fighter",
+                `pc-${this.startingClass}`,
+                this.startingCharacterName,
+                this.startingClass,
                 px,
                 py,
               );
@@ -1556,6 +1591,49 @@ export class DungeonScene extends Phaser.Scene {
     return new CharacterSprite(this, this.ctx, x, y, character, this.light);
   }
 
+  get hiredPorter(): CharacterSprite | null {
+    return this.porter;
+  }
+
+  private createPorter(name: string, ownerId: string, hp?: number): CharacterSprite {
+    const leader = this.party.leader;
+    const character = createCharacter(
+      this.ctx.engine,
+      `porter-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+      name,
+      "fighter",
+      "human",
+      "neutral",
+    );
+    // A porter is not an adventuring Fighter: no kit, talents, attacks, or XP.
+    character.effects = [];
+    character.knownSpells = [];
+    character.inventory = new Inventory(PORTER_CAPACITY_SLOTS);
+    character.wieldedWeapon = null;
+    character.wornArmor = null;
+    character.carriedShield = null;
+    if (hp !== undefined) character.hp = Math.max(1, Math.min(character.maxHp, hp));
+    const sprite = new CharacterSprite(this, this.ctx, leader.x - 36, leader.y, character, this.light);
+    this.porter = sprite;
+    this.porterOwnerId = ownerId;
+    return sprite;
+  }
+
+  private restorePorter(saved: SavedPorter): void {
+    const porter = this.createPorter(saved.name, saved.ownerId, saved.hp);
+    for (const stack of saved.inventory) porter.character.inventory.add(item(stack.itemId), stack.qty, true);
+  }
+
+  private serializePorter(): SavedPorter | undefined {
+    if (!this.porter || this.porter.character.dead) return undefined;
+    return {
+      name: this.porter.character.name,
+      ownerId: this.porterOwnerId ?? this.party.leader.character.id,
+      hp: this.porter.character.hp,
+      inventory: this.porter.character.inventory.all().map((stack) => ({ itemId: stack.def.id, qty: stack.qty })),
+    };
+  }
+
   private addTalkableNpc(spec: TalkableNpcSpec, x: number, y: number): void {
     const state = this.npcInteractionStates.get(spec.id) ?? "unmet";
     const persistedFoe = persistedBetrayalFoe(spec.outcome, state);
@@ -1767,6 +1845,7 @@ export class DungeonScene extends Phaser.Scene {
     this.updateLeaderInput(time, delta);
     this.updateCameraFraming(time, delta);
     this.party.updateFollowers(time, (m, dir, targetY) => this.followerCanStep(m, dir, targetY));
+    this.updatePorterFollower(time);
     this.updateFollowerClimbs();
     this.updateFollowerSupport(time);
     this.trapSystem.update(time);
@@ -1777,8 +1856,10 @@ export class DungeonScene extends Phaser.Scene {
     this.updateDangerMarkers();
     this.updatePartyCombat(time);
     for (const m of this.party.members) m.tick(delta);
+    this.porter?.tick(delta);
     // Cast shadows follow the nearest light — projected after movement settles.
     for (const m of this.party.members) m.updateShadow(this.light);
+    this.porter?.updateShadow(this.light);
     for (const m of this.monsters) m.updateShadow(this.light);
     this.shadows.update();
     this.light.setDarknessAlpha(
@@ -2147,7 +2228,8 @@ export class DungeonScene extends Phaser.Scene {
   /** Alive party members buy/sell; falls back to all if somehow none are up. */
   private shopMembers(): CharacterSprite[] {
     const alive = this.party.aliveMembers();
-    return alive.length > 0 ? alive : this.party.members;
+    const adventurers = alive.length > 0 ? alive : this.party.members;
+    return [...adventurers, ...(this.porter?.alive ? [this.porter] : [])];
   }
 
   private activeShopMember(): CharacterSprite {
@@ -2182,6 +2264,14 @@ export class DungeonScene extends Phaser.Scene {
       price: buyPrice(def),
       block: buyBlocker(this.ctx, inv, def),
     }));
+    const hireBlock = porterHireBlock(this.ctx.spendableGold, this.porter ? 1 : 0, this.porterHireAttempted);
+    buy.push({
+      id: "hire-porter",
+      kind: "porter",
+      name: `Hire Porter (CHA DC ${porterHireDc(0)}, ${PORTER_UPKEEP_GP}g/vault)`,
+      price: PORTER_HIRE_PRICE,
+      block: hireBlock === "already-hired" ? "hired" : hireBlock,
+    });
     const sell: ShopRow[] = this.sellableStacks(member).map((s) => ({
       id: s.def.id,
       name: s.def.name,
@@ -2224,7 +2314,7 @@ export class DungeonScene extends Phaser.Scene {
       this.refreshShopOverlay();
       return;
     }
-    const length = this.shopMode === "buy" ? stockItems().length : this.sellableStacks(this.activeShopMember()).length;
+    const length = this.shopMode === "buy" ? this.buildShopView().buy.length : this.sellableStacks(this.activeShopMember()).length;
     if (length > 0 && this.actions.pressed("menuUp")) {
       this.shopCursor = Phaser.Math.Wrap(this.shopCursor - 1, 0, length);
       this.refreshShopOverlay();
@@ -2243,6 +2333,10 @@ export class DungeonScene extends Phaser.Scene {
 
   private attemptBuy(): void {
     const member = this.activeShopMember();
+    if (this.shopCursor === stockItems().length) {
+      this.attemptHirePorter(member);
+      return;
+    }
     const def = stockItems()[this.shopCursor];
     if (!def) return;
     try {
@@ -2255,6 +2349,41 @@ export class DungeonScene extends Phaser.Scene {
     } catch (err) {
       this.ctx.say(err instanceof Error ? err.message : String(err), "#d07070");
     }
+    this.refreshShopOverlay();
+  }
+
+  private attemptHirePorter(hirer: CharacterSprite): void {
+    const block = porterHireBlock(this.ctx.spendableGold, this.porter ? 1 : 0, this.porterHireAttempted);
+    if (block === "already-hired") {
+      this.ctx.say("You already have a porter in your employ.", "#d07070");
+      this.refreshShopOverlay();
+      return;
+    }
+    if (block === "gold") {
+      this.ctx.say(`Hiring a porter costs ${PORTER_HIRE_PRICE} gold.`, "#d07070");
+      this.refreshShopOverlay();
+      return;
+    }
+    if (block === "attempted") {
+      this.ctx.say("No porter here will reconsider during this vault.", "#d07070");
+      this.refreshShopOverlay();
+      return;
+    }
+    const dc = porterHireDc(0);
+    const check = this.ctx.engine.check({ actor: hirer.character, stat: "CHA", dc, kind: "stat" });
+    if (!check.success) {
+      this.porterHireAttempted = true;
+      this.ctx.say(`${hirer.character.name} fails to recruit the porter (${check.total} vs DC ${dc}).`, "#d07070");
+      this.refreshShopOverlay();
+      return;
+    }
+    this.ctx.spendGold(PORTER_HIRE_PRICE);
+    const porter = this.createPorter(this.nextPlebName(), hirer.character.id);
+    this.partyGroup.add(porter);
+    this.ctx.say(
+      `${porter.character.name} signs on as porter: ${PORTER_CAPACITY_SLOTS} loot slots, ${PORTER_UPKEEP_GP}g each new vault.`,
+      "#60e080",
+    );
     this.refreshShopOverlay();
   }
 
@@ -3561,15 +3690,21 @@ export class DungeonScene extends Phaser.Scene {
           continue;
         }
       }
-      // Target the nearest active party member; monsters see fine in the dark.
-      const target = this.party
+      // Monsters target adventurers first. A hired porter is considered only
+      // when no visible adventurer remains, regardless of distance.
+      const adventurerTargets = this.party
         .aliveMembers()
-        .filter((member) => !hasCapability(member.character, "invisible") && !isHidden(member.character))
-        .sort(
-          (a, b) =>
-            Phaser.Math.Distance.Between(m.x, m.y, a.x, a.y) -
-            Phaser.Math.Distance.Between(m.x, m.y, b.x, b.y),
-        )[0];
+        .filter((member) => !hasCapability(member.character, "invisible") && !isHidden(member.character));
+      const porterTarget = this.porter?.alive
+        && !hasCapability(this.porter.character, "invisible")
+        && !isHidden(this.porter.character)
+        ? this.porter
+        : undefined;
+      const target = chooseMonsterTarget(
+        adventurerTargets,
+        porterTarget,
+        (candidate) => Phaser.Math.Distance.Between(m.x, m.y, candidate.x, candidate.y),
+      );
       m.updateAi(delta, target ?? null);
       if (
         target &&
@@ -3578,6 +3713,17 @@ export class DungeonScene extends Phaser.Scene {
       ) {
         m.attackCooldown = MONSTER_ATTACK_COOLDOWN_MS;
         monsterSwing(this, this.ctx, this.light, m, target);
+        if (target === this.porter && target.character.dying) {
+          target.character.dead = true;
+          target.character.dying = null;
+          target.character.inventory.all().forEach((stack, index) => {
+            this.addPickup(target.x + (index % 3) * 12 - 12, target.y - Math.floor(index / 3) * 8, stack.def.id, stack.qty);
+          });
+          this.ctx.say(`${target.character.name} the porter falls and drops their load.`, "#d07070");
+          target.destroy();
+          this.porter = null;
+          this.porterOwnerId = null;
+        }
       }
     }
   }
@@ -3710,6 +3856,32 @@ export class DungeonScene extends Phaser.Scene {
       if (row && solid(row[tx])) return true;
     }
     return targetY > m.y + TILE * 2;
+  }
+
+  private updatePorterFollower(time: number): void {
+    const porter = this.porter;
+    if (!porter?.alive) return;
+    const leader = this.party.leader;
+    porter.noteGrounded(time);
+    const dx = leader.x - porter.x;
+    const body = porter.body as Phaser.Physics.Arcade.Body;
+    if (Math.abs(dx) > 700) {
+      porter.setPosition(leader.x - leader.facing * 44, leader.y - 8);
+      porter.setVelocity(0, 0);
+      return;
+    }
+    if (Math.abs(dx) <= 70) {
+      porter.moveHorizontal(0, 0);
+      return;
+    }
+    const dir: -1 | 1 = dx > 0 ? 1 : -1;
+    if (!this.followerCanStep(porter, dir, leader.y)) {
+      porter.moveHorizontal(0, 0);
+      return;
+    }
+    porter.moveHorizontal(dir, 0);
+    const wallAhead = dir === 1 ? body.blocked.right : body.blocked.left;
+    if ((wallAhead || leader.y < porter.y - 40) && body.blocked.down) porter.tryJump(time);
   }
 
   /** Followers use the same universal ladders/ropes as the leader. */
@@ -3965,7 +4137,7 @@ export class DungeonScene extends Phaser.Scene {
       const def = item(p.itemId);
 
       if (def.id === "coins") {
-        const partySize = this.party.aliveMembers().length;
+        const partySize = this.party.aliveMembers().length + (this.porter?.alive ? 1 : 0);
         const currentCoinSlots = partyCoinSlots(this.ctx.totalCoins, partySize);
         const newCoinSlots = partyCoinSlots(this.ctx.totalCoins + p.qty, partySize);
         const extraSlotsNeeded = newCoinSlots - currentCoinSlots;
@@ -3998,12 +4170,20 @@ export class DungeonScene extends Phaser.Scene {
         continue;
       }
 
-      if (!collector.character.inventory.canAdd(def, p.qty)) {
-        this.ctx.say(`${collector.character.name}'s gear slots are full! (${def.name} left behind)`, "#d07070");
+      // Auto-loot is party-aware: the member who reaches an item gets first
+      // refusal, then a companion with room carries it instead of making the
+      // player shuffle leaders and walk over the same pickup again.
+      const carriers = [
+        ...this.party.aliveMembers(),
+        ...(this.porter?.alive ? [this.porter] : []),
+      ];
+      const recipient = chooseAutoLootCarrier(collector, carriers, def, p.qty);
+      if (!recipient) {
+        this.ctx.say(`The party's gear slots are full! (${def.name} left behind)`, "#d07070");
         continue;
       }
 
-      collector.character.inventory.add(def, p.qty);
+      recipient.character.inventory.add(def, p.qty);
       const pxCoord = p.sprite.x;
       const pyCoord = p.sprite.y;
       p.sprite.destroy();
@@ -4015,13 +4195,16 @@ export class DungeonScene extends Phaser.Scene {
       const xp = def.xpValue ?? 0;
       const label = p.qty > 1 ? `${p.qty} ${def.name}` : def.name;
       if (xp > 0) {
-        floatText(this, collector.x, collector.y - 24, `${label} +${xp} XP`, "#e8c840");
+        floatText(this, recipient.x, recipient.y - 24, `${label} +${xp} XP`, "#e8c840");
         for (const m of this.party.members) {
           if (!m.character.dead) this.ctx.engine.awardXp(m.character, xp);
         }
         this.ctx.say(`Treasure! ${label} — party gains ${xp} XP.`, "#e8c840");
       } else {
-        floatText(this, collector.x, collector.y - 24, def.name, "#c0c0c0");
+        floatText(this, recipient.x, recipient.y - 24, def.name, "#c0c0c0");
+        if (recipient !== collector) {
+          this.ctx.say(`${recipient.character.name} carries ${label}.`, "#aeb6c4");
+        }
       }
     }
   }
@@ -4314,6 +4497,8 @@ export class DungeonScene extends Phaser.Scene {
       kills: this.ctx.kills,
       coinsBanked: this.ctx.totalCoins,
       spendableGold: this.ctx.spendableGold,
+      porter: this.serializePorter(),
+      porterHireAttempted: this.porterHireAttempted,
       party: this.party.members.map((m) => serializeCharacter(m.character)),
       rescuedIds: this.party.members.map((m) => m.character.className),
       messages: [...this.ctx.messages],
@@ -4369,6 +4554,7 @@ export class DungeonScene extends Phaser.Scene {
 
       // Descending to the next dungeon levels every surviving party member once.
       this.grantDescentLevels();
+      const continuingPorter = this.settlePorterUpkeep();
       const survivors = this.party.members
         .map((member) => serializeCharacter(member.character))
         .filter((member) => !member.dead);
@@ -4378,6 +4564,7 @@ export class DungeonScene extends Phaser.Scene {
           spendableGold: this.ctx.spendableGold,
           messages: [...this.ctx.messages],
           runSeed,
+          porter: continuingPorter,
         },
         dungeonIndex,
         survivors,
@@ -4401,5 +4588,19 @@ export class DungeonScene extends Phaser.Scene {
     }
     this.scene.stop("Hud");
     this.scene.restart();
+  }
+
+  private settlePorterUpkeep(): SavedPorter | undefined {
+    const saved = this.serializePorter();
+    if (!saved) return undefined;
+    if (this.ctx.spendableGold >= PORTER_UPKEEP_GP) {
+      this.ctx.spendGold(PORTER_UPKEEP_GP);
+      this.ctx.say(`${saved.name} receives ${PORTER_UPKEEP_GP}g upkeep for the next vault.`, "#e8c840");
+      return saved;
+    }
+    const owner = this.party.members.find((member) => member.character.id === saved.ownerId) ?? this.party.leader;
+    for (const stack of saved.inventory) owner.character.inventory.add(item(stack.itemId), stack.qty, true);
+    this.ctx.say(`${saved.name} leaves when the party cannot pay ${PORTER_UPKEEP_GP}g upkeep; their load is returned.`, "#d07070");
+    return undefined;
   }
 }

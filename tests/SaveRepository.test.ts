@@ -107,6 +107,23 @@ describe("SaveRepository", () => {
     expect(resumed?.discoveredRoomIds).toEqual(["room-1", "room-2"]);
   });
 
+  it("persists a hired porter, their load, and a failed hire attempt", () => {
+    const porterSave: SaveSlot = {
+      ...validSaveSlot,
+      porter: {
+        name: "Mags",
+        ownerId: "char1",
+        hp: 4,
+        inventory: [{ itemId: "jeweled-idol", qty: 1 }],
+      },
+      porterHireAttempted: true,
+    };
+    SaveRepository.save(1, porterSave);
+    const loaded = SaveRepository.load(1);
+    expect(loaded?.porter).toEqual(porterSave.porter);
+    expect(loaded?.porterHireAttempted).toBe(true);
+  });
+
   it("validates structural integrity of save slots correctly", () => {
     expect(SaveRepository.validateSaveSlot(validSaveSlot)).toBe(true);
     expect(SaveRepository.validateSaveSlot(null)).toBe(false);

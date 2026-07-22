@@ -1,5 +1,47 @@
 # Mobile-readiness cleanup
 
+> **Status (2026-07-22): all four P0 items and sections 1-4 are shipped.**
+> Verified against the current source:
+> - `ActionInput` (`src/game/input/ActionInput.ts`, `actions.ts`,
+>   `KeyboardSource.ts`) — done.
+> - Unified mode/pause controller — `src/game/modes/GameModeController.ts` —
+>   done.
+> - Mobile framebuffer policy — `src/game/display.ts` now derives scale from
+>   the viewport (not `window.screen`), capped at 2 for coarse pointers — done.
+> - Touch-complete flows — done (touch controller + `MobilePrefs.ts` stored
+>   separately from run saves, per the structural-cleanup note below).
+> - Render/debug cleanup — `preserveDrawingBuffer` and `window.__game`/
+>   `window.__audio` are gated behind `import.meta.env.DEV` in `main.ts` —
+>   done.
+> - Browser shell — `index.html` has `viewport-fit=cover`, `100dvh` + `100vh`
+>   fallback, safe-area insets, `touch-action: none`, `overscroll-behavior:
+>   none`, scoped selection/callout suppression, a CSS landscape orientation
+>   gate, and a fullscreen button — done.
+> - Full gameplay lifecycle policy (blur/hidden/pagehide → release inputs,
+>   auto-pause, stop engine time, autosave, require a resume tap) —
+>   `DungeonScene`'s background/foreground handlers — done.
+> - `alert()`/`confirm()` replaced by `src/game/ui/modal.ts` — done.
+> - Real save migrations — `SaveRepository.ts` has a proper
+>   `migrateSave`/`SAVE_SCHEMA_VERSION` step chain (still at version 1, but the
+>   machinery this doc asked for is real, not the old shallow `any` check) —
+>   done.
+> - README's duplicated gameplay section — cleaned — done.
+>
+> **Still open**, from "Structural cleanup worth doing alongside mobile":
+> - `DungeonScene` (4,405 lines) and `HudScene` (1,448 lines) have *not* been
+>   split — both grew slightly since this doc was written. Still the single
+>   largest code-quality item in the repo (see
+>   `docs/2026-07-21-improvement-review.md`).
+> - No browser-level/e2e/device-matrix tests exist yet — CI
+>   (`.github/workflows/azure-static-web-apps.yml`) still only runs `npm test`
+>   (unit) + `npm run build`.
+> - PWA manifest/service worker/offline policy — not started, per this doc's
+>   own sequencing ("only after mobile web gameplay is stable").
+>
+> "Current health" numbers below are stale: the suite is now 33 files / 473
+> tests (was 320), and `npm audit --omit=dev` still reports zero
+> vulnerabilities.
+
 The repository is healthy at the rules and build level, but it is not yet
 mobile-ready. The existing [mobile plan](docs/mobile-playability-plan.md) is a
 strong foundation; the following cleanup should happen before or alongside the

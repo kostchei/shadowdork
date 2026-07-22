@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Engine } from "../src/engine";
 import { createCharacter, item, registerTables, spell, spellForMagicItem } from "../src/data";
+import { TREASURE_4_6 } from "../src/data/tables/treasure";
 
 function engine(seed: number): Engine {
   const value = new Engine({ seed });
@@ -13,6 +14,9 @@ describe("scroll and wand spellcasting", () => {
     expect(spellForMagicItem("scroll-cure-wounds")?.id).toBe("cure-wounds");
     expect(spellForMagicItem("scroll-burning-hands")?.id).toBe("burning-hands");
     expect(spellForMagicItem("wand-fireball")?.id).toBe("fireball");
+    const wandEntry = TREASURE_4_6.entries.find((entry) => entry.min === 92)!;
+    const wandId = (wandEntry.data as { itemId: string }).itemId;
+    expect(spellForMagicItem(wandId, "wand-fireball")?.id).toBe("fireball");
     expect(item("scroll-light").use?.actions).toContain("cast");
     expect(item("wand-fireball").use?.inertOnFail).toBe(true);
     expect(item("wand-fireball").use?.breaksOnCriticalFail).toBe(true);

@@ -367,8 +367,8 @@ const ITEM_SPELLS: Readonly<Record<string, string>> = {
   "wand-fireball": "fireball",
 };
 
-export function spellForMagicItem(itemId: string): SpellDef | undefined {
-  const spellId = ITEM_SPELLS[itemId];
+export function spellForMagicItem(itemId: string, rulesId?: string): SpellDef | undefined {
+  const spellId = ITEM_SPELLS[rulesId ?? itemId];
   return spellId ? spell(spellId) : undefined;
 }
 

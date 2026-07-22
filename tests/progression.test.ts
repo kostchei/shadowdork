@@ -55,31 +55,28 @@ describe("campaign rewards", () => {
     expect(reward.title).toContain(reward.name);
   });
 
-  it("cycles through all five reward categories", () => {
+  it("cycles through five reward positions with two general treasure finds", () => {
     const fullParty = [fighter, thief, priest, wizard];
-    expect(chooseDungeonReward(1, fullParty).kind).toBe("magic-weapon");
-    expect(chooseDungeonReward(2, fullParty).kind).toBe("magic-armor");
+    expect(chooseDungeonReward(1, fullParty).kind).toBe("treasure");
+    expect(chooseDungeonReward(2, fullParty).kind).toBe("treasure");
     expect(chooseDungeonReward(3, fullParty).kind).toBe("gold");
     expect(chooseDungeonReward(4, fullParty).kind).toBe("spells");
   });
 
   it("rolls the vault treasure tables instead of always the same item", () => {
     const fullParty = [fighter, thief, priest, wizard];
-    const weaponSlotItemIds = new Set<string>();
-    const armorSlotItemIds = new Set<string>();
-    // Every 5th dungeonIndex lands back on "magic-weapon"/"magic-armor" (the
-    // cycle is length 5); sample several cycles so a real spread of items
-    // shows up instead of the old single hardcoded Starfall Blade/Aegis Mail.
+    const firstTreasureSlotItemIds = new Set<string>();
+    const secondTreasureSlotItemIds = new Set<string>();
+    // Every 5th dungeonIndex lands back on one of the two treasure positions;
+    // sample several cycles so both positions produce a real spread of finds.
     for (let cycle = 0; cycle < 12; cycle++) {
-      const weaponReward = chooseDungeonReward(1 + cycle * 5, fullParty);
-      const armorReward = chooseDungeonReward(2 + cycle * 5, fullParty);
-      if (weaponReward.kind === "magic-weapon") weaponSlotItemIds.add(weaponReward.itemId);
-      if (armorReward.kind === "magic-armor") armorSlotItemIds.add(armorReward.itemId);
+      const firstReward = chooseDungeonReward(1 + cycle * 5, fullParty);
+      const secondReward = chooseDungeonReward(2 + cycle * 5, fullParty);
+      if (firstReward.kind === "treasure") firstTreasureSlotItemIds.add(firstReward.itemId);
+      if (secondReward.kind === "treasure") secondTreasureSlotItemIds.add(secondReward.itemId);
     }
-    expect(weaponSlotItemIds.size).toBeGreaterThan(1);
-    expect(armorSlotItemIds.size).toBeGreaterThan(1);
-    expect(weaponSlotItemIds).not.toEqual(new Set(["starfall-blade"]));
-    expect(armorSlotItemIds).not.toEqual(new Set(["aegis-mail"]));
+    expect(firstTreasureSlotItemIds.size).toBeGreaterThan(1);
+    expect(secondTreasureSlotItemIds.size).toBeGreaterThan(1);
   });
 
   it("bands vault treasure by the party's furthest-advanced level", () => {
@@ -99,8 +96,8 @@ describe("campaign rewards", () => {
     for (let cycle = 0; cycle < 20; cycle++) {
       const lowReward = chooseDungeonReward(1 + cycle * 5, lowParty);
       const highReward = chooseDungeonReward(1 + cycle * 5, highParty);
-      if (lowReward.kind === "magic-weapon") lowItems.add(lowReward.itemId);
-      if (highReward.kind === "magic-weapon") highItems.add(highReward.itemId);
+      if (lowReward.kind === "treasure") lowItems.add(lowReward.itemId);
+      if (highReward.kind === "treasure") highItems.add(highReward.itemId);
     }
     expect(lowItems).not.toEqual(highItems);
   });
@@ -110,7 +107,7 @@ describe("campaign rewards", () => {
     const itemIds = new Set<string>();
     for (let cycle = 0; cycle < 30; cycle++) {
       const reward = chooseDungeonReward(1 + cycle * 5, fullParty, "diablerie");
-      if (reward.kind === "magic-weapon") itemIds.add(reward.itemId);
+      if (reward.kind === "treasure") itemIds.add(reward.itemId);
     }
     // carved-flame-bone only exists in DIABOLICAL_TREASURE (CS1's flavor table).
     expect(itemIds.has("carved-flame-bone")).toBe(true);
@@ -127,15 +124,36 @@ describe("campaign rewards", () => {
     const fullParty = [fighter, thief, priest, wizard];
     for (let cycle = 0; cycle < 40; cycle++) {
       for (const zone of [undefined, "diablerie", "red-sands", "midnight-sun", "city-of-masks"] as const) {
-        const weaponReward = chooseDungeonReward(1 + cycle * 5, fullParty, zone);
-        const armorReward = chooseDungeonReward(2 + cycle * 5, fullParty, zone);
-        for (const reward of [weaponReward, armorReward]) {
-          if (reward.kind === "magic-weapon" || reward.kind === "magic-armor") {
+        const firstReward = chooseDungeonReward(1 + cycle * 5, fullParty, zone);
+        const secondReward = chooseDungeonReward(2 + cycle * 5, fullParty, zone);
+        for (const reward of [firstReward, secondReward]) {
+          if (reward.kind === "treasure") {
             expect(() => item(reward.itemId)).not.toThrow();
           }
         }
       }
     }
+  });
+
+  it("describes rolled treasure by its actual table result rather than its cycle position", () => {
+    const fullParty = [fighter, thief, priest, wizard];
+    for (let dungeonIndex = 1; dungeonIndex < 100; dungeonIndex += 5) {
+      const reward = chooseDungeonReward(dungeonIndex, fullParty);
+      expect(reward.kind).toBe("treasure");
+      if (reward.kind !== "treasure") continue;
+      const def = item(reward.itemId);
+      expect(reward).toMatchObject({
+        title: def.name,
+        valueGp: (def.valueGp ?? 0) * reward.qty,
+        quality: def.treasureQuality,
+        tableId: "treasure-0-3",
+      });
+      expect(reward.roll).toBeGreaterThanOrEqual(reward.entryMin);
+      expect(reward.roll).toBeLessThanOrEqual(reward.entryMax);
+      expect(reward.entryMin).toBeLessThanOrEqual(reward.entryMax);
+      return;
+    }
+    throw new Error("No treasure reward produced");
   });
 
   it("always makes a caster's first discovered spell tier 1, even at high level", () => {

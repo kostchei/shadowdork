@@ -1,4 +1,4 @@
-import { getBaseRole, type Alignment, type ClassName, type SpellClass, type RollableTable, type TableEntry } from "../engine";
+import { getBaseRole, type Alignment, type ClassName, type SpellClass, type RollableTable, type TableEntry, type TreasureQuality } from "../engine";
 import { characterTitle } from "../engine";
 import type { SaveSlot, SavedCharacter } from "./state";
 import type { VisualSkinId, ZonePackId } from "./visual/model";
@@ -14,7 +14,7 @@ import {
 } from "../data/tables/treasure";
 import { resolveClassForZone } from "./systems/companion";
 
-export type RewardKind = "companion" | "magic-weapon" | "magic-armor" | "gold" | "spells";
+export type RewardKind = "companion" | "treasure" | "gold" | "spells";
 
 export interface PartyProgress {
   name?: string;
@@ -33,12 +33,18 @@ export interface CompanionReward {
   alignment: Alignment;
 }
 
-export interface ItemReward {
-  kind: "magic-weapon" | "magic-armor";
+export interface TreasureReward {
+  kind: "treasure";
   title: string;
   description: string;
   itemId: string;
   qty: number;
+  valueGp: number;
+  quality: TreasureQuality;
+  tableId: string;
+  roll: number;
+  entryMin: number;
+  entryMax: number;
 }
 
 export interface GoldReward {
@@ -56,12 +62,12 @@ export interface SpellReward {
   className: SpellClass;
 }
 
-export type DungeonReward = CompanionReward | ItemReward | GoldReward | SpellReward;
+export type DungeonReward = CompanionReward | TreasureReward | GoldReward | SpellReward;
 
 const REWARD_CYCLE: readonly RewardKind[] = [
   "companion",
-  "magic-weapon",
-  "magic-armor",
+  "treasure",
+  "treasure",
   "gold",
   "spells",
 ];
@@ -110,38 +116,39 @@ const ZONE_FLAVOR_TABLES: Partial<Record<ZonePackId, RollableTable>> = {
  * save reproduces the exact same vault reward without replaying every prior
  * dice roll (see the `stableIndex` calls throughout this file).
  */
-function rollTableEntry(table: RollableTable, seed: number): TableEntry {
+function rollTableEntry(table: RollableTable, seed: number): { entry: TableEntry; roll: number } {
   const first = table.entries[0]!;
   const last = table.entries[table.entries.length - 1]!;
   const span = last.max - first.min + 1;
   const roll = first.min + stableIndex(seed, span);
   const entry = table.entries.find((e) => roll >= e.min && roll <= e.max);
   if (!entry) throw new Error(`Table "${table.id}" has no entry for roll ${roll}`);
-  return entry;
+  return { entry, roll };
 }
 
 /**
- * Resolves the "magic-weapon"/"magic-armor" reward-cycle slots against the
- * registered core and Cursed Scroll treasure tables instead of a single fixed
- * item, so repeat runs stop converging on identical gear. Banded by the
- * party's furthest-advanced level; a Cursed Scroll destination has a chance to
- * roll its own flavor table instead of the level-banded core one.
+ * Resolves either treasure reward-cycle slot against the registered core and
+ * Cursed Scroll treasure tables. The result's kind describes what was rolled,
+ * not the old scheduled "weapon"/"armor" slot. Banded by the party's
+ * furthest-advanced level; a Cursed Scroll destination has a chance to roll its
+ * own flavor table instead of the level-banded core one.
  */
 function rollVaultTreasure(
-  kind: "magic-weapon" | "magic-armor",
+  rewardSlot: number,
   dungeonIndex: number,
   party: readonly PartyProgress[],
   zone: ZonePackId | undefined,
-): ItemReward | GoldReward {
+): TreasureReward | GoldReward {
   const living = party.filter((member) => !member.dead);
   const maxLevel = living.length > 0 ? Math.max(...living.map((member) => member.level)) : 1;
   const partySalt = party.reduce((acc, m, i) => acc + m.className.charCodeAt(0) * (i + 1), 0);
-  const slotSalt = kind === "magic-weapon" ? 1 : 2;
+  const slotSalt = rewardSlot + 1;
   const flavorTable = zone ? ZONE_FLAVOR_TABLES[zone] : undefined;
   const useFlavor = flavorTable !== undefined
     && stableIndex(dungeonIndex * 353 + partySalt + slotSalt * 61, 100) < 40;
   const table = useFlavor ? flavorTable! : levelBandTable(maxLevel);
-  const entry = rollTableEntry(table, dungeonIndex * 2711 + partySalt * 97 + slotSalt);
+  const rolled = rollTableEntry(table, dungeonIndex * 2711 + partySalt * 97 + slotSalt);
+  const { entry } = rolled;
 
   const data = entry.data as { itemId?: string; valueGp?: number; qty?: number; cp?: number } | undefined;
   if (!data) throw new Error(`Treasure entry "${entry.text}" has no data payload`);
@@ -150,7 +157,23 @@ function rollVaultTreasure(
     return { kind: "gold", title: "A Meager Find", description: entry.text, amount };
   }
   const def = item(data.itemId);
-  return { kind, title: def.name, description: entry.text, itemId: data.itemId, qty: data.qty ?? 1 };
+  const qty = data.qty ?? 1;
+  const valueGp = data.valueGp ?? (def.valueGp ?? 0) * qty;
+  const quality = def.treasureQuality
+    ?? (valueGp < 10 ? "poor" : valueGp >= 300 ? "fabulous" : "normal");
+  return {
+    kind: "treasure",
+    title: def.name,
+    description: entry.text,
+    itemId: data.itemId,
+    qty,
+    valueGp,
+    quality,
+    tableId: table.id,
+    roll: rolled.roll,
+    entryMin: entry.min,
+    entryMax: entry.max,
+  };
 }
 
 function missingCompanion(
@@ -221,7 +244,8 @@ export function chooseDungeonReward(
   zone?: ZonePackId,
 ): DungeonReward {
   if (!Number.isInteger(dungeonIndex)) throw new Error("Dungeon index must be an integer");
-  const kind = REWARD_CYCLE[((dungeonIndex % REWARD_CYCLE.length) + REWARD_CYCLE.length) % REWARD_CYCLE.length]!;
+  const rewardSlot = ((dungeonIndex % REWARD_CYCLE.length) + REWARD_CYCLE.length) % REWARD_CYCLE.length;
+  const kind = REWARD_CYCLE[rewardSlot]!;
   const companion = missingCompanion(party, dungeonIndex, zone);
 
   if (kind === "companion") {
@@ -232,8 +256,8 @@ export function chooseDungeonReward(
       amount: 500,
     };
   }
-  if (kind === "magic-weapon" || kind === "magic-armor") {
-    return rollVaultTreasure(kind, dungeonIndex, party, zone);
+  if (kind === "treasure") {
+    return rollVaultTreasure(rewardSlot, dungeonIndex, party, zone);
   }
   if (kind === "gold") {
     return {

@@ -200,6 +200,7 @@ export class Engine {
       kind: melee ? "meleeAttack" : "attack",
       advantage: input.advantage,
       disadvantage: input.disadvantage,
+      bonus: input.weapon?.magicBonus,
     });
     let damage = 0;
     if (check.success) {
@@ -210,7 +211,7 @@ export class Engine {
           if (hook.kind === "extraDamageDice") damage += this.dice.roll(hook.dice);
         }
       }
-      damage += a.damageBonus;
+      damage += a.damageBonus + (input.weapon?.magicBonus ?? 0);
       if (melee) for (const effect of a.effects) for (const hook of effect.hooks) {
         if (hook.kind === "meleeDamageBonus") damage += hook.bonus;
       }

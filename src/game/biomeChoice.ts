@@ -16,6 +16,17 @@ export function rollVaultCountForScroll(seed: number): number {
   return 1 + (hashSeed(seed ^ 0x3c6ef35f) % 6);
 }
 
+/** Whether leaving the current vault completes the active scroll adventure. */
+export function completesScrollOnVaultExit(vaultsCompleted: number, vaultsInScroll: number): boolean {
+  if (!Number.isInteger(vaultsCompleted) || vaultsCompleted < 0) {
+    throw new Error("Completed vault count must be a non-negative integer");
+  }
+  if (!Number.isInteger(vaultsInScroll) || vaultsInScroll < 1) {
+    throw new Error("Vault count for a scroll must be a positive integer");
+  }
+  return vaultsCompleted + 1 >= vaultsInScroll;
+}
+
 /**
  * Pick a biome (skin) within the current Cursed Scroll, enforcing that each
  * biome is used a maximum of 2x during the scroll run.

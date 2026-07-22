@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { pickSkinForScrollRun, rollBiomeOffer, rollVaultCountForScroll } from "../src/game/biomeChoice";
+import {
+  completesScrollOnVaultExit,
+  pickSkinForScrollRun,
+  rollBiomeOffer,
+  rollVaultCountForScroll,
+} from "../src/game/biomeChoice";
 import { ZONE_PACKS } from "../src/game/visual/skins";
 
 describe("rollBiomeOffer", () => {
@@ -61,6 +66,24 @@ describe("rollVaultCountForScroll", () => {
       expect(count).toBeGreaterThanOrEqual(1);
       expect(count).toBeLessThanOrEqual(6);
     }
+  });
+});
+
+describe("completesScrollOnVaultExit", () => {
+  it("does not complete the adventure after an intermediate vault", () => {
+    expect(completesScrollOnVaultExit(0, 4)).toBe(false);
+    expect(completesScrollOnVaultExit(2, 4)).toBe(false);
+  });
+
+  it("completes the adventure when leaving its final vault", () => {
+    expect(completesScrollOnVaultExit(0, 1)).toBe(true);
+    expect(completesScrollOnVaultExit(3, 4)).toBe(true);
+  });
+
+  it("rejects invalid persisted progress", () => {
+    expect(() => completesScrollOnVaultExit(-1, 4)).toThrow();
+    expect(() => completesScrollOnVaultExit(0, 0)).toThrow();
+    expect(() => completesScrollOnVaultExit(1.5, 4)).toThrow();
   });
 });
 

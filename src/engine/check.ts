@@ -31,6 +31,8 @@ export interface CheckInput {
   disadvantage?: readonly string[];
   /** Attacks: crit threshold from the attacker (talents can lower it below 20). */
   critThreshold?: number;
+  /** Flat situational modifier supplied by the caller, such as a magic weapon bonus. */
+  bonus?: number;
 }
 
 export interface CheckResult {
@@ -66,7 +68,7 @@ export function resolveCheck(dice: Dice, input: CheckInput): CheckResult {
   else if (disReasons.length > 0 && advReasons.length === 0) mode = "disadvantage";
 
   const roll = dice.d20(mode);
-  const modifier = actor.mod(stat) + sumCheckBonus(actor.effects, kind, actor.level);
+  const modifier = actor.mod(stat) + sumCheckBonus(actor.effects, kind, actor.level) + (input.bonus ?? 0);
   const total = roll.natural + modifier;
 
   const critAt = kind === "attack" || kind === "meleeAttack" ? (input.critThreshold ?? actor.critThreshold) : 20;

@@ -48,7 +48,7 @@ export function usePotion(
   if (target.dead) throw new Error(`${target.name} is dead and cannot drink a potion.`);
 
   let result: PotionUseResult;
-  switch (def.id) {
+  switch (def.rulesId ?? def.id) {
     case "potion-healing": {
       if (target.hp >= target.maxHp && !target.dying) throw new Error(`${target.name} is already at full HP.`);
       const before = target.hp;

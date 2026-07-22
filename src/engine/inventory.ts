@@ -8,6 +8,17 @@
 
 export type WeaponVisual = "longsword" | "dagger" | "mace" | "staff" | "spear" | "javelin";
 export type ArmorVisual = "leather" | "chain" | "plate" | "mithral";
+export type TreasureQuality = "poor" | "normal" | "fabulous" | "legendary";
+
+export interface MagicItemPersonality {
+  alignment?: "law" | "neutral" | "chaos";
+  trait?: string;
+  virtues?: readonly string[];
+  flaws?: readonly string[];
+  /** Unresolved rolls called for by a generated treasure-table result. */
+  virtueRolls?: number;
+  flawRolls?: number;
+}
 
 /** What can be done with an item. A single item may support several. */
 export type ItemActionKind = "equip" | "consume" | "cast" | "activate" | "place" | "inspect";
@@ -102,6 +113,9 @@ export class ItemStateTracker {
 
 export interface ItemDef {
   id: string;
+  /** Optional canonical rules identity for a named treasure-table instance that
+   * keeps its own inventory id, description, and value. */
+  rulesId?: string;
   name: string;
   /** Slots one instance occupies. 0 = free to carry. */
   slotCost: number;
@@ -110,6 +124,17 @@ export interface ItemDef {
   /** Units carried free before slots are charged (coins: first 100 free). */
   freeQty?: number;
   tags: readonly string[];
+  /** Shadowdark treasure XP category. */
+  treasureQuality?: TreasureQuality;
+  /** Magic armor adds this to AC; magic weapons add it to attack and damage. */
+  magicBonus?: number;
+  /** Concrete supernatural qualities already known for this item. */
+  benefits?: readonly string[];
+  curses?: readonly string[];
+  /** Unresolved generated qualities called for by a treasure-table result. */
+  benefitRolls?: number;
+  curseRolls?: number;
+  personality?: MagicItemPersonality;
   /** Short rules-facing text for the lightweight inventory inspection view. */
   description?: string;
   /** XP value when picked up, for treasure items. */

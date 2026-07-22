@@ -23,6 +23,7 @@ import {
   spell,
 } from "../src/data";
 import { appearanceForCharacter, characterAppearanceKey } from "../src/game/entities/appearance";
+import { TREASURE_4_6 } from "../src/data/tables/treasure";
 
 function makeEngine(seed = 42): Engine {
   const engine = new Engine({ seed });
@@ -420,6 +421,41 @@ describe("attack fidelity", () => {
       if (r.check.success && !r.check.crit && r.damage > 4) sawAboveSingleDie = true;
     }
     expect(sawAboveSingleDie).toBe(true);
+  });
+
+  it("adds a magic weapon bonus to both attack and damage", () => {
+    const engine = makeEngine(8);
+    const attacker = new Character({
+      id: "magic-attacker",
+      name: "Magic Attacker",
+      className: "fighter",
+      stats: { STR: 10, DEX: 10, CON: 10, INT: 10, WIS: 10, CHA: 10 },
+      maxHp: 10,
+    });
+    const weapon = item("blade-of-vengeance");
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const result = engine.attack({ attacker, targetAc: 2, damage: weapon.damage!, weapon });
+      if (!result.check.success || result.check.crit) continue;
+      expect(result.check.modifier).toBe(2);
+      expect(result.damage).toBeGreaterThanOrEqual(3);
+      return;
+    }
+    throw new Error("No ordinary magic-weapon hit produced in 20 attempts");
+  });
+
+  it("adds generated magic armor bonuses to AC", () => {
+    const wearer = new Character({
+      id: "magic-wearer",
+      name: "Magic Wearer",
+      className: "fighter",
+      stats: { STR: 10, DEX: 10, CON: 10, INT: 10, WIS: 10, CHA: 10 },
+      maxHp: 10,
+    });
+    const armorEntry = TREASURE_4_6.entries.find((entry) => entry.min === 96)!;
+    const armor = item((armorEntry.data as { itemId: string }).itemId);
+    wearer.equipArmor(armor);
+    expect(armor.magicBonus).toBe(2);
+    expect(wearer.ac).toBe(15);
   });
 
   it("a lowered crit range no longer auto-hits", () => {

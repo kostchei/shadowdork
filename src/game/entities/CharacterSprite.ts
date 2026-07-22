@@ -386,7 +386,10 @@ export class CharacterSprite extends Phaser.Physics.Arcade.Sprite {
       this.ctx.say(`${this.character.name} drifts safely to the ground.`, "#a7d8ff");
       return;
     }
-    const featherRing = item("ring-feather-falling");
+    const featherRing = this.character.inventory.all()
+      .map((stack) => stack.def)
+      .find((def) => (def.rulesId ?? def.id) === "ring-feather-falling")
+      ?? item("ring-feather-falling");
     const ringCheck = canUseItem(this.character, this.character.itemState, featherRing, "activate");
     if (ringCheck.ok) {
       applyUseOutcome(this.character.itemState, featherRing, "success");

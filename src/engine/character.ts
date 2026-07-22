@@ -240,13 +240,16 @@ export class Character {
     const dex = this.mod("DEX");
     const armored = this.wornArmor?.armor;
     const base = armored ? armored.acBase + Math.min(dex, armored.dexCap) : 10 + dex;
-    const shield = this.carriedShield && !this.shieldStowed ? 2 : 0;
+    const shield = this.carriedShield && !this.shieldStowed
+      ? 2 + (this.carriedShield.magicBonus ?? 0)
+      : 0;
     const dualWield = this.handFreeOfShield && this.inventory.all().filter((stack) =>
       stack.def.tags.includes("weapon") && !stack.def.tags.includes("ranged")
     ).reduce((count, stack) => count + stack.qty, 0) >= 2
       ? this.effects.flatMap((effect) => effect.hooks).reduce((sum, hook) => sum + (hook.kind === "dualWieldAcBonus" ? hook.bonus : 0), 0)
       : 0;
-    const calculated = base + shield + sumHook(this.effects, "acBonus") + this.armorAcBonus() + dualWield;
+    const calculated = base + (this.wornArmor?.magicBonus ?? 0) + shield
+      + sumHook(this.effects, "acBonus") + this.armorAcBonus() + dualWield;
     let minimum = calculated;
     for (const effect of this.effects) {
       if (effect.id === "class:sea-wolf:shield-wall" && (!this.carriedShield || this.shieldStowed)) continue;

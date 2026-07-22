@@ -167,6 +167,7 @@ import {
   type DungeonReward,
 } from "../progression";
 import {
+  completesScrollOnVaultExit,
   pickSkinForScrollRun,
   rollBiomeOffer,
   rollVaultCountForScroll,
@@ -2040,7 +2041,7 @@ export class DungeonScene extends Phaser.Scene {
 
   private inspectInventoryItem(user: CharacterSprite, def: ReturnType<typeof item>): void {
     const state = user.character.itemState.get(def.id);
-    const boundSpell = spellForMagicItem(def.id);
+    const boundSpell = spellForMagicItem(def.id, def.rulesId);
     const chargeText = def.use?.charges === undefined
       ? ""
       : ` Charges: ${state.chargesRemaining ?? def.use.charges}/${def.use.charges}.`;
@@ -2052,7 +2053,7 @@ export class DungeonScene extends Phaser.Scene {
   }
 
   private beginPotionUse(user: CharacterSprite, def: ReturnType<typeof item>): void {
-    if (def.id === "potion-healing") {
+    if ((def.rulesId ?? def.id) === "potion-healing") {
       const candidates = this.party.members.filter(
         (member) => !member.character.dead && (member.character.dying !== null || member.character.hp < member.character.maxHp),
       );
@@ -2095,7 +2096,7 @@ export class DungeonScene extends Phaser.Scene {
   }
 
   private castFromMagicItem(caster: CharacterSprite, def: ReturnType<typeof item>): void {
-    const suppliedSpell = spellForMagicItem(def.id);
+    const suppliedSpell = spellForMagicItem(def.id, def.rulesId);
     if (!suppliedSpell) {
       this.ctx.say(`${def.name} has no spell bound to it.`, "#d07070");
       return;
@@ -3325,8 +3326,7 @@ export class DungeonScene extends Phaser.Scene {
           sfx.doorThump();
           const dungeonIndex = this.registry.get("dungeonIndex") ?? 0;
           const runSeed = this.registry.get("runSeed") ?? 0;
-          const nextCompleted = this.vaultsCompletedInScroll + 1;
-          if (nextCompleted >= this.vaultsInScroll) {
+          if (completesScrollOnVaultExit(this.vaultsCompletedInScroll, this.vaultsInScroll)) {
             // Destination Cursed Scroll completed! Roll 1d6 Destination Choices
             this.biomeOffer = rollBiomeOffer(dungeonIndex, runSeed);
             this.biomeSelectionIndex = 0;
@@ -3565,7 +3565,7 @@ export class DungeonScene extends Phaser.Scene {
         }
         message = `${candidate.name} joins the party and will travel to future dungeons! (${this.party.size}/4)`;
       }
-    } else if (reward.kind === "magic-weapon" || reward.kind === "magic-armor") {
+    } else if (reward.kind === "treasure") {
       const def = item(reward.itemId);
       const recipients = [
         this.party.leader,
@@ -3577,9 +3577,13 @@ export class DungeonScene extends Phaser.Scene {
         return;
       }
       recipient.character.inventory.add(def, reward.qty);
-      message = reward.qty > 1
-        ? `${recipient.character.name} receives ${reward.qty}x ${def.name}. Open Gear (I) to equip it.`
-        : `${recipient.character.name} receives ${def.name}. Open Gear (I) to equip it.`;
+      const received = reward.qty > 1 ? `${reward.qty}x ${def.name}` : def.name;
+      const hint = def.tags.includes("weapon") || def.tags.includes("armor") || def.shield
+        ? "Open Gear (I) to equip it."
+        : def.use
+          ? "Open Gear (I) to use or inspect it."
+          : `It is worth ${reward.valueGp} gp.`;
+      message = `${recipient.character.name} receives ${received} (${reward.quality} treasure). ${hint}`;
     } else if (reward.kind === "spells") {
       const caster = this.party.aliveMembers().find(
         (member) =>
@@ -4438,12 +4442,11 @@ export class DungeonScene extends Phaser.Scene {
   }
 
   /**
-   * Descent reward: top each living survivor's XP up to their next-level
-   * threshold, then run a normal level-up. Any XP already earned this run counts
-   * toward it. Capped at MAX_LEVEL. Messages carry into the next dungeon's log;
-   * the level-up heals to full.
+   * Adventure-completion story XP: after the final vault in a scroll, top each
+   * living survivor up to their next-level threshold and level once. Treasure XP
+   * earned across earlier vaults counts toward the top-up. Capped at MAX_LEVEL.
    */
-  private grantDescentLevels(): void {
+  private grantAdventureCompletionLevels(): void {
     for (const m of this.party.members) {
       const c = m.character;
       if (c.dead || c.level >= MAX_LEVEL) continue;
@@ -4659,8 +4662,10 @@ export class DungeonScene extends Phaser.Scene {
         nextSkinHistory = [];
       }
 
-      // Descending to the next dungeon levels every surviving party member once.
-      this.grantDescentLevels();
+      // Story XP is awarded once per completed scroll adventure, never per vault.
+      if (completesScrollOnVaultExit(this.vaultsCompletedInScroll, this.vaultsInScroll)) {
+        this.grantAdventureCompletionLevels();
+      }
       const continuingPorter = this.settlePorterUpkeep();
       const survivors = this.party.members
         .map((member) => serializeCharacter(member.character))

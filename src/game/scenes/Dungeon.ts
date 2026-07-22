@@ -208,6 +208,8 @@ interface Pickup {
   sprite: Phaser.Physics.Arcade.Image;
   itemId: string;
   qty: number;
+  /** Player- or porter-dropped gear: no walk-over auto-loot, and no repeat XP on reclaim. */
+  dropped: boolean;
 }
 
 /** A short window in which L spends a luck token to reroll the leader's last failure. */
@@ -1674,7 +1676,7 @@ export class DungeonScene extends Phaser.Scene {
     });
   }
 
-  private addPickup(x: number, y: number, itemId: string, qty: number): void {
+  private addPickup(x: number, y: number, itemId: string, qty: number, opts: { dropped?: boolean } = {}): void {
     const textureKey = this.textures.exists(`pickup-${itemId}`) ? `pickup-${itemId}` : "pickup-ration";
     const sprite = this.physics.add.image(x, y, textureKey).setDepth(6);
     sprite.setBounce(0.2);
@@ -1688,7 +1690,7 @@ export class DungeonScene extends Phaser.Scene {
       ease: "Sine.inOut",
     });
     this.physics.add.collider(sprite, this.walls);
-    this.pickups.push({ sprite, itemId, qty });
+    this.pickups.push({ sprite, itemId, qty, dropped: opts.dropped ?? false });
     if (this.trapSystem) this.trapSystem.registerActor(sprite);
     // Small, flat, movable: a torch-driven cast shadow, gone when collected.
     this.shadows.register({
@@ -1978,7 +1980,7 @@ export class DungeonScene extends Phaser.Scene {
           if (member.character.wieldedWeapon?.id === def.id) member.character.wieldedWeapon = null;
           if (member.character.wornArmor?.id === def.id) member.character.wornArmor = null;
           if (member.character.carriedShield?.id === def.id) member.character.carriedShield = null;
-          this.addPickup(member.x, member.y, def.id, countToDrop);
+          this.addPickup(member.x, member.y, def.id, countToDrop, { dropped: true });
           this.ctx.say(`${member.character.name} dropped ${def.name}.`, "#a0a4b0");
         } catch (error) {
           this.ctx.say(error instanceof Error ? error.message : String(error), "#d07070");
@@ -3236,6 +3238,21 @@ export class DungeonScene extends Phaser.Scene {
       }
     }
 
+    // Dropped gear: press E to reclaim it — no walk-over auto-loot, no repeat XP.
+    const droppedPickups = this.pickups
+      .filter((p) => p.dropped && p.sprite.active)
+      .map((p) => ({ p, dist: Phaser.Math.Distance.Between(leader.x, leader.y, p.sprite.x, p.sprite.y) }))
+      .sort((a, b) => a.dist - b.dist);
+    const nearestDrop = droppedPickups[0];
+    if (nearestDrop && nearestDrop.dist < 34) {
+      const def = item(nearestDrop.p.itemId);
+      const label = nearestDrop.p.qty > 1 ? `${nearestDrop.p.qty} ${def.name}` : def.name;
+      candidates.push({
+        label: `pick up ${label}`,
+        run: () => this.collectItemPickup(nearestDrop.p, leader, false),
+      });
+    }
+
     // 4. Atone at a shrine (priest whose deity has cut them off)
     const shrine = this.shrines.find(
       (s) => Phaser.Math.Distance.Between(leader.x, leader.y, s.x, s.y) < TILE * 2,
@@ -3724,7 +3741,7 @@ export class DungeonScene extends Phaser.Scene {
           target.character.dead = true;
           target.character.dying = null;
           target.character.inventory.all().forEach((stack, index) => {
-            this.addPickup(target.x + (index % 3) * 12 - 12, target.y - Math.floor(index / 3) * 8, stack.def.id, stack.qty);
+            this.addPickup(target.x + (index % 3) * 12 - 12, target.y - Math.floor(index / 3) * 8, stack.def.id, stack.qty, { dropped: true });
           });
           this.ctx.say(`${target.character.name} the porter falls and drops their load.`, "#d07070");
           target.destroy();
@@ -4137,6 +4154,8 @@ export class DungeonScene extends Phaser.Scene {
     // Collected pickups leave the list — don't rescan dead sprites every frame.
     this.pickups = this.pickups.filter((p) => p.sprite.active);
     for (const p of this.pickups) {
+      // Dropped gear waits for a deliberate "E" pickup instead of walk-over auto-loot.
+      if (p.dropped) continue;
       const collector = this.party
         .aliveMembers()
         .find((m) => Phaser.Math.Distance.Between(m.x, m.y, p.sprite.x, p.sprite.y) < 26);
@@ -4177,41 +4196,51 @@ export class DungeonScene extends Phaser.Scene {
         continue;
       }
 
-      // Auto-loot is party-aware: the member who reaches an item gets first
-      // refusal, then a companion with room carries it instead of making the
-      // player shuffle leaders and walk over the same pickup again.
-      const carriers = [
-        ...this.party.aliveMembers(),
-        ...(this.porter?.alive ? [this.porter] : []),
-      ];
-      const recipient = chooseAutoLootCarrier(collector, carriers, def, p.qty);
-      if (!recipient) {
-        this.ctx.say(`The party's gear slots are full! (${def.name} left behind)`, "#d07070");
-        continue;
+      this.collectItemPickup(p, collector, true);
+    }
+  }
+
+  /**
+   * Assigns a carrier for a non-coin pickup, applies sfx and inventory, and
+   * awards XP for gems/idols — unless `grantXp` is false, which is how a
+   * reclaimed drop (already counted toward XP once) avoids double-counting.
+   */
+  private collectItemPickup(p: Pickup, collector: CharacterSprite, grantXp: boolean): void {
+    const def = item(p.itemId);
+    // Auto-loot is party-aware: the member who reaches an item gets first
+    // refusal, then a companion with room carries it instead of making the
+    // player shuffle leaders and walk over the same pickup again.
+    const carriers = [
+      ...this.party.aliveMembers(),
+      ...(this.porter?.alive ? [this.porter] : []),
+    ];
+    const recipient = chooseAutoLootCarrier(collector, carriers, def, p.qty);
+    if (!recipient) {
+      this.ctx.say(`The party's gear slots are full! (${def.name} left behind)`, "#d07070");
+      return;
+    }
+
+    recipient.character.inventory.add(def, p.qty);
+    const pxCoord = p.sprite.x;
+    const pyCoord = p.sprite.y;
+    p.sprite.destroy();
+
+    const jewel =
+      def.id === "gem" || def.id === "jeweled-idol" || def.id === "crown-of-the-deep";
+    sfx.pickupChime(jewel, this.spatial({ x: pxCoord, y: pyCoord }));
+    sparkleBurst(this, pxCoord, pyCoord, jewel);
+    const xp = grantXp ? def.xpValue ?? 0 : 0;
+    const label = p.qty > 1 ? `${p.qty} ${def.name}` : def.name;
+    if (xp > 0) {
+      floatText(this, recipient.x, recipient.y - 24, `${label} +${xp} XP`, "#e8c840");
+      for (const m of this.party.members) {
+        if (!m.character.dead) this.ctx.engine.awardXp(m.character, xp);
       }
-
-      recipient.character.inventory.add(def, p.qty);
-      const pxCoord = p.sprite.x;
-      const pyCoord = p.sprite.y;
-      p.sprite.destroy();
-
-      const jewel =
-        def.id === "gem" || def.id === "jeweled-idol" || def.id === "crown-of-the-deep";
-      sfx.pickupChime(jewel, this.spatial({ x: pxCoord, y: pyCoord }));
-      sparkleBurst(this, pxCoord, pyCoord, jewel);
-      const xp = def.xpValue ?? 0;
-      const label = p.qty > 1 ? `${p.qty} ${def.name}` : def.name;
-      if (xp > 0) {
-        floatText(this, recipient.x, recipient.y - 24, `${label} +${xp} XP`, "#e8c840");
-        for (const m of this.party.members) {
-          if (!m.character.dead) this.ctx.engine.awardXp(m.character, xp);
-        }
-        this.ctx.say(`Treasure! ${label} — party gains ${xp} XP.`, "#e8c840");
-      } else {
-        floatText(this, recipient.x, recipient.y - 24, def.name, "#c0c0c0");
-        if (recipient !== collector) {
-          this.ctx.say(`${recipient.character.name} carries ${label}.`, "#aeb6c4");
-        }
+      this.ctx.say(`Treasure! ${label} — party gains ${xp} XP.`, "#e8c840");
+    } else {
+      floatText(this, recipient.x, recipient.y - 24, def.name, "#c0c0c0");
+      if (recipient !== collector) {
+        this.ctx.say(`${recipient.character.name} carries ${label}.`, "#aeb6c4");
       }
     }
   }
